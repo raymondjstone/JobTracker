@@ -2,6 +2,8 @@
 
 A Blazor application with browser extensions that automatically extract job listings from multiple job sites and save them to a local database for tracking and management.
 
+![Job Tracker Dashboard](images/dashboard.png)
+
 ## Supported Job Sites
 
 | Site | Extension Folder | Console Prefix | Status |
