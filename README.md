@@ -4,17 +4,18 @@ A Blazor application with browser extensions that automatically extract job list
 
 ## Supported Job Sites
 
-| Site | Extension Folder | Status |
-|------|-----------------|--------|
-| LinkedIn | `BrowserExtension/` | Full support |
-| Indeed | `IndeedExtension/` | Full support |
-| S1Jobs | `S1JobsExtension/` | Full support |
-| Welcome to the Jungle | `WTTJExtension/` | Full support |
+| Site | Extension Folder | Console Prefix | Status |
+|------|-----------------|----------------|--------|
+| LinkedIn | `BrowserExtension/` | `LJE` | Full support |
+| Indeed | `IndeedExtension/` | `IND` | Full support |
+| S1Jobs | `S1JobsExtension/` | `S1J` | Full support |
+| Welcome to the Jungle | `WTTJExtension/` | `WTTJ` | Full support |
+| EnergyJobSearch | `EnergyJobSearchExtension/` | `EJS` | Full support |
 
 ## Features
 
 ### Job Extraction
-- **Multi-site Support** - Extract jobs from LinkedIn, Indeed, S1Jobs, and Welcome to the Jungle
+- **Multi-site Support** - Extract jobs from LinkedIn, Indeed, S1Jobs, Welcome to the Jungle, and EnergyJobSearch
 - **Automatic Extraction** - Jobs are extracted automatically as you browse
 - **Description Capture** - Full job descriptions are captured when you view individual jobs
 - **Auto-Fetch Descriptions** - Automatically navigate through jobs to capture missing descriptions
@@ -34,6 +35,22 @@ A Blazor application with browser extensions that automatically extract job list
 - **Applied Tracking** - Track which jobs you've applied to
 - **Application Stages** - Track progress: Applied → No Reply → Pending → Tech Test → Interview → Offer (or Ghosted/Rejected)
 - **Stage History** - View timeline of stage changes for each application
+
+### Rules Engine
+- **Auto-classification Rules** - Automatically set interest, suitability, and remote status based on configurable rules
+- **Rule Management** - Create and manage rules from the Rules page (`/rules`)
+
+### Background Crawling
+- **Server-side Crawling** - Crawl job sites directly from the server without browser extensions
+- **Supported Crawl Sites** - LinkedIn, S1Jobs, Welcome to the Jungle, and EnergyJobSearch
+- **Scheduled Crawling** - Automatic crawling via Hangfire (SQL Server mode) or LocalBackgroundService
+- **Ghosted Detection** - Automatically marks old applications with no reply as Ghosted
+- **Availability Checks** - Background checks for job listing availability
+
+### Authentication
+- **User Accounts** - Login with cookie-based authentication and API key support
+- **Two-Factor Authentication** - Optional 2FA setup and verification
+- **Password Recovery** - Forgot password and reset password flows
 
 ### Sharing & Export
 - **WhatsApp Sharing** - Share job details directly to WhatsApp
@@ -74,6 +91,7 @@ Each job site has its own extension. Install the ones you need:
    - `IndeedExtension/` - Indeed
    - `S1JobsExtension/` - S1Jobs
    - `WTTJExtension/` - Welcome to the Jungle
+   - `EnergyJobSearchExtension/` - EnergyJobSearch
 5. Repeat for each extension you want to install
 
 ## Usage
@@ -81,7 +99,7 @@ Each job site has its own extension. Install the ones you need:
 ### Extracting Jobs
 
 1. **Start the Blazor app** - Make sure it's running (`dotnet run`)
-2. **Navigate to a job site** - Go to LinkedIn Jobs, Indeed, S1Jobs, or WTTJ
+2. **Navigate to a job site** - Go to LinkedIn Jobs, Indeed, S1Jobs, WTTJ, or EnergyJobSearch
 3. **Browse jobs** - The extension automatically extracts job listings as you scroll
 4. **View job details** - Click on individual jobs to capture full descriptions
 5. **Check the indicator** - A colored pill in the bottom-right shows extraction status
@@ -103,13 +121,16 @@ Each extension can automatically navigate through jobs to capture missing descri
 
    // WTTJ
    WTTJ.autoFetch(3)
+
+   // EnergyJobSearch
+   EJS.autoFetch(3)
    ```
 
 2. **Via Extension Popup** - Click the extension icon and press "Auto-Fetch Descriptions"
 
 3. **Stop Auto-Fetch** - Click the Stop button in the UI or run:
    ```javascript
-   LJE.stopAutoFetch()  // or IND, S1J, WTTJ
+   LJE.stopAutoFetch()  // or IND, S1J, WTTJ, EJS
    ```
 
 ### Extension Console Commands
@@ -130,11 +151,24 @@ Each extension exposes commands in the browser console:
 | `XXX.autoFetchStatus()` | Check auto-fetch progress |
 | `XXX.help()` | Show all available commands |
 
-Replace `XXX` with: `LJE` (LinkedIn), `IND` (Indeed), `S1J` (S1Jobs), or `WTTJ` (Welcome to the Jungle)
+Replace `XXX` with: `LJE` (LinkedIn), `IND` (Indeed), `S1J` (S1Jobs), `WTTJ` (Welcome to the Jungle), or `EJS` (EnergyJobSearch)
 
 ### Managing Jobs in the Web App
 
 Navigate to `https://localhost:7046` to access the dashboard.
+
+#### Pages
+
+| Page | Path | Description |
+|------|------|-------------|
+| Jobs Dashboard | `/` or `/jobs` | Main job listing and management |
+| Add Job | `/jobs/add` | Manually add a job |
+| Rules | `/rules` | Manage auto-classification rules |
+| Settings | `/settings` | Configure site URLs and preferences |
+| History | `/history` | View audit log of changes |
+| Background Jobs | `/background-jobs` | Monitor background crawl jobs |
+| Extension Install | `/extension-install` | Extension installation guide |
+| About | `/about` | Application information |
 
 #### Tabs
 - **Browse** - New jobs that haven't been categorized
@@ -160,7 +194,7 @@ Navigate to `https://localhost:7046` to access the dashboard.
 | Location | Filter by job location |
 | Job Type | Full-time, Part-time, Contract, etc. |
 | Remote | Remote only or On-site only |
-| Source | LinkedIn, Indeed, S1Jobs, or WTTJ |
+| Source | LinkedIn, Indeed, S1Jobs, WTTJ, or EnergyJobSearch |
 | Interest | Interested, Not Interested, or Not Rated |
 | Salary Info | Has salary or No salary listed |
 | Salary Contains | Search within salary text (e.g., "100K") |
@@ -235,37 +269,55 @@ To switch back to JSON, set `"StorageProvider": "Json"`. The JSON files are neve
 JobTracker/
 ├── Components/
 │   ├── Pages/
-│   │   ├── Jobs.razor       # Main job dashboard
-│   │   └── AddJob.razor     # Manual job entry
+│   │   ├── Jobs.razor              # Main job dashboard
+│   │   ├── AddJob.razor            # Manual job entry
+│   │   ├── Rules.razor             # Auto-classification rules
+│   │   ├── Settings.razor          # App settings
+│   │   ├── History.razor           # Change audit log
+│   │   ├── BackgroundJobs.razor    # Background job monitoring
+│   │   └── ExtensionInstall.razor  # Extension setup guide
 │   └── Layout/
-│       └── NavMenu.razor    # Navigation menu
+│       └── NavMenu.razor           # Navigation menu
 ├── Models/
-│   └── JobListing.cs        # Job data model
+│   ├── JobListing.cs               # Job data model
+│   ├── AppSettings.cs              # Settings and site URL config
+│   ├── JobHistory.cs               # History entry model
+│   └── JobRule.cs                  # Rule model
 ├── Services/
-│   └── JobListingService.cs # Job storage, filtering, source detection
+│   ├── JobListingService.cs        # Job storage, filtering, source detection
+│   ├── JobCrawlService.cs          # Server-side site crawling
+│   ├── JobCrawlJob.cs              # Scheduled crawl job
+│   ├── GhostedCheckJob.cs          # Auto-ghosted detection
+│   ├── AvailabilityCheckJob.cs     # Job availability checks
+│   └── LocalBackgroundService.cs   # Background task runner
 ├── Data/
-│   └── jobs.json            # Persistent job storage
-├── BrowserExtension/        # LinkedIn extension
+│   └── jobs.json                   # Persistent job storage (JSON mode)
+├── BrowserExtension/               # LinkedIn extension
 │   ├── manifest.json
 │   ├── content.js
 │   ├── popup.html
 │   └── popup.js
-├── IndeedExtension/         # Indeed extension
+├── IndeedExtension/                # Indeed extension
 │   ├── manifest.json
 │   ├── content.js
 │   ├── popup.html
 │   └── popup.js
-├── S1JobsExtension/         # S1Jobs extension
+├── S1JobsExtension/                # S1Jobs extension
 │   ├── manifest.json
 │   ├── content.js
 │   ├── popup.html
 │   └── popup.js
-├── WTTJExtension/           # Welcome to the Jungle extension
+├── WTTJExtension/                  # Welcome to the Jungle extension
 │   ├── manifest.json
 │   ├── content.js
 │   ├── popup.html
 │   └── popup.js
-└── Program.cs               # App configuration and API endpoints
+├── EnergyJobSearchExtension/       # EnergyJobSearch extension
+│   ├── manifest.json
+│   ├── content.js
+│   ├── popup.html
+│   └── popup.js
+└── Program.cs                      # App configuration and API endpoints
 ```
 
 ## Troubleshooting
@@ -274,7 +326,7 @@ JobTracker/
 
 1. Make sure you're on a job listing page
 2. Open DevTools (F12) → Console tab
-3. Look for `[LJE]`, `[IND]`, `[S1J]`, or `[WTTJ]` messages
+3. Look for `[LJE]`, `[IND]`, `[S1J]`, `[WTTJ]`, or `[EJS]` messages
 4. Run the `debug()` command to see page structure
 5. Try the `extract()` command to manually trigger
 
