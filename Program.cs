@@ -182,10 +182,10 @@ if (!authService.GetAllUsers().Any())
     }
     else
     {
-        var initialPassword = builder.Configuration["InitialUser:Password"] ?? "F1xm3n0w";
+        var initialPassword = builder.Configuration["InitialUser:Password"] ?? "xxxxxxxxxxxx";
         var initialUser = authService.CreateUser(
-            email: "jobs@oldwhat.com",
-            name: "Raymond Stone",
+            email: "jobs@xxxx.com",
+            name: "xxxxxxxx",
             password: initialPassword
         );
         startupLogger.LogInformation("Created initial user: {Email}", initialUser.Email);
