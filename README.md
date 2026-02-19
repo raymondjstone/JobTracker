@@ -47,7 +47,7 @@ A Blazor application with browser extensions that automatically extract job list
 - **Ghosted Detection** - Automatically marks old applications with no reply as Ghosted
 - **Availability Checks** - Background checks for job listing availability
 
-### Authentication
+### Authentication (SQL Server mode)
 - **User Accounts** - Login with cookie-based authentication and API key support
 - **Two-Factor Authentication** - Optional 2FA setup and verification
 - **Password Recovery** - Forgot password and reset password flows
