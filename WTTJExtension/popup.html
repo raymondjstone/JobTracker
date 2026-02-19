@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      width: 320px;
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      margin: 0;
+      background: linear-gradient(135deg, #FFCD00 0%, #FFE066 100%);
+    }
+    h1 {
+      font-size: 16px;
+      margin: 0 0 12px 0;
+      color: #000;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    h1 img { width: 24px; height: 24px; }
+    .status {
+      background: #fff;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .status-row:last-child { margin-bottom: 0; }
+    .status-label { color: #666; font-size: 12px; }
+    .status-value { font-weight: bold; color: #000; }
+    .status-value.connected { color: #22c55e; }
+    .status-value.error { color: #ef4444; }
+    .settings {
+      background: #fff;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+    .settings label {
+      display: block;
+      font-size: 11px;
+      color: #666;
+      margin-bottom: 4px;
+    }
+    .settings input {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 12px;
+      margin-bottom: 8px;
+      box-sizing: border-box;
+    }
+    .connection-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: #666;
+    }
+    .connection-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #ccc;
+    }
+    .connection-dot.connected { background: #22c55e; }
+    .connection-dot.disconnected { background: #ef4444; }
+    button {
+      width: 100%;
+      padding: 10px;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-bottom: 8px;
+      transition: all 0.2s;
+    }
+    button:last-child { margin-bottom: 0; }
+    .btn-primary {
+      background: #000;
+      color: #FFCD00;
+    }
+    .btn-primary:hover { background: #333; }
+    .btn-secondary {
+      background: rgba(0,0,0,0.1);
+      color: #000;
+    }
+    .btn-secondary:hover { background: rgba(0,0,0,0.2); }
+    .other-extensions {
+      background: rgba(0,0,0,0.05);
+      padding: 12px;
+      border-radius: 8px;
+      margin-top: 12px;
+      font-size: 11px;
+      color: #333;
+    }
+    .other-extensions h4 {
+      margin: 0 0 8px 0;
+      font-size: 12px;
+      color: #000;
+    }
+    .other-extensions ul {
+      margin: 0;
+      padding-left: 16px;
+      opacity: 0.8;
+    }
+    .other-extensions li {
+      margin-bottom: 4px;
+    }
+    .other-extensions small {
+      display: block;
+      margin-top: 8px;
+      opacity: 0.6;
+    }
+    .delay-section {
+      background: #fff;
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+    }
+    .delay-section label {
+      font-size: 11px;
+      color: #666;
+      margin-right: 8px;
+    }
+    .delay-section .inline-input {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .delay-section input[type="number"] {
+      width: 60px;
+      padding: 6px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 12px;
+      box-sizing: border-box;
+    }
+    .delay-section span {
+      font-size: 11px;
+      color: #666;
+    }
+    .delay-warning {
+      background: #fff3cd;
+      border: 1px solid #ffc107;
+      color: #856404;
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      margin-top: 8px;
+      line-height: 1.4;
+      display: none;
+    }
+    .delay-warning.danger {
+      background: #f8d7da;
+      border-color: #f5c6cb;
+      color: #721c24;
+    }
+    .delay-warning.show {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+    <img src="logo.png" alt="Logo" style="width: 40px; height: 40px; border-radius: 6px;" />
+    <div>
+      <h1 style="margin: 0; font-size: 16px; color: #000;">WTTJ Job Extractor</h1>
+      <small style="font-size: 10px; color: #666;">Job Tracker - helping you find a new role</small>
+    </div>
+  </div>
+
+  <div class="status">
+    <div class="status-row">
+      <span class="status-label">Server Status</span>
+      <span class="status-value" id="server-status">Checking...</span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">Jobs in Database</span>
+      <span class="status-value" id="job-count">-</span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">Jobs Sent This Session</span>
+      <span class="status-value" id="sent-count">0</span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">Need Descriptions</span>
+      <span class="status-value" id="need-desc">-</span>
+    </div>
+  </div>
+
+  <div class="settings">
+    <label for="server-url">Blazor App URL</label>
+    <input type="url" id="server-url" value="https://localhost:7046" placeholder="https://localhost:7046">
+    
+    <label for="api-key" style="margin-top: 8px;">API Key (User ID)</label>
+    <input type="text" id="api-key" placeholder="Your user ID from the app">
+    
+    <div class="connection-status">
+      <div class="connection-dot" id="connection-dot"></div>
+      <span id="connection-text">Checking...</span>
+    </div>
+  </div>
+
+  <button class="btn-primary" id="extract-btn">Extract Jobs Now</button>
+  <div class="delay-section">
+    <div class="inline-input">
+      <label>Delay:</label>
+      <input type="number" id="autoFetchDelay" value="5" min="2" max="60" />
+      <span>seconds between jobs</span>
+    </div>
+    <div id="delayWarning" class="delay-warning"></div>
+  </div>
+  <button class="btn-secondary" id="crawl-btn">Crawl Search Results</button>
+  <button class="btn-secondary" id="auto-fetch-btn">Auto-Fetch Descriptions</button>
+  <button class="btn-secondary" id="check-availability-btn">Check Job Availability</button>
+  <div id="availability-result" style="background: #fff; padding: 10px; border-radius: 6px; margin-bottom: 8px; display: none; text-align: center; font-size: 12px; color: #333;"></div>
+  <button class="btn-secondary" id="open-tracker-btn">Open Job Tracker</button>
+
+  <div class="other-extensions">
+    <h4>Other Job Site Extensions</h4>
+    <ul>
+      <li>LinkedIn Job Extractor</li>
+      <li>Indeed Job Extractor</li>
+      <li>S1Jobs Job Extractor</li>
+      <li>EnergyJobSearch Job Extractor</li>
+    </ul>
+    <small>Install from BrowserExtension/, IndeedExtension/, S1JobsExtension/, EnergyJobSearchExtension/</small>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,763 @@
+@page "/rules"
+@using JobTracker.Models
+@using JobTracker.Services
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject JobRulesService RulesService
+@inject JobListingService JobService
+@rendermode InteractiveServer
+
+<PageTitle>Job Rules - Job Tracker</PageTitle>
+
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1><i class="bi bi-sliders"></i> Job Rules</h1>
+        <div>
+            <button class="btn btn-success me-2" @onclick="ShowAddModal">
+                <i class="bi bi-plus-lg"></i> Add Rule
+            </button>
+            <button class="btn btn-outline-primary me-2" @onclick="ShowPresetsModal">
+                <i class="bi bi-collection"></i> Presets
+            </button>
+            <button class="btn btn-outline-warning" @onclick="ApplyRulesToExisting">
+                <i class="bi bi-arrow-repeat"></i> Apply to Existing
+            </button>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(statusMessage))
+    {
+        <div class="alert @(isError ? "alert-danger" : "alert-success") alert-dismissible fade show">
+            @statusMessage
+            <button type="button" class="btn-close" @onclick="() => statusMessage = string.Empty"></button>
+        </div>
+    }
+
+    <!-- Global Settings -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="bi bi-gear"></i> Global Settings</h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="enableAutoRules"
+                               checked="@settings.EnableAutoRules"
+                               @onchange="e => UpdateGlobalSettings((bool)e.Value!, settings.StopOnFirstMatch)">
+                        <label class="form-check-label" for="enableAutoRules">
+                            <strong>Enable Automatic Rules</strong>
+                            <small class="d-block text-muted">Automatically apply rules when new jobs are added</small>
+                        </label>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="stopOnFirstMatch"
+                               checked="@settings.StopOnFirstMatch"
+                               @onchange="e => UpdateGlobalSettings(settings.EnableAutoRules, (bool)e.Value!)">
+                        <label class="form-check-label" for="stopOnFirstMatch">
+                            <strong>Stop on First Match</strong>
+                            <small class="d-block text-muted">Only apply the first matching rule to each job</small>
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rules Table -->
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="bi bi-list-check"></i> Rules (@rules.Count)</h5>
+        </div>
+        <div class="card-body p-0">
+            @if (rules.Count == 0)
+            {
+                <div class="text-center py-5 text-muted">
+                    <i class="bi bi-inbox display-4"></i>
+                    <p class="mt-3">No rules configured yet</p>
+                    <button class="btn btn-primary" @onclick="ShowAddModal">
+                        <i class="bi bi-plus-lg"></i> Create Your First Rule
+                    </button>
+                </div>
+            }
+            else
+            {
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 50px;">Active</th>
+                            <th>Name</th>
+                            <th>Condition</th>
+                            <th>Action</th>
+                            <th style="width: 100px;">Triggered</th>
+                            <th style="width: 120px;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var rule in rules)
+                        {
+                            <tr class="@(rule.IsEnabled ? "" : "table-secondary")">
+                                <td>
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox"
+                                               checked="@rule.IsEnabled"
+                                               @onchange="() => ToggleRule(rule.Id)">
+                                    </div>
+                                </td>
+                                <td>
+                                    <strong>@rule.Name</strong>
+                                    @if (rule.Priority > 0)
+                                    {
+                                        <span class="badge bg-info ms-2">Priority: @rule.Priority</span>
+                                    }
+                                </td>
+                                <td>
+                                    @if (rule.HasCompoundConditions)
+                                    {
+                                        <span class="badge bg-primary me-1">@rule.Logic</span>
+                                        @foreach (var cond in rule.Conditions.Take(3))
+                                        {
+                                            <div class="small">
+                                                <code>@cond.Field</code>
+                                                <span class="text-muted">@GetOperatorDisplay(cond.Operator)</span>
+                                                @if (!string.IsNullOrEmpty(cond.Value))
+                                                {
+                                                    <code>"@TruncateValue(cond.Value)"</code>
+                                                }
+                                            </div>
+                                        }
+                                        @if (rule.Conditions.Count > 3)
+                                        {
+                                            <small class="text-muted">+@(rule.Conditions.Count - 3) more...</small>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <code>@rule.Field</code>
+                                        <span class="text-muted">@GetOperatorDisplay(rule.Operator)</span>
+                                        @if (!string.IsNullOrEmpty(rule.Value))
+                                        {
+                                            <code>"@TruncateValue(rule.Value)"</code>
+                                        }
+                                        @if (rule.CaseSensitive)
+                                        {
+                                            <span class="badge bg-secondary">Case-sensitive</span>
+                                        }
+                                    }
+                                </td>
+                                <td>
+                                    @if (rule.SetInterest.HasValue)
+                                    {
+                                        <span class="badge @GetInterestBadgeClass(rule.SetInterest.Value)">
+                                            Interest: @rule.SetInterest
+                                        </span>
+                                    }
+                                    @if (rule.SetSuitability.HasValue)
+                                    {
+                                        <span class="badge @GetSuitabilityBadgeClass(rule.SetSuitability.Value)">
+                                            Suitability: @rule.SetSuitability
+                                        </span>
+                                    }
+                                    @if (rule.SetIsRemote.HasValue)
+                                    {
+                                        <span class="badge @(rule.SetIsRemote.Value ? "bg-info" : "bg-warning text-dark")">
+                                            @(rule.SetIsRemote.Value ? "Remote" : "Onsite")
+                                        </span>
+                                    }
+                                </td>
+                                <td>
+                                    <span class="badge bg-secondary">@rule.TimesTriggered</span>
+                                    @if (rule.LastTriggered.HasValue)
+                                    {
+                                        <small class="d-block text-muted">@rule.LastTriggered.Value.ToString("MMM d")</small>
+                                    }
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => ShowEditModal(rule)" title="Edit">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => ConfirmDelete(rule)" title="Delete">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    </div>
+</div>
+
+<!-- Add/Edit Modal -->
+@if (showModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">@(isEditing ? "Edit Rule" : "Add New Rule")</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Rule Name *</label>
+                        <input type="text" class="form-control" @bind="editingRule.Name" placeholder="e.g., Ignore agency jobs">
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Priority</label>
+                            <input type="number" class="form-control" @bind="editingRule.Priority" min="0">
+                            <small class="text-muted">Higher priority rules are checked first</small>
+                        </div>
+                        <div class="col-md-6 d-flex align-items-end">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" @bind="editingRule.CaseSensitive" id="caseSensitive">
+                                <label class="form-check-label" for="caseSensitive">Case-sensitive matching</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr />
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="mb-0">Conditions</h6>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="useCompound"
+                                   checked="@useCompoundConditions"
+                                   @onchange="ToggleCompoundMode">
+                            <label class="form-check-label" for="useCompound">Multiple conditions</label>
+                        </div>
+                    </div>
+
+                    @if (useCompoundConditions)
+                    {
+                        <!-- Logic selector -->
+                        <div class="mb-3">
+                            <div class="btn-group" role="group">
+                                <input type="radio" class="btn-check" name="logic" id="logicAnd"
+                                       checked="@(editingRule.Logic == ConditionLogic.And)"
+                                       @onchange="() => editingRule.Logic = ConditionLogic.And">
+                                <label class="btn btn-outline-primary" for="logicAnd">
+                                    <strong>AND</strong> - All conditions must match
+                                </label>
+                                <input type="radio" class="btn-check" name="logic" id="logicOr"
+                                       checked="@(editingRule.Logic == ConditionLogic.Or)"
+                                       @onchange="() => editingRule.Logic = ConditionLogic.Or">
+                                <label class="btn btn-outline-primary" for="logicOr">
+                                    <strong>OR</strong> - Any condition can match
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Compound conditions list -->
+                        @for (int i = 0; i < editingConditions.Count; i++)
+                        {
+                            var index = i;
+                            var cond = editingConditions[index];
+                            <div class="card mb-2">
+                                <div class="card-body py-2">
+                                    <div class="row align-items-center">
+                                        <div class="col-md-3">
+                                            <select class="form-select form-select-sm" @bind="cond.Field">
+                                                @foreach (var field in Enum.GetValues<RuleField>())
+                                                {
+                                                    <option value="@field">@field</option>
+                                                }
+                                            </select>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <select class="form-select form-select-sm" @bind="cond.Operator">
+                                                @foreach (var op in Enum.GetValues<RuleOperator>())
+                                                {
+                                                    <option value="@op">@GetOperatorDisplay(op)</option>
+                                                }
+                                            </select>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <input type="text" class="form-control form-control-sm" @bind="cond.Value"
+                                                   placeholder="@(cond.Field == RuleField.IsRemote ? "(not needed)" : "Value")"
+                                                   disabled="@(cond.Field == RuleField.IsRemote)">
+                                        </div>
+                                        <div class="col-md-2 text-end">
+                                            <div class="form-check form-check-inline">
+                                                <input class="form-check-input" type="checkbox" @bind="cond.CaseSensitive"
+                                                       id="@($"cs_{index}")" title="Case-sensitive">
+                                                <label class="form-check-label small" for="@($"cs_{index}")">Aa</label>
+                                            </div>
+                                            <button type="button" class="btn btn-sm btn-outline-danger"
+                                                    @onclick="() => RemoveCondition(index)"
+                                                    disabled="@(editingConditions.Count <= 1)">
+                                                <i class="bi bi-x"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="AddCondition">
+                            <i class="bi bi-plus"></i> Add Condition
+                        </button>
+                    }
+                    else
+                    {
+                        <!-- Simple single condition -->
+                        <div class="row mb-3">
+                            <div class="col-md-4">
+                                <label class="form-label">Field</label>
+                                <select class="form-select" @bind="editingRule.Field">
+                                    @foreach (var field in Enum.GetValues<RuleField>())
+                                    {
+                                        <option value="@field">@field</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Operator</label>
+                                <select class="form-select" @bind="editingRule.Operator">
+                                    @foreach (var op in Enum.GetValues<RuleOperator>())
+                                    {
+                                        <option value="@op">@GetOperatorDisplay(op)</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Value</label>
+                                <input type="text" class="form-control" @bind="editingRule.Value"
+                                       placeholder="@(editingRule.Field == RuleField.IsRemote ? "(not needed)" : "Search value")"
+                                       disabled="@(editingRule.Field == RuleField.IsRemote)">
+                            </div>
+                        </div>
+                    }
+
+                    <hr />
+                    <h6>Action</h6>
+
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label class="form-label">Set Interest</label>
+                            <select class="form-select" @bind="selectedInterest">
+                                <option value="">(No change)</option>
+                                @foreach (var status in Enum.GetValues<InterestStatus>())
+                                {
+                                    <option value="@status">@status</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Set Suitability</label>
+                            <select class="form-select" @bind="selectedSuitability">
+                                <option value="">(No change)</option>
+                                @foreach (var status in Enum.GetValues<SuitabilityStatus>())
+                                {
+                                    <option value="@status">@status</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Set Remote Status</label>
+                            <select class="form-select" @bind="selectedIsRemote">
+                                <option value="">(No change)</option>
+                                <option value="true">Remote</option>
+                                <option value="false">Onsite</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseModal">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="SaveRule">
+                        @(isEditing ? "Update Rule" : "Add Rule")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Presets Modal -->
+@if (showPresetsModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-collection"></i> Rule Presets</h5>
+                    <button type="button" class="btn-close" @onclick="() => showPresetsModal = false"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted">Select presets to add to your rules. Click a preset to add it.</p>
+                    <div class="list-group">
+                        @foreach (var preset in presetRules)
+                        {
+                            <button type="button" class="list-group-item list-group-item-action" @onclick="() => AddPreset(preset)">
+                                <div class="d-flex w-100 justify-content-between">
+                                    <h6 class="mb-1">@preset.Name</h6>
+                                    <small>
+                                        @if (preset.SetInterest.HasValue)
+                                        {
+                                            <span class="badge @GetInterestBadgeClass(preset.SetInterest.Value)">@preset.SetInterest</span>
+                                        }
+                                        @if (preset.SetSuitability.HasValue)
+                                        {
+                                            <span class="badge @GetSuitabilityBadgeClass(preset.SetSuitability.Value)">@preset.SetSuitability</span>
+                                        }
+                                        @if (preset.SetIsRemote.HasValue)
+                                        {
+                                            <span class="badge @(preset.SetIsRemote.Value ? "bg-info" : "bg-warning text-dark")">@(preset.SetIsRemote.Value ? "Remote" : "Onsite")</span>
+                                        }
+                                    </small>
+                                </div>
+                                <small class="text-muted">
+                                    @preset.Field @GetOperatorDisplay(preset.Operator)
+                                    @if (!string.IsNullOrEmpty(preset.Value)) { <code>"@preset.Value"</code> }
+                                </small>
+                            </button>
+                        }
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="() => showPresetsModal = false">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Delete Confirmation Modal -->
+@if (showDeleteModal && ruleToDelete != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title"><i class="bi bi-exclamation-triangle"></i> Confirm Delete</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="() => showDeleteModal = false"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to delete the rule "<strong>@ruleToDelete.Name</strong>"?</p>
+                    <p class="text-muted mb-0">This action cannot be undone.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="() => showDeleteModal = false">Cancel</button>
+                    <button type="button" class="btn btn-danger" @onclick="DeleteRule">Delete Rule</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private JobRulesSettings settings = new();
+    private List<JobRule> rules = new();
+    private List<JobRule> presetRules = new();
+
+    private bool showModal = false;
+    private bool showPresetsModal = false;
+    private bool showDeleteModal = false;
+    private bool isEditing = false;
+    private JobRule editingRule = new();
+    private JobRule? ruleToDelete;
+
+    private string selectedInterest = "";
+    private string selectedSuitability = "";
+    private string selectedIsRemote = "";
+
+    private string statusMessage = "";
+    private bool isError = false;
+
+    // Compound conditions support
+    private bool useCompoundConditions = false;
+    private List<RuleCondition> editingConditions = new();
+
+    protected override void OnInitialized()
+    {
+        LoadRules();
+        presetRules = RulesService.GetPresetRules();
+        RulesService.OnChange += OnRulesChanged;
+    }
+
+    private async void OnRulesChanged()
+    {
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void LoadRules()
+    {
+        settings = RulesService.GetRulesSettings();
+        rules = RulesService.GetAllRules();
+    }
+
+    private void UpdateGlobalSettings(bool enableAutoRules, bool stopOnFirstMatch)
+    {
+        RulesService.UpdateGlobalSettings(enableAutoRules, stopOnFirstMatch);
+        settings.EnableAutoRules = enableAutoRules;
+        settings.StopOnFirstMatch = stopOnFirstMatch;
+        ShowStatus("Settings updated", false);
+    }
+
+    private void ShowAddModal()
+    {
+        editingRule = new JobRule();
+        selectedInterest = "";
+        selectedSuitability = "";
+        selectedIsRemote = "";
+        useCompoundConditions = false;
+        editingConditions = new List<RuleCondition> { new RuleCondition() };
+        isEditing = false;
+        showModal = true;
+    }
+
+    private void ShowEditModal(JobRule rule)
+    {
+        editingRule = new JobRule
+        {
+            Id = rule.Id,
+            Name = rule.Name,
+            IsEnabled = rule.IsEnabled,
+            Priority = rule.Priority,
+            Field = rule.Field,
+            Operator = rule.Operator,
+            Value = rule.Value,
+            CaseSensitive = rule.CaseSensitive,
+            SetInterest = rule.SetInterest,
+            SetSuitability = rule.SetSuitability,
+            SetIsRemote = rule.SetIsRemote,
+            TimesTriggered = rule.TimesTriggered,
+            LastTriggered = rule.LastTriggered,
+            DateCreated = rule.DateCreated,
+            Logic = rule.Logic
+        };
+        selectedInterest = rule.SetInterest?.ToString() ?? "";
+        selectedSuitability = rule.SetSuitability?.ToString() ?? "";
+        selectedIsRemote = rule.SetIsRemote.HasValue ? (rule.SetIsRemote.Value ? "true" : "false") : "";
+
+        // Set up compound conditions
+        useCompoundConditions = rule.HasCompoundConditions;
+        if (rule.HasCompoundConditions)
+        {
+            editingConditions = rule.Conditions.Select(c => new RuleCondition
+            {
+                Field = c.Field,
+                Operator = c.Operator,
+                Value = c.Value,
+                CaseSensitive = c.CaseSensitive
+            }).ToList();
+        }
+        else
+        {
+            editingConditions = new List<RuleCondition> { new RuleCondition
+            {
+                Field = rule.Field,
+                Operator = rule.Operator,
+                Value = rule.Value,
+                CaseSensitive = rule.CaseSensitive
+            }};
+        }
+
+        isEditing = true;
+        showModal = true;
+    }
+
+    private void CloseModal()
+    {
+        showModal = false;
+    }
+
+    private void SaveRule()
+    {
+        if (string.IsNullOrWhiteSpace(editingRule.Name))
+        {
+            ShowStatus("Rule name is required", true);
+            return;
+        }
+
+        // Parse selected actions
+        editingRule.SetInterest = string.IsNullOrEmpty(selectedInterest)
+            ? null
+            : Enum.Parse<InterestStatus>(selectedInterest);
+        editingRule.SetSuitability = string.IsNullOrEmpty(selectedSuitability)
+            ? null
+            : Enum.Parse<SuitabilityStatus>(selectedSuitability);
+        editingRule.SetIsRemote = string.IsNullOrEmpty(selectedIsRemote)
+            ? null
+            : bool.Parse(selectedIsRemote);
+
+        // Handle compound conditions
+        if (useCompoundConditions && editingConditions.Count > 0)
+        {
+            editingRule.Conditions = editingConditions.Select(c => new RuleCondition
+            {
+                Field = c.Field,
+                Operator = c.Operator,
+                Value = c.Value,
+                CaseSensitive = c.CaseSensitive
+            }).ToList();
+        }
+        else
+        {
+            editingRule.Conditions = new List<RuleCondition>();
+        }
+
+        if (isEditing)
+        {
+            RulesService.UpdateRule(editingRule);
+            ShowStatus($"Rule '{editingRule.Name}' updated", false);
+        }
+        else
+        {
+            RulesService.AddRule(editingRule);
+            ShowStatus($"Rule '{editingRule.Name}' added", false);
+        }
+
+        showModal = false;
+        LoadRules();
+    }
+
+    private void ToggleRule(Guid id)
+    {
+        RulesService.ToggleRule(id);
+        LoadRules();
+    }
+
+    private void ConfirmDelete(JobRule rule)
+    {
+        ruleToDelete = rule;
+        showDeleteModal = true;
+    }
+
+    private void DeleteRule()
+    {
+        if (ruleToDelete != null)
+        {
+            RulesService.DeleteRule(ruleToDelete.Id);
+            ShowStatus($"Rule '{ruleToDelete.Name}' deleted", false);
+            ruleToDelete = null;
+            showDeleteModal = false;
+            LoadRules();
+        }
+    }
+
+    private void ShowPresetsModal()
+    {
+        showPresetsModal = true;
+    }
+
+    private void AddPreset(JobRule preset)
+    {
+        RulesService.AddRule(new JobRule
+        {
+            Name = preset.Name,
+            Field = preset.Field,
+            Operator = preset.Operator,
+            Value = preset.Value,
+            CaseSensitive = preset.CaseSensitive,
+            SetInterest = preset.SetInterest,
+            SetSuitability = preset.SetSuitability,
+            SetIsRemote = preset.SetIsRemote,
+            Logic = preset.Logic,
+            Conditions = preset.Conditions
+        });
+        ShowStatus($"Preset '{preset.Name}' added", false);
+        LoadRules();
+    }
+
+    private void ApplyRulesToExisting()
+    {
+        var count = JobService.ApplyRulesToExistingJobs();
+        if (count > 0)
+        {
+            ShowStatus($"Rules applied to {count} existing jobs", false);
+        }
+        else
+        {
+            ShowStatus("No jobs were updated (rules may already be applied)", false);
+        }
+        LoadRules();
+    }
+
+    private void ShowStatus(string message, bool error)
+    {
+        statusMessage = message;
+        isError = error;
+    }
+
+    private void ToggleCompoundMode(ChangeEventArgs e)
+    {
+        useCompoundConditions = (bool)e.Value!;
+        if (useCompoundConditions && editingConditions.Count == 0)
+        {
+            // Initialize with current simple condition
+            editingConditions.Add(new RuleCondition
+            {
+                Field = editingRule.Field,
+                Operator = editingRule.Operator,
+                Value = editingRule.Value,
+                CaseSensitive = editingRule.CaseSensitive
+            });
+        }
+    }
+
+    private void AddCondition()
+    {
+        editingConditions.Add(new RuleCondition());
+    }
+
+    private void RemoveCondition(int index)
+    {
+        if (editingConditions.Count > 1)
+        {
+            editingConditions.RemoveAt(index);
+        }
+    }
+
+    private string TruncateValue(string value, int maxLength = 20)
+    {
+        if (string.IsNullOrEmpty(value)) return value;
+        return value.Length <= maxLength ? value : value.Substring(0, maxLength) + "...";
+    }
+
+    private string GetOperatorDisplay(RuleOperator op)
+    {
+        return op switch
+        {
+            RuleOperator.Contains => "contains",
+            RuleOperator.NotContains => "does not contain",
+            RuleOperator.Equals => "equals",
+            RuleOperator.NotEquals => "does not equal",
+            RuleOperator.StartsWith => "starts with",
+            RuleOperator.EndsWith => "ends with",
+            RuleOperator.Regex => "matches regex",
+            RuleOperator.IsTrue => "is true",
+            RuleOperator.IsFalse => "is false",
+            _ => op.ToString()
+        };
+    }
+
+    private string GetInterestBadgeClass(InterestStatus status)
+    {
+        return status switch
+        {
+            InterestStatus.Interested => "bg-success",
+            InterestStatus.NotInterested => "bg-danger",
+            _ => "bg-secondary"
+        };
+    }
+
+    private string GetSuitabilityBadgeClass(SuitabilityStatus status)
+    {
+        return status switch
+        {
+            SuitabilityStatus.Possible => "bg-success",
+            SuitabilityStatus.Unsuitable => "bg-danger",
+            _ => "bg-secondary"
+        };
+    }
+
+    public void Dispose()
+    {
+        RulesService.OnChange -= OnRulesChanged;
+    }
+}

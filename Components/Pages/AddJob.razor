@@ -1,0 +1,594 @@
+@page "/jobs/add"
+@using JobTracker.Models
+@using JobTracker.Services
+@using System.Text.Json
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject JobListingService JobService
+@inject LinkedInJobExtractor LinkedInExtractor
+@inject NavigationManager Navigation
+@rendermode InteractiveServer
+
+<PageTitle>Add Job Listing</PageTitle>
+
+<h1>Add Job Listing</h1>
+
+<div class="row">
+    <div class="col-12 mb-4">
+        <div class="card border-primary">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-globe"></i> Import from Job Site</h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted mb-3">
+                    Paste a job URL or posting content from LinkedIn, Indeed, S1Jobs, Welcome to the Jungle, or EnergyJobSearch.
+                    LinkedIn URLs support auto-extraction, and other sites will pre-fill the source and URL/description.
+                </p>
+
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Source</label>
+                        <InputSelect class="form-select" @bind-Value="importSource">
+                            <option value="">Auto-detect</option>
+                            <option value="LinkedIn">LinkedIn</option>
+                            <option value="Indeed">Indeed</option>
+                            <option value="S1Jobs">S1Jobs</option>
+                            <option value="WTTJ">Welcome to the Jungle</option>
+                            <option value="EnergyJobSearch">EnergyJobSearch</option>
+                            <option value="Unknown">Unknown / Other</option>
+                        </InputSelect>
+                    </div>
+                </div>
+
+                <ul class="nav nav-tabs" id="linkedinTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="url-tab" data-bs-toggle="tab" data-bs-target="#url-pane" type="button" role="tab">
+                            Extract from URL
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="clipboard-tab" data-bs-toggle="tab" data-bs-target="#clipboard-pane" type="button" role="tab">
+                            Parse from Clipboard
+                        </button>
+                    </li>
+                </ul>
+                <div class="tab-content pt-3" id="linkedinTabContent">
+                    <div class="tab-pane fade show active" id="url-pane" role="tabpanel">
+                        <p class="text-muted">
+                            Enter a job URL to extract job details or pre-fill the source.
+                            <small class="d-block mt-1">LinkedIn supports full auto-extraction. Other sites will populate the URL and source.</small>
+                        </p>
+                        <div class="input-group mb-3">
+                            <span class="input-group-text"><i class="bi bi-link-45deg"></i></span>
+                            <input type="url" class="form-control" @bind="linkedInUrl" 
+                                   placeholder="https://..." 
+                                   disabled="@isExtracting" />
+                            <button class="btn btn-primary" type="button" @onclick="ExtractFromUrl" disabled="@isExtracting">
+                                @if (isExtracting)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                                    <span>Extracting...</span>
+                                }
+                                else
+                                {
+                                    <span>Extract Job</span>
+                                }
+                            </button>
+                        </div>
+                    </div>
+                    <div class="tab-pane fade" id="clipboard-pane" role="tabpanel">
+                        <p class="text-muted">
+                            Copy the job posting content from a supported site and paste it below. 
+                            We'll use it to pre-fill details where possible.
+                        </p>
+                        <div class="mb-3">
+                            <textarea class="form-control" @bind="clipboardText" rows="6" 
+                                      placeholder="Paste the copied job posting text here..."></textarea>
+                        </div>
+                        <button class="btn btn-primary" type="button" @onclick="ParseFromClipboard">
+                            Parse Job Details
+                        </button>
+                    </div>
+                </div>
+
+                @if (!string.IsNullOrEmpty(extractionError))
+                {
+                    <div class="alert alert-danger mt-3 mb-0">
+                        <i class="bi bi-exclamation-triangle me-2"></i>@extractionError
+                    </div>
+                }
+
+                @if (!string.IsNullOrEmpty(extractionSuccess))
+                {
+                    <div class="alert alert-success mt-3 mb-0">
+                        <i class="bi bi-check-circle me-2"></i>@extractionSuccess
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-6">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">Job Details</h5>
+            </div>
+            <div class="card-body">
+                <EditForm Model="newJob" OnValidSubmit="HandleAddJob">
+                    <DataAnnotationsValidator />
+                    <ValidationSummary class="text-danger" />
+
+                    <div class="mb-3">
+                        <label class="form-label">Job Title *</label>
+                        <InputText class="form-control" @bind-Value="newJob.Title" placeholder="e.g., Senior Software Engineer" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Company *</label>
+                        <InputText class="form-control" @bind-Value="newJob.Company" placeholder="e.g., Microsoft" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Location</label>
+                        <InputText class="form-control" @bind-Value="newJob.Location" placeholder="e.g., Seattle, WA" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Description</label>
+                        <InputTextArea class="form-control" @bind-Value="newJob.Description" rows="6" placeholder="Job description..." />
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Job Type</label>
+                            <InputSelect class="form-select" @bind-Value="newJob.JobType">
+                                @foreach (var type in Enum.GetValues<JobType>())
+                                {
+                                    <option value="@type">@type</option>
+                                }
+                            </InputSelect>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Salary</label>
+                            <InputText class="form-control" @bind-Value="newJob.Salary" placeholder="e.g., $100,000 - $150,000" />
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Date Posted</label>
+                            <InputDate class="form-control" @bind-Value="newJob.DatePosted" />
+                        </div>
+                        <div class="col-md-6 d-flex align-items-end">
+                            <div class="form-check">
+                                <InputCheckbox class="form-check-input" @bind-Value="newJob.IsRemote" id="isRemote" />
+                                <label class="form-check-label" for="isRemote">Remote Position</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label class="form-label">Source Site</label>
+                            <InputSelect class="form-select" @bind-Value="newJob.Source">
+                                <option value="LinkedIn">LinkedIn</option>
+                                <option value="Indeed">Indeed</option>
+                                <option value="S1Jobs">S1Jobs</option>
+                                <option value="WTTJ">Welcome to the Jungle</option>
+                                <option value="EnergyJobSearch">EnergyJobSearch</option>
+                                <option value="Unknown">Unknown / Other</option>
+                            </InputSelect>
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label">Job URL <span class="text-muted small">(optional)</span></label>
+                            <InputText class="form-control" @bind-Value="newJob.Url" placeholder="https://..." />
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Skills (comma-separated)</label>
+                        <InputText class="form-control" @bind-Value="skillsInput" placeholder="e.g., C#, .NET, Azure, SQL" />
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">Add Job</button>
+                        <button type="button" class="btn btn-outline-secondary" @onclick="ClearForm">Clear Form</button>
+                        <a href="/jobs" class="btn btn-outline-secondary">Cancel</a>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">Import from JSON</h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted">Paste JSON data to import multiple job listings at once. Expected format:</p>
+                <pre class="bg-light p-2 small"><code>[
+  {
+    "title": "Job Title",
+    "company": "Company Name",
+    "location": "City, State",
+    "description": "Job description...",
+    "jobType": "FullTime",
+    "salary": "$100,000",
+    "url": "https://...",
+    "datePosted": "2024-01-15",
+    "isRemote": true,
+    "skills": ["C#", ".NET"]
+  }
+]</code></pre>
+
+                <div class="mb-3">
+                    <label class="form-label">JSON Data</label>
+                    <textarea class="form-control" @bind="jsonInput" rows="8" placeholder="Paste JSON here..."></textarea>
+                </div>
+
+                @if (!string.IsNullOrEmpty(importError))
+                {
+                    <div class="alert alert-danger">@importError</div>
+                }
+
+                @if (!string.IsNullOrEmpty(importSuccess))
+                {
+                    <div class="alert alert-success">@importSuccess</div>
+                }
+
+                <button type="button" class="btn btn-success" @onclick="ImportFromJson">Import Jobs</button>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Sample Data</h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted">Don't have any jobs yet? Load some sample data to get started.</p>
+                <button type="button" class="btn btn-outline-info" @onclick="LoadSampleData">Load Sample Data</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private JobListing newJob = new() { Source = "Unknown" };
+    private string skillsInput = "";
+    private string jsonInput = "";
+    private string importError = "";
+    private string importSuccess = "";
+
+    // LinkedIn extraction fields
+    private string linkedInUrl = "";
+    private string clipboardText = "";
+    private string extractionError = "";
+    private string extractionSuccess = "";
+    private bool isExtracting = false;
+    private string importSource = "";
+
+    private async Task ExtractFromUrl()
+    {
+        extractionError = "";
+        extractionSuccess = "";
+
+        if (string.IsNullOrWhiteSpace(linkedInUrl))
+        {
+            extractionError = "Please enter a job URL.";
+            return;
+        }
+
+        var source = ResolveImportSource(linkedInUrl);
+
+        if (source == "LinkedIn")
+        {
+            isExtracting = true;
+            StateHasChanged();
+
+            try
+            {
+                var result = await LinkedInExtractor.ExtractFromUrlAsync(linkedInUrl);
+
+                if (result.IsSuccess && result.Job != null)
+                {
+                    PopulateFormFromJob(result.Job, source);
+                    extractionSuccess = result.Message;
+                }
+                else
+                {
+                    extractionError = result.Message;
+                }
+            }
+            finally
+            {
+                isExtracting = false;
+            }
+
+            return;
+        }
+
+        PopulateFormFromUrl(source, linkedInUrl);
+        extractionSuccess = $"URL saved for {source}. Fill in any missing details and save the job.";
+    }
+
+    private void ParseFromClipboard()
+    {
+        extractionError = "";
+        extractionSuccess = "";
+
+        if (string.IsNullOrWhiteSpace(clipboardText))
+        {
+            extractionError = "Please paste the job posting text.";
+            return;
+        }
+
+        var source = ResolveImportSource(linkedInUrl);
+
+        if (source == "LinkedIn")
+        {
+            var result = LinkedInExtractor.ParseFromClipboardText(clipboardText);
+
+            if (result.IsSuccess && result.Job != null)
+            {
+                PopulateFormFromJob(result.Job, source);
+                extractionSuccess = result.Message;
+            }
+            else
+            {
+                extractionError = result.Message;
+            }
+
+            return;
+        }
+
+        PopulateFormFromClipboard(source, clipboardText);
+        extractionSuccess = $"Details added for {source}. Review the fields and save the job.";
+    }
+
+    private void PopulateFormFromJob(JobListing job, string source)
+    {
+        newJob = new JobListing
+        {
+            Title = job.Title,
+            Company = job.Company,
+            Location = job.Location,
+            Description = job.Description,
+            JobType = job.JobType,
+            Salary = job.Salary,
+            Url = string.IsNullOrEmpty(job.Url) ? linkedInUrl : job.Url,
+            DatePosted = job.DatePosted,
+            IsRemote = job.IsRemote,
+            Skills = job.Skills,
+            Source = source
+        };
+        skillsInput = string.Join(", ", job.Skills);
+    }
+
+    private void PopulateFormFromUrl(string source, string url)
+    {
+        newJob.Source = source;
+        newJob.Url = url;
+    }
+
+    private void PopulateFormFromClipboard(string source, string text)
+    {
+        newJob.Source = source;
+        newJob.Description = text;
+
+        var lines = text.Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(line => !string.IsNullOrWhiteSpace(line))
+            .ToList();
+
+        if (string.IsNullOrWhiteSpace(newJob.Title) && lines.Count > 0)
+        {
+            newJob.Title = lines[0];
+        }
+
+        if (string.IsNullOrWhiteSpace(newJob.Company) && lines.Count > 1)
+        {
+            newJob.Company = lines[1];
+        }
+    }
+
+    private string ResolveImportSource(string? url)
+    {
+        if (!string.IsNullOrWhiteSpace(importSource))
+        {
+            return importSource;
+        }
+
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return "Unknown";
+        }
+
+        var normalizedUrl = url.ToLowerInvariant();
+        if (normalizedUrl.Contains("linkedin.com")) return "LinkedIn";
+        if (normalizedUrl.Contains("indeed.")) return "Indeed";
+        if (normalizedUrl.Contains("s1jobs.com")) return "S1Jobs";
+        if (normalizedUrl.Contains("welcometothejungle.com") || normalizedUrl.Contains("otta")) return "WTTJ";
+        if (normalizedUrl.Contains("energyjobsearch.com")) return "EnergyJobSearch";
+
+        return "Unknown";
+    }
+
+    private void ClearForm()
+    {
+        newJob = new JobListing() { Source = "Unknown" };
+        skillsInput = "";
+        linkedInUrl = "";
+        clipboardText = "";
+        extractionError = "";
+        extractionSuccess = "";
+    }
+
+    private void HandleAddJob()
+    {
+        if (!string.IsNullOrWhiteSpace(skillsInput))
+        {
+            newJob.Skills = skillsInput.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+        }
+
+        JobService.AddJobListing(newJob);
+        Navigation.NavigateTo("/jobs");
+    }
+
+    private void ImportFromJson()
+    {
+        importError = "";
+        importSuccess = "";
+
+        if (string.IsNullOrWhiteSpace(jsonInput))
+        {
+            importError = "Please enter JSON data to import.";
+            return;
+        }
+
+        try
+        {
+            var options = new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            };
+
+            var jobs = JsonSerializer.Deserialize<List<JobListingDto>>(jsonInput, options);
+
+            if (jobs == null || !jobs.Any())
+            {
+                importError = "No valid job listings found in the JSON data.";
+                return;
+            }
+
+            var jobListings = jobs.Select(dto => new JobListing
+            {
+                Title = dto.Title ?? "",
+                Company = dto.Company ?? "",
+                Location = dto.Location ?? "",
+                Description = dto.Description ?? "",
+                JobType = Enum.TryParse<JobType>(dto.JobType, true, out var jt) ? jt : JobType.FullTime,
+                Salary = dto.Salary ?? "",
+                Url = dto.Url ?? "",
+                DatePosted = dto.DatePosted ?? DateTime.Now,
+                IsRemote = dto.IsRemote,
+                Skills = dto.Skills ?? new List<string>()
+            }).ToList();
+
+            JobService.AddJobListings(jobListings);
+            importSuccess = $"Successfully imported {jobListings.Count} job listing(s).";
+            jsonInput = "";
+        }
+        catch (JsonException ex)
+        {
+            importError = $"Invalid JSON format: {ex.Message}";
+        }
+        catch (Exception ex)
+        {
+            importError = $"Error importing jobs: {ex.Message}";
+        }
+    }
+
+    private void LoadSampleData()
+    {
+        var sampleJobs = new List<JobListing>
+        {
+            new JobListing
+            {
+                Title = "Senior Software Engineer",
+                Company = "Microsoft",
+                Location = "Redmond, WA",
+                Description = "We are looking for a Senior Software Engineer to join our Azure team. You will be working on cloud infrastructure services, designing and implementing scalable solutions that power millions of customers worldwide.",
+                JobType = JobType.FullTime,
+                Salary = "$150,000 - $200,000",
+                Url = "https://www.linkedin.com/jobs/view/123456",
+                DatePosted = DateTime.Now.AddDays(-5),
+                IsRemote = true,
+                Skills = new List<string> { "C#", ".NET", "Azure", "Kubernetes", "Microservices" }
+            },
+            new JobListing
+            {
+                Title = "Full Stack Developer",
+                Company = "Amazon",
+                Location = "Seattle, WA",
+                Description = "Join our team to build and maintain web applications that serve millions of customers. You will work with React, Node.js, and AWS services to deliver high-quality features.",
+                JobType = JobType.FullTime,
+                Salary = "$130,000 - $180,000",
+                Url = "https://www.linkedin.com/jobs/view/234567",
+                DatePosted = DateTime.Now.AddDays(-3),
+                IsRemote = false,
+                Skills = new List<string> { "JavaScript", "React", "Node.js", "AWS", "PostgreSQL" }
+            },
+            new JobListing
+            {
+                Title = "DevOps Engineer",
+                Company = "Google",
+                Location = "Mountain View, CA",
+                Description = "We are seeking a DevOps Engineer to help us build and maintain our CI/CD pipelines. You will work closely with development teams to automate infrastructure and improve deployment processes.",
+                JobType = JobType.FullTime,
+                Salary = "$140,000 - $190,000",
+                Url = "https://www.linkedin.com/jobs/view/345678",
+                DatePosted = DateTime.Now.AddDays(-7),
+                IsRemote = true,
+                Skills = new List<string> { "Docker", "Kubernetes", "Terraform", "Python", "GCP" }
+            },
+            new JobListing
+            {
+                Title = "Junior Web Developer",
+                Company = "Startup Co",
+                Location = "Austin, TX",
+                Description = "Looking for a motivated Junior Web Developer to join our growing team. You will learn and grow while working on exciting projects using modern web technologies.",
+                JobType = JobType.FullTime,
+                Salary = "$60,000 - $80,000",
+                Url = "https://www.linkedin.com/jobs/view/456789",
+                DatePosted = DateTime.Now.AddDays(-1),
+                IsRemote = true,
+                Skills = new List<string> { "HTML", "CSS", "JavaScript", "React" }
+            },
+            new JobListing
+            {
+                Title = "Data Analyst - Contract",
+                Company = "Finance Corp",
+                Location = "New York, NY",
+                Description = "Contract position for a Data Analyst to help with quarterly reporting and data visualization projects. Strong SQL skills required.",
+                JobType = JobType.Contract,
+                Salary = "$75/hour",
+                Url = "https://www.linkedin.com/jobs/view/567890",
+                DatePosted = DateTime.Now.AddDays(-10),
+                IsRemote = false,
+                Skills = new List<string> { "SQL", "Python", "Tableau", "Excel" }
+            },
+            new JobListing
+            {
+                Title = "Software Engineering Intern",
+                Company = "Tech Giants Inc",
+                Location = "San Francisco, CA",
+                Description = "Summer internship opportunity for computer science students. Work on real projects and learn from experienced engineers.",
+                JobType = JobType.Internship,
+                Salary = "$40/hour",
+                Url = "https://www.linkedin.com/jobs/view/678901",
+                DatePosted = DateTime.Now.AddDays(-14),
+                IsRemote = false,
+                Skills = new List<string> { "Java", "Python", "Data Structures", "Algorithms" }
+            }
+        };
+
+        JobService.AddJobListings(sampleJobs);
+        importSuccess = $"Successfully loaded {sampleJobs.Count} sample job listings.";
+    }
+
+    private class JobListingDto
+    {
+        public string? Title { get; set; }
+        public string? Company { get; set; }
+        public string? Location { get; set; }
+        public string? Description { get; set; }
+        public string? JobType { get; set; }
+        public string? Salary { get; set; }
+        public string? Url { get; set; }
+        public DateTime? DatePosted { get; set; }
+        public bool IsRemote { get; set; }
+        public List<string>? Skills { get; set; }
+    }
+}

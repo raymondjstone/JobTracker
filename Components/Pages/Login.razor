@@ -1,0 +1,141 @@
+@page "/login"
+@layout AuthLayout
+@using JobTracker.Services
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Authentication.Cookies
+@inject AuthService AuthService
+@inject NavigationManager Navigation
+@inject IHttpContextAccessor HttpContextAccessor
+
+<PageTitle>Login - Job Tracker</PageTitle>
+
+<div class="auth-form">
+    <h2 style="text-align: center; margin-bottom: 24px;">Sign In</h2>
+
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="alert alert-danger">@errorMessage</div>
+    }
+
+    <EditForm Model="loginModel" OnValidSubmit="HandleLogin" FormName="login">
+        <DataAnnotationsValidator />
+
+        <div class="form-group">
+            <label for="email">Email</label>
+            <InputText id="email" @bind-Value="loginModel.Email" class="form-control" placeholder="your@email.com" />
+            <ValidationMessage For="() => loginModel.Email" />
+        </div>
+
+        <div class="form-group">
+            <label for="password">Password</label>
+            <InputText id="password" @bind-Value="loginModel.Password" type="password" class="form-control" placeholder="Enter your password" />
+            <ValidationMessage For="() => loginModel.Password" />
+        </div>
+
+        <button type="submit" class="btn btn-primary" disabled="@isLoading">
+            @if (isLoading)
+            {
+                <span>Signing in...</span>
+            }
+            else
+            {
+                <span>Sign In</span>
+            }
+        </button>
+    </EditForm>
+
+    <div class="auth-links">
+        <a href="/forgot-password">Forgot your password?</a>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromForm]
+    private LoginModel loginModel { get; set; } = new();
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    private string? errorMessage;
+    private bool isLoading;
+
+    private async Task HandleLogin()
+    {
+        isLoading = true;
+        errorMessage = null;
+
+        try
+        {
+            var user = AuthService.ValidateCredentials(loginModel.Email, loginModel.Password);
+            if (user == null)
+            {
+                errorMessage = "Invalid email or password.";
+                return;
+            }
+
+            // Check if 2FA is required
+            if (user.TwoFactorEnabled)
+            {
+                // Store user ID in session and redirect to 2FA verification
+                var context = HttpContextAccessor.HttpContext;
+                if (context != null)
+                {
+                    // Create a temporary claim with partial auth
+                    var tempPrincipal = AuthService.CreateClaimsPrincipal(user, twoFactorVerified: false);
+                    await context.SignInAsync(
+                        CookieAuthenticationDefaults.AuthenticationScheme,
+                        tempPrincipal,
+                        new AuthenticationProperties
+                        {
+                            IsPersistent = false,
+                            ExpiresUtc = DateTimeOffset.UtcNow.AddMinutes(5) // Short expiry for 2FA
+                        });
+                }
+                Navigation.NavigateTo("/two-factor-verify", forceLoad: true);
+                return;
+            }
+
+            // No 2FA - sign in fully
+            await SignInUser(user);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task SignInUser(JobTracker.Models.User user)
+    {
+        var context = HttpContextAccessor.HttpContext;
+        if (context == null)
+        {
+            errorMessage = "Unable to sign in. Please try again.";
+            return;
+        }
+
+        var principal = AuthService.CreateClaimsPrincipal(user);
+        await context.SignInAsync(
+            CookieAuthenticationDefaults.AuthenticationScheme,
+            principal,
+            new AuthenticationProperties
+            {
+                IsPersistent = true,
+                ExpiresUtc = DateTimeOffset.UtcNow.AddDays(30)
+            });
+
+        AuthService.RecordLogin(user);
+
+        var returnUrl = ReturnUrl ?? "/";
+        Navigation.NavigateTo(returnUrl, forceLoad: true);
+    }
+
+    private class LoginModel
+    {
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "Email is required")]
+        [System.ComponentModel.DataAnnotations.EmailAddress(ErrorMessage = "Invalid email format")]
+        public string Email { get; set; } = string.Empty;
+
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "Password is required")]
+        public string Password { get; set; } = string.Empty;
+    }
+}

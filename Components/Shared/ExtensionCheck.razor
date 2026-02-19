@@ -1,0 +1,83 @@
+@inject IJSRuntime JSRuntime
+@rendermode InteractiveServer
+
+@if (showPrompt && !isDismissed)
+{
+    <div class="alert alert-warning alert-dismissible fade show d-flex align-items-center mb-3" role="alert">
+        <i class="bi bi-puzzle me-2 fs-4"></i>
+        <div class="flex-grow-1">
+            <strong>Browser Extension Reminder</strong>
+            <p class="mb-0 small">
+                Install a browser extension to automatically capture jobs from supported job sites.
+                <a href="/extension-install" class="alert-link">Learn how to install</a>
+            </p>
+        </div>
+        <button type="button" class="btn-close" @onclick="Dismiss" aria-label="Close"></button>
+    </div>
+}
+
+@code {
+    private bool showPrompt = false;
+    private bool isDismissed = false;
+    private bool checkComplete = false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !checkComplete)
+        {
+            checkComplete = true;
+            
+            // Check if user has previously dismissed the prompt
+            try
+            {
+                var dismissed = await JSRuntime.InvokeAsync<bool>("eval", "localStorage.getItem('lje-prompt-dismissed') === 'true'");
+                if (dismissed)
+                {
+                    isDismissed = true;
+                    StateHasChanged();
+                    return;
+                }
+            }
+            catch
+            {
+                // Ignore errors
+            }
+            
+            // Check if any extension is actually installed by looking for their data attributes
+            try
+            {
+                var extensionInstalled = await JSRuntime.InvokeAsync<bool>("eval",
+                    "document.documentElement.hasAttribute('data-lje-installed') || " +
+                    "document.documentElement.hasAttribute('data-ind-installed') || " +
+                    "document.documentElement.hasAttribute('data-s1j-installed') || " +
+                    "document.documentElement.hasAttribute('data-wttj-installed')");
+                if (extensionInstalled)
+                {
+                    return;
+                }
+            }
+            catch
+            {
+                // Ignore errors
+            }
+
+            // No extension detected - show the installation reminder prompt
+            showPrompt = true;
+            StateHasChanged();
+        }
+    }
+
+    private async Task Dismiss()
+    {
+        isDismissed = true;
+        try
+        {
+            // Use localStorage so it persists across sessions
+            await JSRuntime.InvokeVoidAsync("eval", "localStorage.setItem('lje-prompt-dismissed', 'true')");
+        }
+        catch
+        {
+            // Ignore errors
+        }
+    }
+}

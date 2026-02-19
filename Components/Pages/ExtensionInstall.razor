@@ -1,0 +1,513 @@
+@page "/extension-install"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject NavigationManager Navigation
+
+<PageTitle>Install Browser Extensions - Job Tracker</PageTitle>
+
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-lg-10">
+            <h1 class="mb-4"><i class="bi bi-puzzle"></i> Browser Extensions</h1>
+
+            <div class="alert alert-info">
+                <i class="bi bi-info-circle me-2"></i>
+                <strong>Five job site extensions available!</strong> Each extension automatically captures job listings as you browse.
+                <br/><br/>
+                <strong>Note:</strong> Due to browser security restrictions, extensions cannot be installed automatically.
+                You'll need to load them manually in developer mode.
+            </div>
+
+            <!-- Download Section -->
+            <div class="card mb-4 border-success">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0"><i class="bi bi-download"></i> Download Extensions</h5>
+                </div>
+                <div class="card-body">
+                    <p>Download the extension zip files, extract them, and load them in your browser:</p>
+                    <div class="row">
+                        <div class="col-md-6 col-lg-3 mb-2">
+                            <a href="/extensions/LinkedInExtension.zip" download class="btn btn-outline-primary w-100">
+                                <i class="bi bi-linkedin me-1"></i> LinkedIn
+                                <br><small class="text-muted">LinkedInExtension.zip</small>
+                            </a>
+                        </div>
+                        <div class="col-md-6 col-lg-3 mb-2">
+                            <a href="/extensions/IndeedExtension.zip" download class="btn btn-outline-info w-100">
+                                <i class="bi bi-briefcase me-1"></i> Indeed
+                                <br><small class="text-muted">IndeedExtension.zip</small>
+                            </a>
+                        </div>
+                        <div class="col-md-6 col-lg-3 mb-2">
+                            <a href="/extensions/S1JobsExtension.zip" download class="btn btn-outline-success w-100">
+                                <i class="bi bi-geo-alt me-1"></i> S1Jobs
+                                <br><small class="text-muted">S1JobsExtension.zip</small>
+                            </a>
+                        </div>
+                        <div class="col-md-6 col-lg-3 mb-2">
+                            <a href="/extensions/WTTJExtension.zip" download class="btn btn-outline-warning w-100">
+                                <i class="bi bi-tree me-1"></i> WTTJ
+                                <br><small class="text-muted">WTTJExtension.zip</small>
+                            </a>
+                        </div>
+                        <div class="col-md-6 col-lg-3 mb-2">
+                            <a href="/extensions/EnergyJobSearchExtension.zip" download class="btn btn-outline-warning w-100" style="border-color: #FF6B00; color: #FF6B00;">
+                                <i class="bi bi-lightning-charge me-1"></i> EnergyJobSearch
+                                <br><small class="text-muted">EnergyJobSearchExtension.zip</small>
+                            </a>
+                        </div>
+                    </div>
+                    <div class="mt-3 small text-muted">
+                        <i class="bi bi-info-circle me-1"></i>
+                        <strong>Quick install:</strong> Download → Extract to a folder → Load unpacked in browser extensions (developer mode)
+                    </div>
+                </div>
+            </div>
+
+            <!-- Extension Cards -->
+            <div class="row mb-4">
+                <div class="col-md-6 mb-3">
+                    <div class="card h-100 @(selectedExtension == "linkedin" ? "border-primary" : "")" style="cursor: pointer;" @onclick="SelectLinkedIn">
+                        <div class="card-body">
+                            <h5 class="card-title"><i class="bi bi-linkedin text-primary"></i> LinkedIn</h5>
+                            <p class="card-text text-muted small">Extract jobs from LinkedIn Jobs pages. Captures job cards and full descriptions.</p>
+                            <span class="badge bg-primary">BrowserExtension</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <div class="card h-100 @(selectedExtension == "indeed" ? "border-primary" : "")" style="cursor: pointer;" @onclick="SelectIndeed">
+                        <div class="card-body">
+                            <h5 class="card-title"><i class="bi bi-briefcase text-info"></i> Indeed</h5>
+                            <p class="card-text text-muted small">Extract jobs from Indeed UK job search results and detail pages.</p>
+                            <span class="badge bg-info">IndeedExtension</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <div class="card h-100 @(selectedExtension == "s1jobs" ? "border-primary" : "")" style="cursor: pointer;" @onclick="SelectS1Jobs">
+                        <div class="card-body">
+                            <h5 class="card-title"><i class="bi bi-geo-alt text-success"></i> S1Jobs</h5>
+                            <p class="card-text text-muted small">Extract jobs from S1Jobs (Scotland-focused job board).</p>
+                            <span class="badge bg-success">S1JobsExtension</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <div class="card h-100 @(selectedExtension == "wttj" ? "border-primary" : "")" style="cursor: pointer;" @onclick="SelectWttj">
+                        <div class="card-body">
+                            <h5 class="card-title"><i class="bi bi-tree text-warning"></i> Welcome to the Jungle</h5>
+                            <p class="card-text text-muted small">Extract jobs from WTTJ/Otta job listings and company pages.</p>
+                            <span class="badge bg-warning text-dark">WTTJExtension</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <div class="card h-100 @(selectedExtension == "energyjobsearch" ? "border-primary" : "")" style="cursor: pointer;" @onclick="SelectEnergyJobSearch">
+                        <div class="card-body">
+                            <h5 class="card-title"><i class="bi bi-lightning-charge" style="color: #FF6B00;"></i> EnergyJobSearch</h5>
+                            <p class="card-text text-muted small">Extract jobs from EnergyJobSearch energy sector job listings.</p>
+                            <span class="badge" style="background-color: #FF6B00;">EnergyJobSearchExtension</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Installation Instructions -->
+            <div class="card mb-4">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="bi bi-browser-chrome"></i> Installation Steps (Chrome / Edge / Brave)</h5>
+                </div>
+                <div class="card-body">
+                    <ol class="mb-0">
+                        <li class="mb-3">
+                            <strong>Open the Extensions page</strong>
+                            <p class="text-muted mb-2">Click one of these links to open your browser's extensions page:</p>
+                            <div class="d-flex gap-2 flex-wrap">
+                                <a href="chrome://extensions" class="btn btn-outline-primary btn-sm"
+                                   onclick="navigator.clipboard.writeText('chrome://extensions'); alert('Copied! Paste this in a new tab: chrome://extensions'); return false;">
+                                    <i class="bi bi-browser-chrome"></i> Chrome (copy link)
+                                </a>
+                                <a href="edge://extensions" class="btn btn-outline-primary btn-sm"
+                                   onclick="navigator.clipboard.writeText('edge://extensions'); alert('Copied! Paste this in a new tab: edge://extensions'); return false;">
+                                    <i class="bi bi-browser-edge"></i> Edge (copy link)
+                                </a>
+                                <a href="brave://extensions" class="btn btn-outline-primary btn-sm"
+                                   onclick="navigator.clipboard.writeText('brave://extensions'); alert('Copied! Paste this in a new tab: brave://extensions'); return false;">
+                                    <i class="bi bi-browser-safari"></i> Brave (copy link)
+                                </a>
+                            </div>
+                            <p class="text-muted small mt-2 mb-0">
+                                <i class="bi bi-lightbulb"></i> Browser security prevents direct links to extension pages.
+                                Click a button above to copy the URL, then paste it in a new tab.
+                            </p>
+                        </li>
+                        <li class="mb-3">
+                            <strong>Enable Developer Mode</strong>
+                            <p class="text-muted mb-1">Toggle the "Developer mode" switch in the top-right corner of the extensions page.</p>
+                        </li>
+                        <li class="mb-3">
+                            <strong>Load the extension</strong>
+                            <p class="text-muted mb-1">
+                                Click <strong>"Load unpacked"</strong> and select the extension folder:
+                            </p>
+                            <div class="bg-light p-2 rounded">
+                                <code>@GetExtensionPath()</code>
+                            </div>
+                        </li>
+                        <li class="mb-3">
+                            <strong>Pin the extension (optional)</strong>
+                            <p class="text-muted mb-1">
+                                Click the puzzle icon in your browser toolbar and pin the extension for easy access to its popup.
+                            </p>
+                        </li>
+                        <li class="mb-3">
+                            <strong>Repeat for other extensions</strong>
+                            <p class="text-muted mb-1">
+                                You can install multiple extensions. Each one works on its respective job site.
+                            </p>
+                        </li>
+                    </ol>
+                </div>
+            </div>
+
+            <!-- Extension-specific details -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-info-circle"></i> @GetExtensionTitle() Details</h5>
+                </div>
+                <div class="card-body">
+                    @if (selectedExtension == "linkedin")
+                    {
+                        <h6>Supported Pages</h6>
+                        <ul>
+                            <li><code>linkedin.com/jobs/*</code> - Job search results and recommendations</li>
+                            <li><code>linkedin.com/jobs/view/*</code> - Individual job detail pages</li>
+                            <li><code>linkedin.com/jobs/collections/*</code> - Saved jobs and collections</li>
+                        </ul>
+                        <h6>Features</h6>
+                        <ul>
+                            <li>Automatically extracts job cards as you scroll</li>
+                            <li>Captures full job descriptions when you click on a job</li>
+                            <li>Detects remote work status from job tags</li>
+                            <li>Configurable server URL in popup</li>
+                        </ul>
+                        <h6>Console Commands</h6>
+                        <ul class="mb-0">
+                            <li><code>LJE.debug()</code> - Show diagnostic information</li>
+                            <li><code>LJE.getDesc()</code> - Manually extract current job description</li>
+                        </ul>
+                    }
+                    else if (selectedExtension == "indeed")
+                    {
+                        <h6>Supported Pages</h6>
+                        <ul>
+                            <li><code>uk.indeed.com/jobs</code> - Job search results</li>
+                            <li><code>uk.indeed.com/viewjob</code> - Individual job detail pages</li>
+                        </ul>
+                        <h6>Features</h6>
+                        <ul>
+                            <li>Extracts job cards from search results</li>
+                            <li>Captures full descriptions from detail pages</li>
+                            <li>Parses salary information when available</li>
+                            <li>Configurable server URL and auto-fetch delay in popup</li>
+                        </ul>
+                        <h6>Console Commands</h6>
+                        <ul class="mb-0">
+                            <li><code>INDEED.debug()</code> - Show diagnostic information</li>
+                            <li><code>INDEED.getDesc()</code> - Manually extract current job description</li>
+                        </ul>
+                    }
+                    else if (selectedExtension == "s1jobs")
+                    {
+                        <h6>Supported Pages</h6>
+                        <ul>
+                            <li><code>s1jobs.com/jobs/*</code> - Job search results</li>
+                            <li><code>s1jobs.com/job/*</code> - Individual job detail pages</li>
+                        </ul>
+                        <h6>Features</h6>
+                        <ul>
+                            <li>Extracts job listings from search results</li>
+                            <li>Captures detailed job descriptions</li>
+                            <li>Parses Scottish location data</li>
+                            <li>Configurable server URL in popup</li>
+                        </ul>
+                        <h6>Console Commands</h6>
+                        <ul class="mb-0">
+                            <li><code>S1.debug()</code> - Show diagnostic information</li>
+                            <li><code>S1.getDesc()</code> - Manually extract current job description</li>
+                        </ul>
+                    }
+                    else if (selectedExtension == "wttj")
+                    {
+                        <h6>Supported Pages</h6>
+                        <ul>
+                            <li><code>welcometothejungle.com/*/jobs</code> - Job listings</li>
+                            <li><code>welcometothejungle.com/*/companies/*/jobs/*</code> - Company job pages</li>
+                            <li><code>app.welcometothejungle.com/jobs/*</code> - Otta-style job pages</li>
+                        </ul>
+                        <h6>Features</h6>
+                        <ul>
+                            <li>Works on both WTTJ and Otta-branded pages</li>
+                            <li>Extracts job cards from search/listing pages</li>
+                            <li>Captures full descriptions with fallback selectors</li>
+                            <li>Parses remote work status and salary when available</li>
+                            <li>Configurable server URL in popup</li>
+                        </ul>
+                        <h6>Console Commands</h6>
+                        <ul class="mb-0">
+                            <li><code>WTTJ.debug()</code> - Show diagnostic information</li>
+                            <li><code>WTTJ.getDesc()</code> - Manually extract current job description</li>
+                        </ul>
+                    }
+                    else if (selectedExtension == "energyjobsearch")
+                    {
+                        <h6>Supported Pages</h6>
+                        <ul>
+                            <li><code>energyjobsearch.com/jobs</code> - Job search results</li>
+                            <li><code>energyjobsearch.com/jobs/*</code> - Individual job detail pages</li>
+                        </ul>
+                        <h6>Features</h6>
+                        <ul>
+                            <li>Extracts job listings from search results (React SPA)</li>
+                            <li>Captures full descriptions via JSON-LD structured data</li>
+                            <li>Crawl function with automatic pagination</li>
+                            <li>Availability checking for expired listings</li>
+                            <li>Configurable server URL in popup</li>
+                        </ul>
+                        <h6>Console Commands</h6>
+                        <ul class="mb-0">
+                            <li><code>EJS.debug()</code> - Show diagnostic information</li>
+                            <li><code>EJS.help()</code> - Show all available commands</li>
+                        </ul>
+                    }
+                </div>
+            </div>
+
+            <!-- Configuration -->
+            <div class="card mb-4">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0"><i class="bi bi-key"></i> Authentication Setup (Required)</h5>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-warning mb-3">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        <strong>Important:</strong> You must configure your API key in each extension for it to work!
+                    </div>
+                    
+                    <h6>Step 1: Get Your User ID</h6>
+                    <p>Go to the <a href="/settings" class="fw-bold">Settings page</a> and copy your User ID (API Key).</p>
+                    
+                    <h6>Step 2: Configure Each Extension</h6>
+                    <ol>
+                        <li>Click the extension icon in your browser toolbar</li>
+                        <li>Find the <strong>"API Key (User ID)"</strong> field</li>
+                        <li>Paste your User ID</li>
+                        <li>The extension will save it automatically</li>
+                        <li>The connection status should show "Connected" with a green dot</li>
+                    </ol>
+                    
+                    <div class="alert alert-info mb-0">
+                        <i class="bi bi-info-circle me-2"></i>
+                        Without the API key, all requests will fail with authentication errors.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Configuration -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-gear"></i> Server Configuration</h5>
+                </div>
+                <div class="card-body">
+                    <p>All extensions connect to this application. The server URL can be configured in each extension's popup:</p>
+                    <pre class="bg-light p-2 rounded"><code>@Navigation.BaseUri.TrimEnd('/')</code></pre>
+                    <p class="mb-0">Click the extension icon in your browser toolbar to open the popup and change settings. Each extension stores its configuration independently.</p>
+                </div>
+            </div>
+
+            <!-- How to Use -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-play-circle"></i> How to Use</h5>
+                </div>
+                <div class="card-body">
+                    <ol class="mb-0">
+                        <li class="mb-2">
+                            <strong>Make sure this application is running</strong>
+                            <p class="text-muted mb-1">The extensions send job data to this app, so it needs to be running.</p>
+                        </li>
+                        <li class="mb-2">
+                            <strong>Navigate to a supported job site</strong>
+                            <div class="d-flex gap-2 flex-wrap mt-2 mb-2">
+                                <a href="https://www.linkedin.com/jobs/" target="_blank" class="btn btn-outline-primary btn-sm">
+                                    <i class="bi bi-linkedin"></i> LinkedIn Jobs
+                                </a>
+                                <a href="https://uk.indeed.com/jobs" target="_blank" class="btn btn-outline-info btn-sm">
+                                    <i class="bi bi-briefcase"></i> Indeed UK
+                                </a>
+                                <a href="https://www.s1jobs.com/jobs/" target="_blank" class="btn btn-outline-success btn-sm">
+                                    <i class="bi bi-geo-alt"></i> S1Jobs
+                                </a>
+                                <a href="https://www.welcometothejungle.com/en/jobs" target="_blank" class="btn btn-outline-warning btn-sm">
+                                    <i class="bi bi-tree"></i> WTTJ
+                                </a>
+                                <a href="https://energyjobsearch.com/jobs?title=.net" target="_blank" class="btn btn-outline-warning btn-sm" style="border-color: #FF6B00; color: #FF6B00;">
+                                    <i class="bi bi-lightning-charge"></i> EnergyJobSearch
+                                </a>
+                            </div>
+                        </li>
+                        <li class="mb-2">
+                            <strong>Jobs are captured automatically</strong>
+                            <p class="text-muted mb-1">
+                                As you scroll through job listings, the extension extracts them and sends them to this app.
+                                You'll see an indicator showing capture progress.
+                            </p>
+                        </li>
+                        <li class="mb-2">
+                            <strong>Click on jobs to capture descriptions</strong>
+                            <p class="text-muted mb-1">
+                                When you click on a job to view its details, the full description is captured and sent.
+                            </p>
+                        </li>
+                    </ol>
+                </div>
+            </div>
+
+            <!-- Verify Installation -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-check-circle"></i> Verify Installation</h5>
+                </div>
+                <div class="card-body">
+                    <p>After installing an extension:</p>
+                    <ol>
+                        <li>Go to the corresponding job site</li>
+                        <li>Look for a status indicator or check the extension popup</li>
+                        <li>Browse some job listings - jobs should appear in the popup counter</li>
+                        <li>Return to this app and refresh - you should see the jobs appear</li>
+                    </ol>
+                    <a href="/" class="btn btn-primary">
+                        <i class="bi bi-arrow-clockwise"></i> Check Job Listings
+                    </a>
+                </div>
+            </div>
+
+            <!-- Troubleshooting -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-bug"></i> Troubleshooting</h5>
+                </div>
+                <div class="card-body">
+                    <h6>Extension not showing on job site?</h6>
+                    <ul>
+                        <li>Make sure you loaded the extension in developer mode</li>
+                        <li>Try refreshing the job site page</li>
+                        <li>Check that the extension is enabled in your browser's extension settings</li>
+                        <li>Verify you're on a supported page for that extension</li>
+                    </ul>
+
+                    <h6>Extension not sending jobs?</h6>
+                    <ul>
+                        <li>Make sure this application is running on <code>@Navigation.BaseUri.TrimEnd('/')</code></li>
+                        <li>Open the extension popup and check the connection status</li>
+                        <li>Check the browser console (F12 > Console) for error messages</li>
+                        <li>Try the debug command for the extension (e.g., <code>LJE.debug()</code>)</li>
+                    </ul>
+
+                    <h6>CORS errors?</h6>
+                    <p class="text-muted mb-0">
+                        The application is configured to allow requests from all origins. If you still see CORS errors,
+                        check that the CORS policy in <code>Program.cs</code> is correctly configured.
+                    </p>
+                </div>
+            </div>
+
+            <!-- All Extension Paths Reference -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-folder"></i> Extension Folder Paths</h5>
+                </div>
+                <div class="card-body">
+                    <table class="table table-sm mb-0">
+                        <thead>
+                            <tr>
+                                <th>Extension</th>
+                                <th>Folder Path</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><i class="bi bi-linkedin text-primary"></i> LinkedIn</td>
+                                <td><code>@GetBasePath()\BrowserExtension</code></td>
+                            </tr>
+                            <tr>
+                                <td><i class="bi bi-briefcase text-info"></i> Indeed</td>
+                                <td><code>@GetBasePath()\IndeedExtension</code></td>
+                            </tr>
+                            <tr>
+                                <td><i class="bi bi-geo-alt text-success"></i> S1Jobs</td>
+                                <td><code>@GetBasePath()\S1JobsExtension</code></td>
+                            </tr>
+                            <tr>
+                                <td><i class="bi bi-tree text-warning"></i> WTTJ</td>
+                                <td><code>@GetBasePath()\WTTJExtension</code></td>
+                            </tr>
+                            <tr>
+                                <td><i class="bi bi-lightning-charge" style="color: #FF6B00;"></i> EnergyJobSearch</td>
+                                <td><code>@GetBasePath()\EnergyJobSearchExtension</code></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="text-center">
+                <a href="/" class="btn btn-primary">
+                    <i class="bi bi-arrow-left"></i> Back to Job Listings
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string selectedExtension = "linkedin";
+
+    private void SelectLinkedIn() => selectedExtension = "linkedin";
+    private void SelectIndeed() => selectedExtension = "indeed";
+    private void SelectS1Jobs() => selectedExtension = "s1jobs";
+    private void SelectWttj() => selectedExtension = "wttj";
+    private void SelectEnergyJobSearch() => selectedExtension = "energyjobsearch";
+
+    private string GetBasePath()
+    {
+        return Environment.CurrentDirectory;
+    }
+
+    private string GetExtensionPath()
+    {
+        return selectedExtension switch
+        {
+            "linkedin" => System.IO.Path.Combine(GetBasePath(), "BrowserExtension"),
+            "indeed" => System.IO.Path.Combine(GetBasePath(), "IndeedExtension"),
+            "s1jobs" => System.IO.Path.Combine(GetBasePath(), "S1JobsExtension"),
+            "wttj" => System.IO.Path.Combine(GetBasePath(), "WTTJExtension"),
+            "energyjobsearch" => System.IO.Path.Combine(GetBasePath(), "EnergyJobSearchExtension"),
+            _ => System.IO.Path.Combine(GetBasePath(), "BrowserExtension")
+        };
+    }
+
+    private string GetExtensionTitle()
+    {
+        return selectedExtension switch
+        {
+            "linkedin" => "LinkedIn Extension",
+            "indeed" => "Indeed Extension",
+            "s1jobs" => "S1Jobs Extension",
+            "wttj" => "WTTJ Extension",
+            "energyjobsearch" => "EnergyJobSearch Extension",
+            _ => "Extension"
+        };
+    }
+}

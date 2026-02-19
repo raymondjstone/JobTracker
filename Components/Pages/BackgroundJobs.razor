@@ -1,0 +1,201 @@
+@page "/background-jobs"
+@using JobTracker.Services
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject IConfiguration Configuration
+@implements IDisposable
+@rendermode InteractiveServer
+
+<PageTitle>Background Jobs</PageTitle>
+
+<h3>Background Jobs</h3>
+
+@if (!Configuration.GetValue<bool>("LocalMode"))
+{
+    <p>Background jobs are managed by Hangfire in SQL Server mode. Visit <a href="/hangfire">/hangfire</a> for the dashboard.</p>
+}
+else if (_service == null)
+{
+    <p>Background service not available.</p>
+}
+else
+{
+    <div class="mb-3 text-muted">
+        Service started: @(_service.StartedAt?.ToString("g") ?? "Not started")
+        &mdash; Auto-refreshes every 10 seconds
+    </div>
+
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th>Job</th>
+                <th>Enabled</th>
+                <th>Status</th>
+                <th>Last Run</th>
+                <th>Duration</th>
+                <th>Next Run</th>
+                <th>Interval (hours)</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var (key, status) in _service.JobStatuses)
+            {
+                <tr class="@(!status.Enabled ? "opacity-50" : "")">
+                    <td title="@GetJobDescription(key)">@status.Name <i class="bi bi-info-circle text-muted" style="font-size: 0.8rem;"></i></td>
+                    <td>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" checked="@status.Enabled"
+                                @onchange="e => ToggleEnabled(key, (bool)(e.Value ?? false))" />
+                        </div>
+                    </td>
+                    <td>
+                        @if (!status.Enabled)
+                        {
+                            <span class="badge bg-secondary">Disabled</span>
+                        }
+                        else if (status.IsRunning)
+                        {
+                            <span class="badge bg-primary">Running</span>
+                        }
+                        else if (status.LastError != null)
+                        {
+                            <span class="badge bg-danger" title="@status.LastError">Error</span>
+                        }
+                        else if (status.LastRun.HasValue)
+                        {
+                            <span class="badge bg-success">OK</span>
+                        }
+                        else
+                        {
+                            <span class="badge bg-secondary">Pending</span>
+                        }
+                    </td>
+                    <td>
+                        @if (status.LastRun.HasValue)
+                        {
+                            @status.LastRun.Value.ToString("g")
+                            <span class="text-muted">(@FormatTimeAgo(status.LastRun.Value))</span>
+                        }
+                        else
+                        {
+                            <span class="text-muted">Never</span>
+                        }
+                    </td>
+                    <td>
+                        @if (status.LastDuration.HasValue)
+                        {
+                            @FormatDuration(status.LastDuration.Value)
+                        }
+                    </td>
+                    <td>
+                        @if (status.IsRunning)
+                        {
+                            <span class="text-muted">Running now...</span>
+                        }
+                        else if (status.NextRun.HasValue)
+                        {
+                            @status.NextRun.Value.ToString("g")
+                            <span class="text-muted">(@FormatTimeUntil(status.NextRun.Value))</span>
+                        }
+                        else if (!status.Enabled)
+                        {
+                            <span class="text-muted">&mdash;</span>
+                        }
+                        else
+                        {
+                            <span class="text-muted">After startup delay</span>
+                        }
+                    </td>
+                    <td>
+                        <input type="number" class="form-control form-control-sm" style="width: 80px"
+                            value="@status.Interval.TotalHours"
+                            step="0.5" min="0.1"
+                            @onchange="e => ChangeInterval(key, e.Value)" />
+                    </td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary"
+                            disabled="@status.IsRunning"
+                            @onclick="() => _service!.RunNow(key)">
+                            Run Now
+                        </button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    @foreach (var errJob in _service.JobStatuses.Values.Where(s => s.LastError != null))
+    {
+        <div class="alert alert-danger mt-3">
+            <strong>Last error in @errJob.Name:</strong> @errJob.LastError
+        </div>
+    }
+}
+
+@code {
+    [Inject] private IServiceProvider ServiceProvider { get; set; } = default!;
+    private LocalBackgroundService? _service;
+    private Timer? _refreshTimer;
+
+    protected override void OnInitialized()
+    {
+        var hostedServices = ServiceProvider.GetServices<Microsoft.Extensions.Hosting.IHostedService>();
+        _service = hostedServices.OfType<LocalBackgroundService>().FirstOrDefault();
+
+        _refreshTimer = new Timer(_ => InvokeAsync(StateHasChanged), null, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
+    }
+
+    private void ToggleEnabled(string key, bool enabled)
+    {
+        _service?.SetEnabled(key, enabled);
+    }
+
+    private void ChangeInterval(string key, object? value)
+    {
+        if (value != null && double.TryParse(value.ToString(), out var hours) && hours >= 0.1)
+        {
+            _service?.SetInterval(key, TimeSpan.FromHours(hours));
+        }
+    }
+
+    private static string GetJobDescription(string key) => key switch
+    {
+        "AvailabilityCheck-NotChecked" => "Visits LinkedIn job URLs for listings not yet checked to detect if the posting has been closed or removed.",
+        "AvailabilityCheck-Possible" => "Re-checks LinkedIn job URLs for listings previously marked as available to detect if they have since been closed.",
+        "GhostedCheck" => "Marks applied jobs as 'Ghosted' if no status change has occurred within 7 days of applying.",
+        "JobCrawl" => "Searches LinkedIn for new job listings matching your saved search queries and adds them automatically.",
+        _ => ""
+    };
+
+    private static string FormatTimeAgo(DateTime time)
+    {
+        var ago = DateTime.Now - time;
+        if (ago.TotalSeconds < 60) return $"{(int)ago.TotalSeconds}s ago";
+        if (ago.TotalMinutes < 60) return $"{(int)ago.TotalMinutes}m ago";
+        if (ago.TotalHours < 24) return $"{(int)ago.TotalHours}h {ago.Minutes}m ago";
+        return $"{(int)ago.TotalDays}d ago";
+    }
+
+    private static string FormatTimeUntil(DateTime time)
+    {
+        var until = time - DateTime.Now;
+        if (until.TotalSeconds <= 0) return "due now";
+        if (until.TotalMinutes < 60) return $"in {(int)until.TotalMinutes}m";
+        if (until.TotalHours < 24) return $"in {(int)until.TotalHours}h {until.Minutes}m";
+        return $"in {(int)until.TotalDays}d";
+    }
+
+    private static string FormatDuration(TimeSpan duration)
+    {
+        if (duration.TotalSeconds < 1) return $"{duration.TotalMilliseconds:0}ms";
+        if (duration.TotalMinutes < 1) return $"{duration.TotalSeconds:0.0}s";
+        if (duration.TotalHours < 1) return $"{(int)duration.TotalMinutes}m {duration.Seconds}s";
+        return $"{(int)duration.TotalHours}h";
+    }
+
+    public void Dispose()
+    {
+        _refreshTimer?.Dispose();
+    }
+}

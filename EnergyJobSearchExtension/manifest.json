@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "EnergyJobSearch Extractor",
+  "version": "1.0.1",
+  "description": "Automatically extract job listings from EnergyJobSearch.com and send them to your Job Tracker app",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://energyjobsearch.com/*",
+    "https://www.energyjobsearch.com/*",
+    "https://localhost/*"
+  ],
+  "icons": {
+    "16": "icons/icon16.svg",
+    "32": "icons/icon32.svg",
+    "48": "icons/icon48.svg",
+    "128": "icons/icon128.svg"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "EnergyJobSearch Extractor",
+    "default_icon": {
+      "16": "icons/icon16.svg",
+      "32": "icons/icon32.svg",
+      "48": "icons/icon48.svg"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://energyjobsearch.com/*",
+        "https://www.energyjobsearch.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ]
+}

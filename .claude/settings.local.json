@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd source site filter and auto-fix unknown sources from URLs\n\n- Add Source filter dropdown to the UI \\(LinkedIn, Indeed, S1Jobs\\)\n- Add FixUnknownSources\\(\\) method to infer source from job URL\n- Auto-fix unknown sources on app startup\n- Auto-infer source when adding new jobs\n- Add API endpoint POST /api/jobs/fix-sources\n- Improve LinkedIn auto-fetch filter to check Source property\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push)",
+      "Bash(dotnet build:*)",
+      "WebFetch(domain:app.welcometothejungle.com)",
+      "WebFetch(domain:www.welcometothejungle.com)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd Welcome to the Jungle \\(WTTJ\\) browser extension and support\n\n- Create WTTJExtension browser extension for extracting jobs\n- Add WTTJ to source filter dropdown in UI\n- Add WTTJ button to header with yellow brand color\n- Add WTTJ icon and display name support\n- Update URL normalization to handle WTTJ job URLs\n- Add WTTJ to InferSourceFromUrl method\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd missing descriptions breakdown by source site\n\n- Add NeedingDescriptionBySource dictionary to JobStats\n- Update GetStats\\(\\) to calculate breakdown per source\n- Display breakdown in stats banner with source icons\n- Add CSS styling for source-specific breakdown items\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "WebFetch(domain:www.s1jobs.com)",
+      "WebFetch(domain:www.linkedin.com)",
+      "Bash(Select-String -NotMatch \"MSB3026|MSB3027|MSB3021\")",
+      "Bash(npx playwright:*)",
+      "Bash(node:*)",
+      "Bash(findstr:*)",
+      "Bash(Select-String \"error\")",
+      "Bash(Select-String -NotMatch \"MSB302\")",
+      "Bash(dir:*)",
+      "Bash(dotnet restore:*)",
+      "Bash(git commit:*)",
+      "Bash(curl:*)",
+      "WebSearch",
+      "WebFetch(domain:en.blog.mantiks.io)",
+      "WebFetch(domain:energyjobsearch.com)",
+      "WebFetch(domain:oilandgasjobsearch.com)",
+      "WebFetch(domain:webcache.googleusercontent.com)"
+    ]
+  }
+}

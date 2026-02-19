@@ -1,0 +1,149 @@
+@page "/two-factor-verify"
+@layout AuthLayout
+@using JobTracker.Services
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Authentication.Cookies
+@inject AuthService AuthService
+@inject NavigationManager Navigation
+@inject IHttpContextAccessor HttpContextAccessor
+@rendermode InteractiveServer
+
+<PageTitle>Verify Identity - Job Tracker</PageTitle>
+
+<div class="auth-form">
+    <h2 style="text-align: center; margin-bottom: 24px;">Two-Factor Authentication</h2>
+
+    <p style="color: #666; text-align: center; margin-bottom: 20px;">
+        Enter the 6-digit code from your authenticator app.
+    </p>
+
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="alert alert-danger">@errorMessage</div>
+    }
+
+    <EditForm Model="model" OnValidSubmit="HandleVerify" FormName="verify-2fa">
+        <div class="form-group" style="text-align: center;">
+            <InputText @bind-Value="model.Code" class="form-control text-center"
+                       style="font-size: 1.8rem; letter-spacing: 0.8rem; max-width: 200px; margin: 0 auto;"
+                       placeholder="000000" maxlength="6" />
+        </div>
+
+        <button type="submit" class="btn btn-primary" disabled="@isLoading" style="margin-top: 20px;">
+            @if (isLoading)
+            {
+                <span>Verifying...</span>
+            }
+            else
+            {
+                <span>Verify</span>
+            }
+        </button>
+    </EditForm>
+
+    <div class="auth-links" style="margin-top: 30px;">
+        <a href="/logout">Sign in with a different account</a>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromForm]
+    private VerifyModel model { get; set; } = new();
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    private string? errorMessage;
+    private bool isLoading;
+
+    protected override void OnInitialized()
+    {
+        var context = HttpContextAccessor.HttpContext;
+        if (context?.User?.Identity?.IsAuthenticated != true)
+        {
+            // Not logged in at all - redirect to login
+            Navigation.NavigateTo("/login", forceLoad: true);
+            return;
+        }
+
+        // Check if already 2FA verified
+        if (AuthService.IsTwoFactorVerified(context.User))
+        {
+            Navigation.NavigateTo(ReturnUrl ?? "/", forceLoad: true);
+        }
+    }
+
+    private async Task HandleVerify()
+    {
+        isLoading = true;
+        errorMessage = null;
+
+        try
+        {
+            var context = HttpContextAccessor.HttpContext;
+            if (context == null)
+            {
+                errorMessage = "Session expired. Please sign in again.";
+                return;
+            }
+
+            var userId = AuthService.GetUserId(context.User);
+            if (!userId.HasValue)
+            {
+                Navigation.NavigateTo("/login", forceLoad: true);
+                return;
+            }
+
+            // Remove spaces from code
+            var code = model.Code?.Replace(" ", "") ?? "";
+
+            if (code.Length != 6 || !code.All(char.IsDigit))
+            {
+                errorMessage = "Please enter a valid 6-digit code.";
+                return;
+            }
+
+            // Validate the TOTP code
+            if (!AuthService.ValidateTwoFactorCode(userId.Value, code))
+            {
+                errorMessage = "Invalid code. Please try again.";
+                return;
+            }
+
+            // Get user and sign in with full 2FA verification
+            var user = AuthService.GetUserById(userId.Value);
+            if (user == null)
+            {
+                Navigation.NavigateTo("/login", forceLoad: true);
+                return;
+            }
+
+            // Sign out current partial session
+            await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+
+            // Sign in with full 2FA verification
+            var principal = AuthService.CreateClaimsPrincipal(user, twoFactorVerified: true);
+            await context.SignInAsync(
+                CookieAuthenticationDefaults.AuthenticationScheme,
+                principal,
+                new AuthenticationProperties
+                {
+                    IsPersistent = true,
+                    ExpiresUtc = DateTimeOffset.UtcNow.AddDays(30)
+                });
+
+            AuthService.RecordLogin(user);
+
+            Navigation.NavigateTo(ReturnUrl ?? "/", forceLoad: true);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private class VerifyModel
+    {
+        public string Code { get; set; } = string.Empty;
+    }
+}

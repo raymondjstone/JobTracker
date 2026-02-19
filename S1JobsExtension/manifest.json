@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "S1Jobs Extractor",
+  "version": "1.0.4",
+  "description": "Automatically extract job listings from S1Jobs.com and send them to your Job Tracker app",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://www.s1jobs.com/*",
+    "https://s1jobs.com/*",
+    "https://localhost/*"
+  ],
+  "icons": {
+    "16": "icons/icon16.svg",
+    "32": "icons/icon32.svg",
+    "48": "icons/icon48.svg",
+    "128": "icons/icon128.svg"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "S1Jobs Extractor",
+    "default_icon": {
+      "16": "icons/icon16.svg",
+      "32": "icons/icon32.svg",
+      "48": "icons/icon48.svg"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.s1jobs.com/*",
+        "https://s1jobs.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ]
+}

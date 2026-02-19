@@ -1,0 +1,182 @@
+@page "/about"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject NavigationManager Navigation
+
+<PageTitle>About - Job Tracker</PageTitle>
+
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h1 class="h3 mb-0"><i class="bi bi-info-circle"></i> About Job Tracker</h1>
+                </div>
+                <div class="card-body">
+                    <h4>What is Job Tracker?</h4>
+                    <p>
+                        Job Tracker is a comprehensive job search management application that helps you organize, track, 
+                        and analyze your job applications across multiple job boards. With browser extensions for major 
+                        job sites and powerful filtering capabilities, you can streamline your entire job search process.
+                    </p>
+
+                    <h4>Core Features</h4>
+                    <ul>
+                        <li><strong>Multi-Platform Support</strong> - Browser extensions for LinkedIn, Indeed, S1Jobs, Welcome to the Jungle, and EnergyJobSearch</li>
+                        <li><strong>Automatic Job Extraction</strong> - Capture job listings with one click from supported job sites</li>
+                        <li><strong>Smart Rules Engine</strong> - Automatically classify jobs based on custom rules you define</li>
+                        <li><strong>Application Tracking</strong> - Monitor your application status through multiple stages (Applied, Pending, Interview, Offer, etc.)</li>
+                        <li><strong>Interest & Suitability Ratings</strong> - Mark jobs by interest level and suitability to focus on the best opportunities</li>
+                        <li><strong>Advanced Filtering & Search</strong> - Filter by title, company, location, salary, remote status, and more</li>
+                        <li><strong>Job Description Auto-Fetch</strong> - Automatically capture full job descriptions when you visit job pages</li>
+                        <li><strong>Activity History</strong> - Complete audit trail of all changes and actions on your job listings</li>
+                        <li><strong>Manual Entry Support</strong> - Add jobs manually for sites without extensions</li>
+                        <li><strong>Skills Tracking</strong> - Track required skills across different job listings</li>
+                        <li><strong>WhatsApp Sharing</strong> - Quickly share job opportunities via WhatsApp</li>
+                        <li><strong>Multi-User Support</strong> - Secure authentication with separate data for each user</li>
+                    </ul>
+
+                    <h4>Supported Job Sites</h4>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <div class="d-flex align-items-center mb-2">
+                                <i class="bi bi-linkedin text-primary me-2" style="font-size: 1.5rem;"></i>
+                                <strong>LinkedIn</strong> - Full job extraction and auto-fetch support
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="d-flex align-items-center mb-2">
+                                <i class="bi bi-search text-info me-2" style="font-size: 1.5rem;"></i>
+                                <strong>Indeed</strong> - Complete job listing capture
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="d-flex align-items-center mb-2">
+                                <i class="bi bi-briefcase-fill me-2" style="font-size: 1.5rem; color: #0072CE;"></i>
+                                <strong>S1Jobs</strong> - UK-focused job site integration
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="d-flex align-items-center mb-2">
+                                <i class="bi bi-tree me-2" style="font-size: 1.5rem; color: #FFCD00;"></i>
+                                <strong>Welcome to the Jungle</strong> - European tech jobs
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="d-flex align-items-center mb-2">
+                                <i class="bi bi-lightning-fill me-2" style="font-size: 1.5rem; color: #FF6B00;"></i>
+                                <strong>EnergyJobSearch</strong> - Energy sector job site integration
+                            </div>
+                        </div>
+                    </div>
+                    <div class="alert alert-secondary">
+                        <i class="bi bi-shield-exclamation"></i>
+                        Job Tracker is independent and not affiliated with, endorsed by, or connected to any of the supported job sites.
+                    </div>
+
+                    <h4>Browser Extensions</h4>
+                    <p>
+                        Install browser extensions to seamlessly capture job listings while browsing. Extensions work with 
+                        Chrome, Edge, and other Chromium-based browsers. Visit the <a href="/extension-install">Extensions</a> page
+                        for installation instructions.
+                    </p>
+
+                    <h4>Job Classification</h4>
+                    <p>
+                        Use the powerful rules engine to automatically classify jobs as they're added. Define rules based on 
+                        job title, description, company, location, remote status, and more. Rules can automatically mark jobs 
+                        as interested/not interested, or suitable/unsuitable based on your criteria.
+                    </p>
+
+                    <hr />
+
+                    <h4>Running Locally</h4>
+                    <p>
+                        Job Tracker can run entirely on your local machine without SQL Server using <strong>LocalMode</strong>.
+                        This stores all data as JSON files in the <code>Data</code> folder.
+                    </p>
+                    <ol>
+                        <li>Clone the repository and open a terminal in the project directory</li>
+                        <li>
+                            Set <code>LocalMode</code> to <code>true</code> in <code>appsettings.json</code>:
+                            <pre class="bg-light p-2 mt-1 rounded"><code>"LocalMode": true</code></pre>
+                        </li>
+                        <li>
+                            Run the app:
+                            <pre class="bg-light p-2 mt-1 rounded"><code>dotnet run</code></pre>
+                        </li>
+                        <li>Open <code>@Navigation.BaseUri.TrimEnd('/')</code> in your browser</li>
+                    </ol>
+                    <p>
+                        Background jobs (availability checks, ghosted detection, job crawling) run automatically
+                        and can be managed from the <a href="/background-jobs">Background Jobs</a> page.
+                    </p>
+
+                    <h4>Install as Desktop App</h4>
+                    <p>
+                        You can install Job Tracker as a standalone desktop app directly from your browser &mdash; no
+                        app store or PWA required.
+                    </p>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <strong>Microsoft Edge</strong>
+                            <ol class="mb-0">
+                                <li>Open Job Tracker in Edge</li>
+                                <li>Click the <i class="bi bi-three-dots"></i> menu (top-right)</li>
+                                <li>Select <strong>Apps</strong> &rarr; <strong>Install this site as an app</strong></li>
+                            </ol>
+                        </div>
+                        <div class="col-md-6">
+                            <strong>Google Chrome</strong>
+                            <ol class="mb-0">
+                                <li>Open Job Tracker in Chrome</li>
+                                <li>Click the <i class="bi bi-three-dots-vertical"></i> menu (top-right)</li>
+                                <li>Select <strong>Cast, save, and share</strong> &rarr; <strong>Install page as app</strong></li>
+                            </ol>
+                        </div>
+                    </div>
+                    <p class="text-muted">
+                        This gives you a standalone window without browser tabs or address bar. The app still connects
+                        to the server &mdash; it just runs in its own window.
+                    </p>
+
+                    <hr />
+
+                    <h4>Provided By</h4>
+                    <p>
+                        <strong>Galactic Computing Ltd</strong><br />
+                        <a href="https://www.galcomp.net" target="_blank" rel="noopener noreferrer">
+                            <i class="bi bi-globe"></i> www.galcomp.net
+                        </a>
+                    </p>
+
+                    <h4>Source Code</h4>
+                    <p>
+                        This project is open source. You can find the source code at:<br />
+                        <a href="https://dev.azure.com/galcompnet/Jobs/_git/JobsScrape" target="_blank" rel="noopener noreferrer">
+                            <i class="bi bi-code-slash"></i> Azure DevOps Repository
+                        </a>
+                    </p>
+
+                    <hr />
+
+                    <div class="alert alert-warning">
+                        <h5><i class="bi bi-exclamation-triangle"></i> Disclaimer</h5>
+                        <p class="mb-0">
+                            This software is provided as open source under the terms of its license. 
+                            It is provided <strong>"as is"</strong>, without warranty of any kind, express or implied, 
+                            including but not limited to the warranties of merchantability, fitness for a particular purpose, 
+                            and noninfringement. In no event shall the authors or copyright holders be liable for any claim, 
+                            damages, or other liability, whether in an action of contract, tort, or otherwise, arising from, 
+                            out of, or in connection with the software or the use or other dealings in the software.
+                        </p>
+                    </div>
+
+                    <div class="text-center text-muted mt-4">
+                        <small>&copy; @DateTime.Now.Year Galactic Computing Ltd. All rights reserved.</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

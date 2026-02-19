@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LinkedIn Job Extractor</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      width: 340px;
+      padding: 16px;
+      background: #f3f2ef;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #e0e0e0;
+    }
+
+    .header h1 {
+      font-size: 16px;
+      color: #0a66c2;
+    }
+
+    .logo {
+      width: 32px;
+      height: 32px;
+      background: #0a66c2;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: bold;
+      font-size: 18px;
+    }
+
+    .stats-section {
+      background: linear-gradient(135deg, #0a66c2 0%, #004182 100%);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 12px;
+      color: white;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      text-align: center;
+    }
+
+    .stat-item {
+      background: rgba(255,255,255,0.15);
+      border-radius: 8px;
+      padding: 8px 4px;
+    }
+
+    .stat-value {
+      font-size: 20px;
+      font-weight: bold;
+      display: block;
+    }
+
+    .stat-label {
+      font-size: 9px;
+      opacity: 0.9;
+      text-transform: uppercase;
+    }
+
+    .stat-item.warning {
+      background: rgba(255, 193, 7, 0.3);
+    }
+
+    .section {
+      background: white;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .section h3 {
+      font-size: 13px;
+      color: #333;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .section h3 .icon {
+      font-size: 14px;
+    }
+
+    .section label {
+      display: block;
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 4px;
+    }
+
+    .section input[type="url"],
+    .section input[type="number"],
+    .section select {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+
+    .section input:focus,
+    .section select:focus {
+      outline: none;
+      border-color: #0a66c2;
+    }
+
+    .inline-input {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .inline-input input {
+      width: 70px !important;
+    }
+
+    .inline-input span {
+      font-size: 12px;
+      color: #666;
+    }
+
+    .connection-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      margin-top: 8px;
+      padding: 6px 10px;
+      border-radius: 4px;
+      background: #f8f8f8;
+    }
+
+    .connection-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #ccc;
+    }
+
+    .connection-dot.connected {
+      background: #057642;
+    }
+
+    .connection-dot.disconnected {
+      background: #cc1016;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 10px 16px;
+      border: none;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .btn:last-child {
+      margin-bottom: 0;
+    }
+
+    .btn-primary {
+      background: #0a66c2;
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: #004182;
+    }
+
+    .btn-primary:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+
+    .btn-success {
+      background: #057642;
+      color: white;
+    }
+
+    .btn-success:hover {
+      background: #045e35;
+    }
+
+    .btn-warning {
+      background: #b24020;
+      color: white;
+    }
+
+    .btn-warning:hover {
+      background: #8c3319;
+    }
+
+    .btn-secondary {
+      background: white;
+      color: #0a66c2;
+      border: 1px solid #0a66c2;
+    }
+
+    .btn-secondary:hover {
+      background: #f0f7ff;
+    }
+
+    .btn-danger {
+      background: white;
+      color: #cc1016;
+      border: 1px solid #cc1016;
+      font-size: 12px;
+      padding: 8px;
+    }
+
+    .btn-sm {
+      padding: 6px 12px;
+      font-size: 11px;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn-group .btn {
+      flex: 1;
+      margin-bottom: 0;
+    }
+
+    .status {
+      padding: 10px;
+      border-radius: 4px;
+      font-size: 13px;
+      margin-top: 8px;
+      display: none;
+    }
+
+    .status.show {
+      display: block;
+    }
+
+    .status.success {
+      background: #d4edda;
+      color: #155724;
+    }
+
+    .status.error {
+      background: #f8d7da;
+      color: #721c24;
+    }
+
+    .status.info {
+      background: #cce5ff;
+      color: #004085;
+    }
+
+    .not-on-linkedin {
+      text-align: center;
+      padding: 20px;
+      color: #666;
+    }
+
+    .not-on-linkedin p {
+      margin-bottom: 8px;
+    }
+
+    .instructions {
+      font-size: 12px;
+      color: #666;
+      margin-top: 12px;
+      padding: 10px;
+      background: #fff;
+      border-radius: 4px;
+      text-align: left;
+    }
+
+    .instructions ol {
+      margin-left: 16px;
+    }
+
+    .instructions li {
+      margin-bottom: 4px;
+    }
+
+    .footer {
+      text-align: center;
+      font-size: 10px;
+      color: #888;
+      margin-top: 12px;
+    }
+
+    .autofetch-status {
+      background: #fff3cd;
+      border: 1px solid #ffc107;
+      border-radius: 8px;
+      padding: 10px;
+      margin-bottom: 12px;
+      font-size: 12px;
+    }
+
+    .autofetch-status.active {
+      background: #cce5ff;
+      border-color: #0a66c2;
+    }
+
+    .autofetch-progress {
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+
+    .autofetch-job {
+      font-size: 11px;
+      color: #666;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .delay-warning {
+      background: #fff3cd;
+      border: 1px solid #ffc107;
+      color: #856404;
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      margin-bottom: 10px;
+      line-height: 1.4;
+    }
+
+    .delay-warning.danger {
+      background: #f8d7da;
+      border-color: #f5c6cb;
+      color: #721c24;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <img src="logo.png" alt="Logo" style="width: 40px; height: 40px; border-radius: 6px;" />
+    <div>
+      <h1>LinkedIn Job Extractor</h1>
+      <small style="font-size: 10px; color: #666;">Job Tracker - helping you find a new role</small>
+    </div>
+  </div>
+
+  <div class="stats-section">
+    <div class="stats-grid">
+      <div class="stat-item">
+        <span class="stat-value" id="totalJobs">0</span>
+        <span class="stat-label">Total</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-value" id="appliedCount">0</span>
+        <span class="stat-label">Applied</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-value" id="sessionCount">0</span>
+        <span class="stat-label">Session</span>
+      </div>
+      <div class="stat-item warning" id="needDescItem">
+        <span class="stat-value" id="needDescCount">0</span>
+        <span class="stat-label">Need Desc</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Auto-fetch status (shown when running) -->
+  <div id="autofetchStatus" class="autofetch-status active hidden">
+    <div class="autofetch-progress">
+      <span id="afStatusText">Auto-fetching...</span>
+      <span id="afProgress">0/0</span>
+    </div>
+    <div class="autofetch-job" id="afCurrentJob"></div>
+    <button id="stopAutoFetchBtn" class="btn btn-warning btn-sm" style="margin-top: 8px;">
+      ⏹ Stop Auto-Fetch
+    </button>
+  </div>
+
+  <div class="section">
+    <h3><span class="icon">🔗</span> App Connection</h3>
+    <label for="serverUrl">Blazor App URL</label>
+    <input type="url" id="serverUrl" value="https://localhost:7046" />
+    
+    <label for="apiKey" style="margin-top: 8px;">API Key (User ID)</label>
+    <input type="text" id="apiKey" placeholder="Your user ID from the app" style="font-family: monospace; font-size: 11px;" />
+    
+    <div class="connection-status">
+      <div class="connection-dot" id="connectionDot"></div>
+      <span id="connectionText">Checking...</span>
+      <span id="apiKeyStatus" style="margin-left: auto; font-size: 10px; opacity: 0.7;">Validating...</span>
+    </div>
+  </div>
+
+  <div id="linkedin-content">
+    <div class="section">
+      <h3><span class="icon">📥</span> Extract Jobs</h3>
+      <button id="extractBtn" class="btn btn-primary">
+        🔍 Extract Jobs Now
+      </button>
+      <button id="openLinkedInBtn" class="btn btn-secondary">
+        🔗 Open LinkedIn Jobs
+      </button>
+    </div>
+
+    <div class="section" id="autoFetchSection">
+      <h3><span class="icon">⚡</span> Auto-Fetch Descriptions</h3>
+      <p style="font-size: 11px; color: #666; margin-bottom: 10px;">
+        Automatically visit each job to capture full descriptions.
+      </p>
+      
+      <div class="inline-input" style="margin-bottom: 10px;">
+        <label style="margin: 0;">Delay:</label>
+        <input type="number" id="autoFetchDelay" value="5" min="2" max="60" />
+        <span>seconds between jobs</span>
+      </div>
+      
+      <div id="delayWarning" class="delay-warning hidden">
+        ⚠️ Low delay! LinkedIn may detect and block automated browsing. Use 20+ seconds to be safe.
+      </div>
+      
+      <button id="startAutoFetchBtn" class="btn btn-success">
+        ▶ Start Auto-Fetch
+      </button>
+    </div>
+
+    <div class="section">
+      <h3><span class="icon">🔄</span> Crawl Search Results</h3>
+      <p style="font-size: 11px; color: #666; margin-bottom: 10px;">
+        Paginate through search results and import all jobs found.
+      </p>
+      <button id="startCrawlBtn" class="btn btn-success">
+        ▶ Start Crawl
+      </button>
+      <div id="crawlStatus" class="autofetch-status active hidden">
+        <div class="autofetch-progress">
+          <span id="crawlStatusText">Crawling...</span>
+          <span id="crawlProgress">0/0</span>
+        </div>
+        <button id="stopCrawlBtn" class="btn btn-warning btn-sm" style="margin-top: 8px;">
+          Stop Crawl
+        </button>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3><span class="icon">🛠</span> Tools</h3>
+      <div class="btn-group">
+        <button id="testConnectionBtn" class="btn btn-secondary btn-sm">
+          Test Connection
+        </button>
+        <button id="refreshStatsBtn" class="btn btn-secondary btn-sm">
+          Refresh Stats
+        </button>
+      </div>
+      <button id="openAppBtn" class="btn btn-secondary" style="margin-top: 8px;">
+        📊 Open Job Tracker App
+      </button>
+      <button id="removeDuplicatesBtn" class="btn btn-danger" style="margin-top: 8px;">
+        🧹 Remove Duplicates
+      </button>
+      <button id="checkAvailabilityBtn" class="btn btn-secondary" style="margin-top: 8px;">
+        🔍 Check Job Availability
+      </button>
+      <div id="availabilityResult" class="status"></div>
+    </div>
+
+    <div id="status" class="status"></div>
+  </div>
+
+  <div id="not-linkedin" class="not-on-linkedin" style="display: none;">
+    <p>📍 Not on LinkedIn</p>
+    <div class="instructions">
+      <strong>How to use:</strong>
+      <ol>
+        <li>Make sure your Blazor app is running</li>
+        <li>Go to linkedin.com/jobs</li>
+        <li>Jobs extract automatically</li>
+        <li>Use Auto-Fetch to get descriptions</li>
+      </ol>
+    </div>
+    <button id="goToLinkedInBtn" class="btn btn-primary" style="margin-top: 12px;">
+      🔗 Go to LinkedIn Jobs
+    </button>
+  </div>
+
+  <div class="section" style="background: #e8f4fd;">
+    <h3><span class="icon">🔌</span> Other Job Site Extensions</h3>
+    <div style="font-size: 12px; color: #333;">
+      <ul style="margin: 0; padding-left: 20px;">
+        <li>Indeed Job Extractor</li>
+        <li>S1Jobs Job Extractor</li>
+        <li>WTTJ Job Extractor</li>
+        <li>EnergyJobSearch Job Extractor</li>
+      </ul>
+      <p style="margin: 8px 0 0 0; font-size: 11px; color: #666;">
+        Install from IndeedExtension/, S1JobsExtension/, WTTJExtension/, EnergyJobSearchExtension/
+      </p>
+    </div>
+  </div>
+
+  <div class="footer">
+    Jobs are sent to your Blazor app automatically
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

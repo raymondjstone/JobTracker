@@ -1,0 +1,1640 @@
+@page "/"
+@page "/jobs"
+@using JobTracker.Models
+@using JobTracker.Services
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject JobListingService JobService
+@inject AppSettingsService SettingsService
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+@inject JobAvailabilityService AvailabilityService
+@inject JobCrawlService CrawlService
+@inject CurrentUserService CurrentUser
+@implements IDisposable
+@rendermode InteractiveServer
+
+<PageTitle>Job Listings</PageTitle>
+
+<ExtensionCheck />
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="mb-0">Job Listings</h1>
+    <div class="d-flex gap-2">
+        <button class="btn btn-outline-secondary" @onclick="OpenSettingsModal" title="Configure job site URLs">
+            <i class="bi bi-gear"></i>
+        </button>
+        <a href="@jobSiteUrls.LinkedIn" target="_blank" class="btn btn-primary">
+            <i class="bi bi-linkedin"></i> LinkedIn
+        </a>
+        <a href="@jobSiteUrls.S1Jobs" target="_blank" class="btn btn-s1jobs">
+            <i class="bi bi-briefcase-fill"></i> S1Jobs
+        </a>
+        <a href="@jobSiteUrls.Indeed" target="_blank" class="btn btn-indeed">
+            <i class="bi bi-search"></i> Indeed
+        </a>
+        <a href="@jobSiteUrls.WTTJ" target="_blank" class="btn btn-wttj">
+            <i class="bi bi-tree"></i> WTTJ
+        </a>
+        <a href="@jobSiteUrls.EnergyJobSearch" target="_blank" class="btn btn-energyjobsearch">
+            <i class="bi bi-lightning-charge"></i> EnergyJobSearch
+        </a>
+        <button class="btn btn-outline-info" @onclick="CrawlJobs" disabled="@isCrawling" title="Crawl configured job sites for new listings">
+            @if (isCrawling)
+            {
+                <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                <span>Crawling...</span>
+            }
+            else
+            {
+                <i class="bi bi-cloud-download"></i>
+                <span> Crawl Jobs</span>
+            }
+        </button>
+        <a href="/jobs/add" class="btn btn-success">
+            <i class="bi bi-plus-circle"></i> Add Job Manually
+        </a>
+    </div>
+</div>
+
+@* Stats Banner *@
+<div class="row mb-3">
+    <div class="col-12">
+        <div class="d-flex flex-wrap gap-3 align-items-center p-3 bg-light rounded">
+            <div class="stat-badge">
+                <span class="stat-value">@stats.TotalJobs</span>
+                <span class="stat-label">Total Jobs</span>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat-badge">
+                <span class="stat-value text-primary">@filteredCount</span>
+                <span class="stat-label">In Current Tab</span>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat-badge text-success">
+                <span class="stat-value">@stats.InterestedCount</span>
+                <span class="stat-label">Interested</span>
+            </div>
+            <div class="stat-badge text-danger">
+                <span class="stat-value">@stats.NotInterestedCount</span>
+                <span class="stat-label">Not Interested</span>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat-badge stat-linkedin">
+                <span class="stat-value">@stats.AppliedCount</span>
+                <span class="stat-label">Applied</span>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat-badge">
+                <span class="stat-value">@stats.WithSalaryCount</span>
+                <span class="stat-label">With Salary</span>
+            </div>
+            <div class="stat-badge">
+                <span class="stat-value">@stats.RemoteCount</span>
+                <span class="stat-label">Remote</span>
+            </div>
+            @if (stats.NeedingDescriptionCount > 0)
+            {
+                <div class="stat-divider"></div>
+                <div class="stat-badge text-warning" title="Jobs without full descriptions. Visit them on the job site to capture the description.">
+                    <span class="stat-value">@stats.NeedingDescriptionCount</span>
+                    <span class="stat-label">Need Description</span>
+                </div>
+                @if (stats.NeedingDescriptionBySource.Count > 0)
+                {
+                    <div class="stat-breakdown">
+                        @foreach (var kvp in stats.NeedingDescriptionBySource.OrderByDescending(x => x.Value))
+                        {
+                            <span class="stat-breakdown-item @GetSourceClass(kvp.Key)" title="@kvp.Value @kvp.Key jobs needing description">
+                                @((MarkupString)GetSourceIcon(kvp.Key)) @kvp.Value
+                            </span>
+                        }
+                    </div>
+                }
+            }
+        </div>
+    </div>
+</div>
+
+@* Tabs *@
+<ul class="nav nav-tabs mb-3">
+    <li class="nav-item">
+        <button class="nav-link @(activeTab == TabType.Browse ? "active" : "")" @onclick="() => SetActiveTab(TabType.Browse)">
+            <i class="bi bi-search"></i> Browse Jobs
+            <span class="badge bg-secondary ms-1">@browseJobsCount</span>
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link @(activeTab == TabType.Possible ? "active" : "")" @onclick="() => SetActiveTab(TabType.Possible)">
+            <i class="bi bi-star"></i> Possible
+            <span class="badge bg-success ms-1">@possibleJobsCount</span>
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link @(activeTab == TabType.Applied ? "active" : "")" @onclick="() => SetActiveTab(TabType.Applied)">
+            <i class="bi bi-send"></i> Applied
+            <span class="badge bg-primary ms-1">@appliedJobsCount</span>
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link @(activeTab == TabType.Unsuitable ? "active" : "")" @onclick="() => SetActiveTab(TabType.Unsuitable)">
+            <i class="bi bi-slash-circle"></i> Unsuitable
+            <span class="badge bg-danger ms-1">@unsuitableJobsCount</span>
+        </button>
+    </li>
+</ul>
+
+@* Filters *@
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Filter Jobs</h5>
+                <div class="d-flex gap-2">
+                    @if (lastViewedJobId.HasValue)
+                    {
+                        <button class="btn btn-sm btn-outline-primary" @onclick="ClearLastViewedJob" title="Clear last viewed highlight">
+                            <i class="bi bi-eye-slash"></i> Clear Highlight
+                        </button>
+                    }
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="ClearFilters">Clear All Filters</button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <label class="form-label">Search</label>
+                        <input type="text" class="form-control" placeholder="Search title, description, company..."
+                               @bind="filter.SearchTerm" @bind:event="oninput" @onkeyup="ApplyFilter" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Location</label>
+                        <input type="text" class="form-control" placeholder="Enter location..."
+                               @bind="filter.Location" @bind:event="oninput" @onkeyup="ApplyFilter" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Job Type</label>
+                        <select class="form-select" @bind="selectedJobType" @bind:after="ApplyFilter">
+                            <option value="">All Types</option>
+                            @foreach (var type in Enum.GetValues<JobType>())
+                            {
+                                <option value="@type">@type</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Remote</label>
+                        <select class="form-select" @bind="selectedRemote" @bind:after="ApplyFilter">
+                            <option value="">All</option>
+                            <option value="true">Remote Only</option>
+                            <option value="false">On-site Only</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Interest</label>
+                        <select class="form-select" @bind="selectedInterest" @bind:after="ApplyFilter">
+                            <option value="">All</option>
+                            <option value="Interested">Interested</option>
+                            <option value="NotInterested">Not Interested</option>
+                            <option value="NotRated">Not Rated</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="row g-3 mt-2">
+                    <div class="col-md-2">
+                        <label class="form-label">Source</label>
+                        <select class="form-select" @bind="selectedSource" @bind:after="ApplyFilter">
+                            <option value="">All Sources</option>
+                            <option value="LinkedIn">LinkedIn</option>
+                            <option value="Indeed">Indeed</option>
+                            <option value="S1Jobs">S1Jobs</option>
+                            <option value="WTTJ">WTTJ</option>
+                            <option value="EnergyJobSearch">EnergyJobSearch</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Salary Info</label>
+                        <select class="form-select" @bind="selectedHasSalary" @bind:after="ApplyFilter">
+                            <option value="">All</option>
+                            <option value="true">Has Salary</option>
+                            <option value="false">No Salary Listed</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Title Only</label>
+                        <input type="text" class="form-control" placeholder="Search job title only..."
+                               @bind="filter.TitleOnlySearchTerm" @bind:event="oninput" @onkeyup="ApplyFilter" />
+                    </div>
+                    @if (activeTab == TabType.Applied)
+                    {
+                        <div class="col-md-2">
+                            <label class="form-label">Stage</label>
+                            <select class="form-select" @bind="selectedApplicationStage" @bind:after="ApplyFilter">
+                                <option value="">All Stages</option>
+                                @foreach (var stage in Enum.GetValues<ApplicationStage>().Where(s => s != ApplicationStage.None))
+                                {
+                                    <option value="@stage">@GetStageDisplayName(stage)</option>
+                                }
+                            </select>
+                        </div>
+                    }
+                    <div class="col-md-2">
+                        <label class="form-label">Date From</label>
+                        <input type="date" class="form-control" @bind="filter.DateFrom" @bind:after="ApplyFilter" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Date To</label>
+                        <input type="date" class="form-control" @bind="filter.DateTo" @bind:after="ApplyFilter" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Sort By</label>
+                        <select class="form-select" @bind="filter.SortBy" @bind:after="ApplyFilter">
+                            <option value="@SortOption.DateAddedDesc">Date Added (Newest)</option>
+                            <option value="@SortOption.DateAddedAsc">Date Added (Oldest)</option>
+                            <option value="@SortOption.DatePostedDesc">Date Posted (Newest)</option>
+                            <option value="@SortOption.DatePostedAsc">Date Posted (Oldest)</option>
+                            <option value="@SortOption.TitleAsc">Title (A-Z)</option>
+                            <option value="@SortOption.TitleDesc">Title (Z-A)</option>
+                            <option value="@SortOption.CompanyAsc">Company (A-Z)</option>
+                            <option value="@SortOption.CompanyDesc">Company (Z-A)</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Salary Contains</label>
+                        <input type="text" class="form-control" placeholder="e.g. 100K"
+                               @bind="filter.SalarySearch" @bind:event="oninput" @onkeyup="ApplyFilter" />
+                    </div>
+                </div>
+                <div class="row g-3 mt-2">
+                    <div class="col-md-3">
+                        <button class="btn btn-danger w-100" @onclick="MarkAllFilteredUnsuitable">
+                            <i class="bi bi-slash-circle"></i> Mark All Filtered as Unsuitable
+                        </button>
+                    </div>
+                    <div class="col-md-3">
+                        <button class="btn btn-success w-100" @onclick="MarkAllFilteredPossible">
+                            <i class="bi bi-star"></i> Mark All Filtered as Possible
+                        </button>
+                    </div>
+                    <div class="col-md-3">
+                        <button class="btn btn-info w-100" @onclick="CheckJobAvailability" disabled="@isScanning">
+                            @if (isScanning)
+                            {
+                                <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                                <span>Scanning...</span>
+                            }
+                            else
+                            {
+                                <i class="bi bi-globe-americas"></i>
+                                <span> Check Job Availability</span>
+                            }
+                        </button>
+                    </div>
+                    @if (isScanning)
+                    {
+                        <div class="col-md-3">
+                            <button class="btn btn-outline-danger w-100" @onclick="CancelAvailabilityScan">
+                                <i class="bi bi-x-circle"></i> Cancel Scan
+                            </button>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@* Availability Scan Progress *@
+@if (scanProgress != null)
+{
+    <div class="alert @(scanProgress.IsComplete ? (scanProgress.WasCancelled ? "alert-warning" : "alert-success") : "alert-info") mb-4">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <strong>
+                @if (scanProgress.IsComplete)
+                {
+                    if (scanProgress.WasCancelled)
+                    {
+                        <i class="bi bi-exclamation-triangle"></i>
+                        <span> Scan Cancelled</span>
+                    }
+                    else
+                    {
+                        <i class="bi bi-check-circle"></i>
+                        <span> Scan Complete</span>
+                    }
+                }
+                else
+                {
+                    <span class="spinner-border spinner-border-sm me-1"></span>
+                    <span>Checking: @scanProgress.CurrentJobTitle</span>
+                }
+            </strong>
+            @if (scanProgress.IsComplete)
+            {
+                <button class="btn btn-sm btn-outline-secondary" @onclick="() => scanProgress = null">
+                    <i class="bi bi-x"></i> Dismiss
+                </button>
+            }
+        </div>
+        <div class="progress mb-2" style="height: 20px;">
+            @{
+                var pct = scanProgress.TotalJobs > 0 ? (int)(100.0 * scanProgress.CheckedCount / scanProgress.TotalJobs) : 0;
+            }
+            <div class="progress-bar @(scanProgress.IsComplete ? "bg-success" : "")" role="progressbar" style="width: @(pct)%">
+                @scanProgress.CheckedCount / @scanProgress.TotalJobs
+            </div>
+        </div>
+        <small>
+            <span class="text-danger">
+                <i class="bi bi-slash-circle"></i> @scanProgress.MarkedUnsuitableCount marked unsuitable
+            </span>
+            @if (scanProgress.ErrorCount > 0)
+            {
+                <span class="text-warning ms-3">
+                    <i class="bi bi-exclamation-triangle"></i> @scanProgress.ErrorCount errors (skipped)
+                </span>
+            }
+        </small>
+    </div>
+}
+
+@* Crawl Status *@
+@if (!string.IsNullOrEmpty(crawlStatusMessage))
+{
+    <div class="alert @(crawlStatusIsError ? "alert-warning" : "alert-success") alert-dismissible mb-4">
+        <i class="@(crawlStatusIsError ? "bi bi-exclamation-triangle" : "bi bi-check-circle")"></i>
+        @crawlStatusMessage
+        <button type="button" class="btn-close" @onclick="() => crawlStatusMessage = null"></button>
+    </div>
+}
+
+@* Job Cards *@
+@if (!filteredJobs.Any())
+{
+    <div class="alert alert-info">
+        <h4 class="alert-heading">No job listings found</h4>
+        <p>
+            @if (activeTab == TabType.Browse)
+            {
+                <span>No jobs to browse. Jobs that have been applied to, marked as possible, or unsuitable appear in their respective tabs.</span>
+            }
+            else if (activeTab == TabType.Possible)
+            {
+                <span>No possible jobs yet. Mark jobs as "Possible" to see them here.</span>
+            }
+            else if (activeTab == TabType.Applied)
+            {
+                <span>No applied jobs yet. Mark jobs as "Applied" to see them here.</span>
+            }
+            else
+            {
+                <span>No unsuitable jobs. Mark jobs as "Unsuitable" to move them here.</span>
+            }
+        </p>
+    </div>
+}
+else
+{
+    <div class="row">
+        @foreach (var job in filteredJobs)
+        {
+            <div class="col-md-6 col-lg-4 mb-4" id="job-@job.Id">
+                <div class="card h-100 @GetCardBorderClass(job.Interest) @(lastViewedJobId == job.Id ? "last-viewed-job" : "")">
+                    <div class="card-header d-flex justify-content-between align-items-start clickable-card-area"
+                         @onclick="() => OpenJobInLinkedIn(job)"
+                         title="Click to open job">
+                        <div class="flex-grow-1">
+                            <h5 class="card-title mb-1">
+                                @if (lastViewedJobId == job.Id)
+                                {
+                                    <i class="bi bi-eye-fill text-primary me-1" title="Last viewed"></i>
+                                }
+                                <span class="source-icon me-1" title="@GetSourceDisplayName(job.Source)">@((MarkupString)GetSourceIcon(job.Source))</span>
+                                @job.Title
+                            </h5>
+                            <h6 class="card-subtitle text-muted">@job.Company</h6>
+                        </div>
+                        <span class="badge @GetJobTypeBadgeClass(job.JobType)">@job.JobType</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="clickable-card-area" @onclick="() => OpenJobInLinkedIn(job)" title="Click to open job">
+                            <p class="card-text">
+                                <small class="text-muted">
+                                    <i class="bi bi-geo-alt"></i> @(string.IsNullOrEmpty(job.Location) ? "Not specified" : job.Location)
+                                    @if (job.IsRemote)
+                                    {
+                                        <span class="badge bg-success ms-2">Remote</span>
+                                    }
+                                    @if (job.HasApplied)
+                                    {
+                                        <span class="badge @GetStageBadgeClass(job.ApplicationStage) ms-2" 
+                                              style="cursor: pointer;"
+                                              @onclick="() => CycleStage(job.Id)"
+                                              @onclick:stopPropagation="true"
+                                              title="@GetStageTooltip(job)">
+                                            <i class="@GetStageIcon(job.ApplicationStage)"></i> @GetStageDisplayName(job.ApplicationStage)
+                                        </span>
+                                        @if (GetLastStageChangeDate(job) != null)
+                                        {
+                                            <small class="text-muted ms-1" style="font-size: 0.7rem;">@GetLastStageChangeDate(job)?.ToString("MMM dd")</small>
+                                        }
+                                    }
+                                    @if (job.Suitability != SuitabilityStatus.NotChecked)
+                                    {
+                                        <span class="badge @GetSuitabilityBadgeClass(job.Suitability) ms-2">
+                                            <i class="@GetSuitabilityIcon(job.Suitability)"></i> @GetSuitabilityDisplayName(job.Suitability)
+                                        </span>
+                                    }
+                                </small>
+                            </p>
+                            @if (!string.IsNullOrEmpty(job.Salary))
+                            {
+                                <p class="card-text"><strong class="text-success"><i class="bi bi-currency-dollar"></i> @job.Salary</strong></p>
+                            }
+                            <p class="card-text description-preview">@TruncateDescription(job.Description, 150)</p>
+                        </div>
+                        @if (job.Skills.Any())
+                        {
+                            <div class="mb-2">
+                                @foreach (var skill in job.Skills.Take(3))
+                                {
+                                    <span class="badge bg-secondary me-1">@skill</span>
+                                }
+                                @if (job.Skills.Count > 3)
+                                {
+                                    <span class="badge bg-light text-dark">+@(job.Skills.Count - 3) more</span>
+                                }
+                            </div>
+                        }
+                        
+                        @if (!string.IsNullOrEmpty(job.Description) && job.Description.Length > 150)
+                        {
+                            <button class="btn btn-sm btn-outline-info mb-2" @onclick="() => ShowJobDetails(job)">
+                                <i class="bi bi-eye"></i> View Full Description
+                            </button>
+                        }
+
+                        @if (!string.IsNullOrEmpty(job.Url))
+                        {
+                            <button class="btn btn-sm btn-outline-secondary mb-2 @(!string.IsNullOrEmpty(job.Description) && job.Description.Length > 150 ? "ms-1" : "")"
+                                    @onclick="() => FetchSingleJobDescription(job)"
+                                    disabled="@(fetchingDescriptionJobId == job.Id)"
+                                    title="Fetch latest description from job page">
+                                @if (fetchingDescriptionJobId == job.Id)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                                    <text>Fetching...</text>
+                                }
+                                else
+                                {
+                                    <i class="bi bi-arrow-repeat"></i> <text>Fetch Description</text>
+                                }
+                            </button>
+                        }
+
+                        <div class="interest-buttons mt-3 d-flex gap-1 flex-wrap">
+                            <button class="btn btn-sm @(job.Interest == InterestStatus.Interested ? "btn-success" : "btn-outline-success")" 
+                                    @onclick="() => SetInterest(job.Id, InterestStatus.Interested)" 
+                                    title="Interested">
+                                <i class="bi bi-hand-thumbs-up"></i> Interested
+                            </button>
+                            <button class="btn btn-sm @(job.Interest == InterestStatus.NotInterested ? "btn-danger" : "btn-outline-danger")"
+                                    @onclick="() => SetInterest(job.Id, InterestStatus.NotInterested)"
+                                    title="Not Interested">
+                                <i class="bi bi-hand-thumbs-down"></i> Not Interested
+                            </button>
+                            <button class="btn btn-sm @(job.HasApplied ? "btn-linkedin-applied" : "btn-outline-secondary")"
+                                    @onclick="() => ToggleApplied(job.Id, !job.HasApplied)"
+                                    title="@(job.HasApplied ? "Mark as not applied" : "Mark as applied")">
+                                <i class="bi bi-check-circle"></i> @(job.HasApplied ? "Applied" : "Not Applied")
+                            </button>
+                            @if (job.Interest != InterestStatus.NotRated)
+                            {
+                                <button class="btn btn-sm btn-outline-secondary"
+                                        @onclick="() => SetInterest(job.Id, InterestStatus.NotRated)"
+                                        title="Clear Rating">
+                                    Clear
+                                </button>
+                            }
+                        </div>
+                        
+                        @if (job.HasApplied)
+                        {
+                            <div class="mt-2">
+                                <select class="form-select form-select-sm stage-select" 
+                                        value="@job.ApplicationStage"
+                                        @onchange="@(e => SetStage(job.Id, Enum.Parse<ApplicationStage>(e.Value?.ToString() ?? "Applied")))">
+                                    @foreach (var stage in Enum.GetValues<ApplicationStage>().Where(s => s != ApplicationStage.None))
+                                    {
+                                        <option value="@stage" selected="@(job.ApplicationStage == stage)">@GetStageDisplayName(stage)</option>
+                                    }
+                                </select>
+                            </div>
+                        }
+                        
+                        <div class="mt-2 d-flex gap-1">
+                            <button class="btn btn-sm @(job.Suitability == SuitabilityStatus.NotChecked ? "btn-secondary" : "btn-outline-secondary")"
+                                    @onclick="() => SetSuitability(job.Id, SuitabilityStatus.NotChecked)"
+                                    title="Not Checked">
+                                <i class="bi bi-question-circle"></i>
+                            </button>
+                            <button class="btn btn-sm @(job.Suitability == SuitabilityStatus.Possible ? "btn-suitability-possible" : "btn-outline-success")"
+                                    @onclick="() => SetSuitability(job.Id, SuitabilityStatus.Possible)"
+                                    title="Possible">
+                                <i class="bi bi-star"></i> Possible
+                            </button>
+                            <button class="btn btn-sm @(job.Suitability == SuitabilityStatus.Unsuitable ? "btn-suitability-unsuitable" : "btn-outline-danger")"
+                                    @onclick="() => SetSuitability(job.Id, SuitabilityStatus.Unsuitable)"
+                                    title="Unsuitable">
+                                <i class="bi bi-slash-circle"></i> Unsuitable
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-footer d-flex justify-content-between align-items-center">
+                        <small class="text-muted">
+                            Posted: @job.DatePosted.ToString("MMM dd, yyyy")
+                            <br/>Added: @job.DateAdded.ToString("MMM dd, yyyy")
+                            @if (job.LastChecked.HasValue)
+                            {
+                                <br/>
+                                <span>Checked: @job.LastChecked.Value.ToString("MMM dd, yyyy")</span>
+                            }
+                        </small>
+                        <div class="d-flex gap-1">
+                            <button class="btn btn-sm @(job.SharedToWhatsApp ? "btn-whatsapp-shared" : "btn-outline-success")"
+                                    @onclick="() => ShareToWhatsApp(job)"
+                                    title="@(job.SharedToWhatsApp ? "Shared to WhatsApp - Click to share again" : "Share to WhatsApp")">
+                                <i class="bi bi-whatsapp"></i>
+                            </button>
+                            @if (!string.IsNullOrEmpty(job.Url))
+                            {
+                                <a href="@job.Url" target="_blank" class="btn btn-sm btn-outline-primary" 
+                                   @onclick="() => SetLastViewedJob(job.Id)">View</a>
+                            }
+                            <button class="btn btn-sm btn-outline-danger" @onclick="() => ConfirmDelete(job)">Delete</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@* Job Details Modal *@
+@if (selectedJob != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h5 class="modal-title">
+                            <span class="source-icon me-1" title="@GetSourceDisplayName(selectedJob.Source)">@((MarkupString)GetSourceIcon(selectedJob.Source))</span>
+                            @selectedJob.Title
+                        </h5>
+                        <h6 class="text-muted mb-0">@selectedJob.Company</h6>
+                    </div>
+                    <button type="button" class="btn-close" @onclick="CloseJobDetails"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <span class="badge bg-secondary me-2">
+                            <i class="bi bi-geo-alt"></i> @(string.IsNullOrEmpty(selectedJob.Location) ? "Not specified" : selectedJob.Location)
+                        </span>
+                        @if (selectedJob.IsRemote)
+                        {
+                            <span class="badge bg-success me-2">Remote</span>
+                        }
+                        @if (selectedJob.HasApplied)
+                        {
+                            <span class="badge @GetStageBadgeClass(selectedJob.ApplicationStage) me-2">
+                                <i class="@GetStageIcon(selectedJob.ApplicationStage)"></i> @GetStageDisplayName(selectedJob.ApplicationStage)
+                            </span>
+                        }
+                        @if (selectedJob.Suitability != SuitabilityStatus.NotChecked)
+                        {
+                            <span class="badge @GetSuitabilityBadgeClass(selectedJob.Suitability) me-2">
+                                <i class="@GetSuitabilityIcon(selectedJob.Suitability)"></i> @GetSuitabilityDisplayName(selectedJob.Suitability)
+                            </span>
+                        }
+                        <span class="badge @GetJobTypeBadgeClass(selectedJob.JobType)">@selectedJob.JobType</span>
+                    </div>
+                    
+                    @if (!string.IsNullOrEmpty(selectedJob.Salary))
+                    {
+                        <div class="alert alert-success py-2">
+                            <strong><i class="bi bi-currency-dollar"></i> Salary:</strong> @selectedJob.Salary
+                        </div>
+                    }
+                    
+                    <div class="mb-3">
+                        <label class="form-label"><strong>Suitability:</strong></label>
+                        <div class="d-flex gap-1">
+                            <button class="btn btn-sm @(selectedJob.Suitability == SuitabilityStatus.NotChecked ? "btn-secondary" : "btn-outline-secondary")"
+                                    @onclick="() => SetSuitabilityInModal(selectedJob.Id, SuitabilityStatus.NotChecked)">
+                                <i class="bi bi-question-circle"></i> Not Checked
+                            </button>
+                            <button class="btn btn-sm @(selectedJob.Suitability == SuitabilityStatus.Possible ? "btn-suitability-possible" : "btn-outline-success")"
+                                    @onclick="() => SetSuitabilityInModal(selectedJob.Id, SuitabilityStatus.Possible)">
+                                <i class="bi bi-star"></i> Possible
+                            </button>
+                            <button class="btn btn-sm @(selectedJob.Suitability == SuitabilityStatus.Unsuitable ? "btn-suitability-unsuitable" : "btn-outline-danger")"
+                                    @onclick="() => SetSuitabilityInModal(selectedJob.Id, SuitabilityStatus.Unsuitable)">
+                                <i class="bi bi-slash-circle"></i> Unsuitable
+                            </button>
+                        </div>
+                    </div>
+                    
+                    @if (selectedJob.HasApplied)
+                    {
+                        <div class="mb-3">
+                            <label class="form-label"><strong>Application Stage:</strong></label>
+                            <div class="d-flex flex-wrap gap-1">
+                                @foreach (var stage in Enum.GetValues<ApplicationStage>().Where(s => s != ApplicationStage.None))
+                                {
+                                    <button class="btn btn-sm @(selectedJob.ApplicationStage == stage ? GetStageBtnClass(stage) : "btn-outline-secondary")"
+                                            @onclick="() => SetStageInModal(selectedJob.Id, stage)">
+                                        <i class="@GetStageIcon(stage)"></i> @GetStageDisplayName(stage)
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                        
+                        @if (selectedJob.StageHistory != null && selectedJob.StageHistory.Any())
+                        {
+                            <div class="mb-3">
+                                <label class="form-label"><strong>Stage History:</strong></label>
+                                <div class="stage-history">
+                                    @foreach (var change in selectedJob.StageHistory.OrderByDescending(h => h.DateChanged))
+                                    {
+                                        <div class="stage-history-item d-flex align-items-center gap-2 mb-1">
+                                            <span class="badge @GetStageBadgeClass(change.Stage)">
+                                                <i class="@GetStageIcon(change.Stage)"></i> @GetStageDisplayName(change.Stage)
+                                            </span>
+                                            <small class="text-muted">@change.DateChanged.ToString("MMM dd, yyyy 'at' HH:mm")</small>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    }
+                    
+                    @if (selectedJob.Skills.Any())
+                    {
+                        <div class="mb-3">
+                            <strong>Skills:</strong>
+                            <div class="mt-1">
+                                @foreach (var skill in selectedJob.Skills)
+                                {
+                                    <span class="badge bg-primary me-1 mb-1">@skill</span>
+                                }
+                            </div>
+                        </div>
+                    }
+                    
+                    <hr />
+                    
+                    <h6>About the Job</h6>
+                    <div class="job-description">
+                        @if (!string.IsNullOrEmpty(selectedJob.Description))
+                        {
+                            <pre class="description-text">@selectedJob.Description</pre>
+                        }
+                        else
+                        {
+                            <p class="text-muted">No description available. Visit the job page to extract the full description.</p>
+                        }
+                    </div>
+                    
+                    <hr />
+                    
+                    <div class="row text-muted small">
+                        <div class="col-3">
+                            <strong>Date Posted:</strong> @selectedJob.DatePosted.ToString("MMM dd, yyyy")
+                        </div>
+                        <div class="col-3">
+                            <strong>Date Added:</strong> @selectedJob.DateAdded.ToString("MMM dd, yyyy")
+                        </div>
+                        <div class="col-3">
+                            @if (selectedJob.HasApplied && selectedJob.DateApplied.HasValue)
+                            {
+                                <strong>Date Applied:</strong> @selectedJob.DateApplied.Value.ToString("MMM dd, yyyy")
+                            }
+                        </div>
+                        <div class="col-3">
+                            @if (selectedJob.LastChecked.HasValue)
+                            {
+                                <strong>Last Checked:</strong> @selectedJob.LastChecked.Value.ToString("MMM dd, yyyy")
+                            }
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <div class="d-flex gap-2 me-auto flex-wrap">
+                        <button class="btn @(selectedJob.Interest == InterestStatus.Interested ? "btn-success" : "btn-outline-success")" 
+                                @onclick="() => SetInterestAndClose(selectedJob.Id, InterestStatus.Interested)">
+                            <i class="bi bi-hand-thumbs-up"></i> Interested
+                        </button>
+                        <button class="btn @(selectedJob.Interest == InterestStatus.NotInterested ? "btn-danger" : "btn-outline-danger")"
+                                @onclick="() => SetInterestAndClose(selectedJob.Id, InterestStatus.NotInterested)">
+                            <i class="bi bi-hand-thumbs-down"></i> Not Interested
+                        </button>
+                        <button class="btn @(selectedJob.HasApplied ? "btn-linkedin-applied" : "btn-outline-secondary")"
+                                @onclick="() => ToggleAppliedInModal(selectedJob.Id, !selectedJob.HasApplied)">
+                            <i class="bi bi-check-circle"></i> @(selectedJob.HasApplied ? "Applied" : "Not Applied")
+                        </button>
+                        <button class="btn @(selectedJob.SharedToWhatsApp ? "btn-whatsapp-shared" : "btn-outline-success")"
+                                @onclick="() => ShareToWhatsAppFromModal(selectedJob)">
+                            <i class="bi bi-whatsapp"></i> @(selectedJob.SharedToWhatsApp ? "Shared" : "Share")
+                        </button>
+                    </div>
+                    @if (!string.IsNullOrEmpty(selectedJob.Url))
+                    {
+                        <a href="@selectedJob.Url" target="_blank" class="btn btn-primary"
+                           @onclick="() => SetLastViewedJob(selectedJob.Id)">
+                            <i class="bi bi-box-arrow-up-right"></i> Open Job
+                        </a>
+                    }
+                    <button type="button" class="btn btn-secondary" @onclick="CloseJobDetails">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Confirm Delete Modal *@
+@if (jobToDelete != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title"><i class="bi bi-exclamation-triangle"></i> Confirm Delete</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="CancelDelete"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to delete this job listing?</p>
+                    <div class="card">
+                        <div class="card-body py-2">
+                            <strong>@jobToDelete.Title</strong>
+                            @if (!string.IsNullOrEmpty(jobToDelete.Company))
+                            {
+                                <br /><small class="text-muted">@jobToDelete.Company</small>
+                            }
+                        </div>
+                    </div>
+                    <p class="text-danger mt-3 mb-0"><small>This action cannot be undone.</small></p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CancelDelete">Cancel</button>
+                    <button type="button" class="btn btn-danger" @onclick="DeleteJob">
+                        <i class="bi bi-trash"></i> Delete Job
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Settings Modal *@
+@if (showSettingsModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-gear"></i> Job Site Settings</h5>
+                    <button type="button" class="btn-close" @onclick="CloseSettingsModal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small mb-3">Configure the URLs for job site buttons. Check "Crawl" to include a site in auto-crawl.</p>
+
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <label class="form-label mb-0">
+                                <i class="bi bi-linkedin" style="color: #0a66c2;"></i> LinkedIn URL
+                            </label>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="crawlLinkedIn" @bind="editingUrls.CrawlLinkedIn" />
+                                <label class="form-check-label small" for="crawlLinkedIn">Crawl</label>
+                            </div>
+                        </div>
+                        <input type="url" class="form-control" @bind="editingUrls.LinkedIn" placeholder="https://www.linkedin.com/jobs/" />
+                    </div>
+
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <label class="form-label mb-0">
+                                <i class="bi bi-briefcase-fill" style="color: #0072CE;"></i> S1Jobs URL
+                            </label>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="crawlS1Jobs" @bind="editingUrls.CrawlS1Jobs" />
+                                <label class="form-check-label small" for="crawlS1Jobs">Crawl</label>
+                            </div>
+                        </div>
+                        <input type="url" class="form-control" @bind="editingUrls.S1Jobs" placeholder="https://www.s1jobs.com/jobs/" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">
+                            <i class="bi bi-search" style="color: #2557a7;"></i> Indeed URL
+                        </label>
+                        <input type="url" class="form-control" @bind="editingUrls.Indeed" placeholder="https://uk.indeed.com/jobs" />
+                        <small class="text-muted">Crawl not supported (Cloudflare protected)</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <label class="form-label mb-0">
+                                <i class="bi bi-tree" style="color: #FFCD00;"></i> Welcome to the Jungle URL
+                            </label>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="crawlWTTJ" @bind="editingUrls.CrawlWTTJ" />
+                                <label class="form-check-label small" for="crawlWTTJ">Crawl</label>
+                            </div>
+                        </div>
+                        <input type="url" class="form-control" @bind="editingUrls.WTTJ" placeholder="https://www.welcometothejungle.com/en/jobs" />
+                        <small class="text-muted">Use a search URL with filters, not a saved job link</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <label class="form-label mb-0">
+                                <i class="bi bi-lightning-charge" style="color: #FF6B00;"></i> EnergyJobSearch URL
+                            </label>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="crawlEnergyJobSearch" @bind="editingUrls.CrawlEnergyJobSearch" />
+                                <label class="form-check-label small" for="crawlEnergyJobSearch">Crawl</label>
+                            </div>
+                        </div>
+                        <input type="url" class="form-control" @bind="editingUrls.EnergyJobSearch" placeholder="https://energyjobsearch.com/jobs?title=.net" />
+                        <small class="text-muted">React SPA - browser extension recommended for best results</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="ResetSettingsToDefaults">
+                        <i class="bi bi-arrow-counterclockwise"></i> Reset to Defaults
+                    </button>
+                    <button type="button" class="btn btn-secondary" @onclick="CloseSettingsModal">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="SaveSettings">
+                        <i class="bi bi-check-lg"></i> Save
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .nav-tabs .nav-link {
+        color: #6c757d;
+    }
+
+    .nav-tabs .nav-link.active {
+        font-weight: bold;
+    }
+    
+    .description-preview {
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-height: 4.5em;
+    }
+    
+    .stat-badge {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 0.5rem 1rem;
+    }
+    
+    .stat-value {
+        font-size: 1.5rem;
+        font-weight: bold;
+        line-height: 1;
+    }
+    
+    .stat-label {
+        font-size: 0.75rem;
+        color: #6c757d;
+        text-transform: uppercase;
+    }
+    
+    .stat-divider {
+        width: 1px;
+        height: 40px;
+        background-color: #dee2e6;
+    }
+
+    .stat-breakdown {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        align-items: center;
+    }
+
+    .stat-breakdown-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.25rem 0.5rem;
+        border-radius: 1rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        background-color: #f8f9fa;
+        border: 1px solid #dee2e6;
+    }
+
+    .stat-breakdown-item.source-linkedin { color: #0a66c2; border-color: #0a66c2; }
+    .stat-breakdown-item.source-indeed { color: #2557a7; border-color: #2557a7; }
+    .stat-breakdown-item.source-s1jobs { color: #0072CE; border-color: #0072CE; }
+    .stat-breakdown-item.source-wttj { color: #b5a000; border-color: #FFCD00; background-color: #fffbe6; }
+    .stat-breakdown-item.source-energyjobsearch { color: #FF6B00; border-color: #FF6B00; background-color: #fff5eb; }
+    .stat-breakdown-item.source-unknown { color: #6c757d; border-color: #6c757d; }
+
+    .card.border-success { border-width: 2px; }
+    .card.border-danger { border-width: 2px; }
+    
+    .interest-buttons .btn {
+        font-size: 0.75rem;
+        padding: 0.25rem 0.5rem;
+    }
+    
+    .job-description {
+        max-height: 400px;
+        overflow-y: auto;
+    }
+    
+    .description-text {
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        font-family: inherit;
+        font-size: 0.95rem;
+        background: #f8f9fa;
+        padding: 1rem;
+        border-radius: 0.375rem;
+        border: 1px solid #dee2e6;
+        margin: 0;
+    }
+    
+    .btn-linkedin-applied {
+        background-color: #0a66c2;
+        border-color: #0a66c2;
+        color: #fff;
+    }
+    .btn-linkedin-applied:hover {
+        background-color: #004182;
+        border-color: #004182;
+        color: #fff;
+    }
+    
+    .stat-linkedin .stat-value { color: #0a66c2; }
+    
+    .badge-stage-applied { background-color: #0a66c2; color: #fff; }
+    .badge-stage-noreply { background-color: #6c757d; color: #fff; }
+    .badge-stage-pending { background-color: #fd7e14; color: #fff; }
+    .badge-stage-ghosted { background-color: #adb5bd; color: #fff; }
+    .badge-stage-rejected { background-color: #dc3545; color: #fff; }
+    .badge-stage-techtest { background-color: #6f42c1; color: #fff; }
+    .badge-stage-interview { background-color: #20c997; color: #fff; }
+    .badge-stage-offer { background-color: #198754; color: #fff; }
+    
+    .stage-select { max-width: 200px; }
+    
+    .btn-purple { background-color: #6f42c1; border-color: #6f42c1; color: #fff; }
+    .btn-purple:hover { background-color: #5a32a3; border-color: #5a32a3; color: #fff; }
+    
+    .btn-teal { background-color: #20c997; border-color: #20c997; color: #fff; }
+    .btn-teal:hover { background-color: #1aa179; border-color: #1aa179; color: #fff; }
+    
+    .btn-ghosted { background-color: #adb5bd; border-color: #adb5bd; color: #fff; }
+    .btn-ghosted:hover { background-color: #6c757d; border-color: #6c757d; color: #fff; }
+    
+    .badge-suitability-possible { background-color: #198754; color: #fff; }
+    .badge-suitability-unsuitable { background-color: #dc3545; color: #fff; }
+    
+    .btn-suitability-possible { background-color: #198754; border-color: #198754; color: #fff; }
+    .btn-suitability-possible:hover { background-color: #146c43; border-color: #146c43; color: #fff; }
+    
+    .btn-suitability-unsuitable { background-color: #dc3545; border-color: #dc3545; color: #fff; }
+    .btn-suitability-unsuitable:hover { background-color: #bb2d3b; border-color: #bb2d3b; color: #fff; }
+    
+    .last-viewed-job {
+        box-shadow: 0 0 0 3px #0a66c2, 0 4px 15px rgba(10, 102, 194, 0.3);
+        border-color: #0a66c2 !important;
+    }
+    .last-viewed-job .card-header { background-color: rgba(10, 102, 194, 0.1); }
+    
+    .clickable-card-area { cursor: pointer; }
+    .clickable-card-area:hover { background-color: rgba(10, 102, 194, 0.05); }
+    .card-header.clickable-card-area:hover { background-color: rgba(10, 102, 194, 0.1); }
+    
+    .btn-whatsapp-shared { background-color: #25D366; border-color: #25D366; color: #fff; }
+    .btn-whatsapp-shared:hover { background-color: #128C7E; border-color: #128C7E; color: #fff; }
+    
+    .stage-history {
+        max-height: 150px;
+        overflow-y: auto;
+        padding: 0.5rem;
+        background-color: #f8f9fa;
+        border-radius: 0.375rem;
+        border: 1px solid #dee2e6;
+    }
+    .stage-history-item {
+        padding: 0.25rem 0;
+        border-bottom: 1px solid #e9ecef;
+    }
+    .stage-history-item:last-child { border-bottom: none; }
+
+    .source-icon { font-size: 0.9em; vertical-align: middle; }
+    .source-icon i { vertical-align: baseline; }
+
+    .btn-indeed { background-color: #2557a7; border-color: #2557a7; color: #fff; }
+    .btn-indeed:hover { background-color: #1a3d6e; border-color: #1a3d6e; color: #fff; }
+
+    .btn-s1jobs { background-color: #0072CE; border-color: #0072CE; color: #fff; }
+    .btn-s1jobs:hover { background-color: #005ba3; border-color: #005ba3; color: #fff; }
+
+    .btn-wttj { background-color: #FFCD00; border-color: #FFCD00; color: #000; }
+    .btn-wttj:hover { background-color: #e6b800; border-color: #e6b800; color: #000; }
+
+    .btn-energyjobsearch { background-color: #FF6B00; border-color: #FF6B00; color: #fff; }
+    .btn-energyjobsearch:hover { background-color: #cc5500; border-color: #cc5500; color: #fff; }
+</style>
+
+@code {
+    private enum TabType { Browse, Possible, Applied, Unsuitable }
+    
+    private TabType activeTab = TabType.Browse;
+    private JobListingFilter filter = new() { SortBy = SortOption.DateAddedDesc };
+    private IEnumerable<JobListing> filteredJobs = Enumerable.Empty<JobListing>();
+    private JobStats stats = new();
+    private int filteredCount = 0;
+    private int browseJobsCount = 0;
+    private int possibleJobsCount = 0;
+    private int appliedJobsCount = 0;
+    private int unsuitableJobsCount = 0;
+    private string selectedJobType = "";
+    private string selectedRemote = "";
+    private string selectedInterest = "";
+    private string selectedHasSalary = "";
+    private string selectedApplicationStage = "";
+    private string selectedSource = "";
+    private JobListing? selectedJob = null;
+    private JobListing? jobToDelete = null;
+    private Guid? lastViewedJobId = null;
+    private System.Threading.Timer? refreshTimer;
+
+    // Availability scan state
+    private bool isScanning = false;
+    private JobAvailabilityProgress? scanProgress = null;
+    private CancellationTokenSource? scanCts = null;
+    private Guid? fetchingDescriptionJobId = null;
+
+    // Crawl state
+    private bool isCrawling = false;
+    private string? crawlStatusMessage = null;
+    private bool crawlStatusIsError = false;
+
+    // Settings
+    private JobSiteUrls jobSiteUrls = new();
+    private bool showSettingsModal = false;
+    private JobSiteUrls editingUrls = new();
+
+    protected override void OnInitialized()
+    {
+        JobService.OnChange += OnJobServiceChanged;
+        SettingsService.OnChange += OnSettingsChanged;
+        jobSiteUrls = SettingsService.GetJobSiteUrls();
+        RefreshData();
+        
+        // Auto-refresh every 5 seconds to pick up changes from extensions
+        refreshTimer = new System.Threading.Timer(_ =>
+        {
+            RefreshData();
+            InvokeAsync(StateHasChanged);
+        }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+    }
+
+    private void OnJobServiceChanged()
+    {
+        RefreshData();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void RefreshData()
+    {
+        JobService.ForceReload(); // Force reload from storage to pick up changes
+        stats = JobService.GetStats();
+        UpdateTabCounts();
+        ApplyFilter();
+    }
+
+    private void UpdateTabCounts()
+    {
+        var allJobs = JobService.GetAllJobListings();
+        appliedJobsCount = allJobs.Count(j => j.HasApplied);
+        possibleJobsCount = allJobs.Count(j => !j.HasApplied && j.Suitability == SuitabilityStatus.Possible);
+        unsuitableJobsCount = allJobs.Count(j => !j.HasApplied && j.Suitability == SuitabilityStatus.Unsuitable);
+        browseJobsCount = allJobs.Count(j => !j.HasApplied && j.Suitability == SuitabilityStatus.NotChecked);
+    }
+
+    private void SetActiveTab(TabType tab)
+    {
+        activeTab = tab;
+        ClearFilters();
+    }
+
+    private void ApplyFilter()
+    {
+        filter.JobType = string.IsNullOrEmpty(selectedJobType) ? null : Enum.Parse<JobType>(selectedJobType);
+        filter.IsRemote = string.IsNullOrEmpty(selectedRemote) ? null : bool.Parse(selectedRemote);
+        filter.Interest = string.IsNullOrEmpty(selectedInterest) ? null : Enum.Parse<InterestStatus>(selectedInterest);
+        filter.HasSalary = string.IsNullOrEmpty(selectedHasSalary) ? null : bool.Parse(selectedHasSalary);
+        filter.ApplicationStage = string.IsNullOrEmpty(selectedApplicationStage) ? null : Enum.Parse<ApplicationStage>(selectedApplicationStage);
+        filter.Source = string.IsNullOrEmpty(selectedSource) ? null : selectedSource;
+        filter.PrioritizeJobId = lastViewedJobId;
+        
+        // Apply tab-specific filtering
+        var baseJobs = JobService.FilterJobListings(filter);
+        
+        filteredJobs = activeTab switch
+        {
+            TabType.Applied => baseJobs.Where(j => j.HasApplied),
+            TabType.Possible => baseJobs.Where(j => !j.HasApplied && j.Suitability == SuitabilityStatus.Possible),
+            TabType.Unsuitable => baseJobs.Where(j => !j.HasApplied && j.Suitability == SuitabilityStatus.Unsuitable),
+            _ => baseJobs.Where(j => !j.HasApplied && j.Suitability == SuitabilityStatus.NotChecked) // Browse - only NotChecked
+        };
+        
+        filteredCount = filteredJobs.Count();
+    }
+
+    private void ClearFilters()
+    {
+        filter = new JobListingFilter { SortBy = SortOption.DateAddedDesc };
+        selectedJobType = "";
+        selectedRemote = "";
+        selectedInterest = "";
+        selectedHasSalary = "";
+        selectedApplicationStage = "";
+        selectedSource = "";
+        ApplyFilter();
+    }
+
+    private void SetLastViewedJob(Guid jobId) => lastViewedJobId = jobId;
+
+    private void ClearLastViewedJob()
+    {
+        lastViewedJobId = null;
+        ApplyFilter();
+    }
+
+    private async Task OpenJobInLinkedIn(JobListing job)
+    {
+        if (!string.IsNullOrEmpty(job.Url))
+        {
+            SetLastViewedJob(job.Id);
+            await JSRuntime.InvokeVoidAsync("open", job.Url, "_blank");
+        }
+    }
+
+    private async Task ShareToWhatsApp(JobListing job)
+    {
+        var message = $"?? Job Opportunity\n\n?? *{job.Title}*\n?? {job.Company}\n";
+        if (!string.IsNullOrEmpty(job.Location)) message += $"?? {job.Location}\n";
+        if (!string.IsNullOrEmpty(job.Salary)) message += $"?? {job.Salary}\n";
+        if (job.IsRemote) message += "?? Remote\n";
+        message += $"\n?? {job.Url}";
+        
+        var whatsappUrl = $"https://wa.me/?text={Uri.EscapeDataString(message)}";
+        await JSRuntime.InvokeVoidAsync("open", whatsappUrl, "_blank");
+        
+        JobService.SetSharedToWhatsApp(job.Id, true);
+        RefreshData();
+    }
+
+    private void SetInterest(Guid id, InterestStatus status)
+    {
+        JobService.SetInterestStatus(id, status);
+        RefreshData();
+    }
+
+    private void ToggleApplied(Guid id, bool hasApplied)
+    {
+        JobService.SetAppliedStatus(id, hasApplied);
+        RefreshData();
+    }
+
+    private void ToggleAppliedInModal(Guid id, bool hasApplied)
+    {
+        JobService.SetAppliedStatus(id, hasApplied);
+        selectedJob = JobService.GetJobById(id);
+        RefreshData();
+    }
+
+    private void SetStage(Guid id, ApplicationStage stage)
+    {
+        JobService.SetApplicationStage(id, stage);
+        RefreshData();
+    }
+
+    private void SetStageInModal(Guid id, ApplicationStage stage)
+    {
+        JobService.SetApplicationStage(id, stage);
+        selectedJob = JobService.GetJobById(id);
+        RefreshData();
+    }
+
+    private void CycleStage(Guid id)
+    {
+        JobService.CycleApplicationStage(id);
+        RefreshData();
+    }
+
+    private void SetSuitability(Guid id, SuitabilityStatus status)
+    {
+        JobService.SetSuitabilityStatus(id, status);
+        RefreshData();
+    }
+
+    private void SetSuitabilityInModal(Guid id, SuitabilityStatus status)
+    {
+        JobService.SetSuitabilityStatus(id, status);
+        selectedJob = JobService.GetJobById(id);
+        RefreshData();
+    }
+
+    private void SetInterestAndClose(Guid id, InterestStatus status)
+    {
+        SetInterest(id, status);
+        selectedJob = JobService.GetJobById(id);
+    }
+
+    private async Task ShareToWhatsAppFromModal(JobListing job)
+    {
+        await ShareToWhatsApp(job);
+        selectedJob = JobService.GetJobById(job.Id);
+    }
+
+    private void ShowJobDetails(JobListing job) => selectedJob = job;
+    private void CloseJobDetails() => selectedJob = null;
+    private void ConfirmDelete(JobListing job) => jobToDelete = job;
+    private void CancelDelete() => jobToDelete = null;
+
+    private void DeleteJob()
+    {
+        if (jobToDelete != null)
+        {
+            JobService.DeleteJobListing(jobToDelete.Id);
+            jobToDelete = null;
+            RefreshData();
+        }
+    }
+
+    private void MarkAllFilteredUnsuitable()
+    {
+        foreach (var job in filteredJobs)
+        {
+            JobService.SetSuitabilityStatus(job.Id, SuitabilityStatus.Unsuitable);
+        }
+        RefreshData();
+    }
+
+    private void MarkAllFilteredPossible()
+    {
+        foreach (var job in filteredJobs)
+        {
+            JobService.SetSuitabilityStatus(job.Id, SuitabilityStatus.Possible);
+        }
+        RefreshData();
+    }
+
+    private async Task CheckJobAvailability()
+    {
+        if (isScanning) return;
+
+        var cutoff = DateTime.Now.AddHours(-4);
+        var jobsToCheck = filteredJobs
+            .Where(j => !string.IsNullOrWhiteSpace(j.Url))
+            .Where(j => !j.LastChecked.HasValue || j.LastChecked.Value < cutoff)
+            .OrderBy(j => j.LastChecked.HasValue ? 1 : 0)
+            .ThenBy(j => j.LastChecked ?? DateTime.MinValue)
+            .ToList();
+
+        if (!jobsToCheck.Any()) return;
+
+        isScanning = true;
+        scanProgress = new JobAvailabilityProgress { TotalJobs = jobsToCheck.Count };
+        scanCts = new CancellationTokenSource();
+        StateHasChanged();
+
+        try
+        {
+            await AvailabilityService.ScanJobsAsync(
+                jobsToCheck,
+                markUnsuitableAction: (jobId, reason) =>
+                {
+                    JobService.SetSuitabilityStatus(jobId, SuitabilityStatus.Unsuitable, HistoryChangeSource.System, reason);
+                },
+                markCheckedAction: (jobId) =>
+                {
+                    JobService.SetLastChecked(jobId);
+                },
+                updateJobAction: (jobId, parsed) =>
+                {
+                    JobService.UpdateJobIfBetter(jobId, parsed);
+                },
+                onProgress: (progress) =>
+                {
+                    scanProgress = progress;
+                    InvokeAsync(StateHasChanged);
+                },
+                cancellationToken: scanCts.Token
+            );
+        }
+        catch (OperationCanceledException)
+        {
+            if (scanProgress != null)
+            {
+                scanProgress.IsComplete = true;
+                scanProgress.WasCancelled = true;
+            }
+        }
+        finally
+        {
+            isScanning = false;
+            RefreshData();
+            await InvokeAsync(StateHasChanged);
+            scanCts?.Dispose();
+            scanCts = null;
+        }
+    }
+
+    private void CancelAvailabilityScan()
+    {
+        scanCts?.Cancel();
+    }
+
+    private async Task CrawlJobs()
+    {
+        if (isCrawling) return;
+
+        isCrawling = true;
+        crawlStatusMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            var userId = CurrentUser.GetCurrentUserId();
+            var result = await CrawlService.CrawlAllSitesAsync(jobSiteUrls, userId, JobService);
+
+            crawlStatusMessage = $"Crawl complete: {result.JobsFound} jobs found, {result.JobsAdded} new jobs added across {result.PagesScanned} pages.";
+            if (result.Errors.Count > 0)
+            {
+                crawlStatusMessage += $" Errors: {string.Join("; ", result.Errors)}";
+                crawlStatusIsError = result.JobsAdded == 0;
+            }
+            else
+            {
+                crawlStatusIsError = false;
+            }
+            RefreshData();
+        }
+        catch (Exception ex)
+        {
+            crawlStatusMessage = $"Crawl error: {ex.Message}";
+            crawlStatusIsError = true;
+        }
+        finally
+        {
+            isCrawling = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task FetchSingleJobDescription(JobListing job)
+    {
+        if (fetchingDescriptionJobId.HasValue) return;
+
+        fetchingDescriptionJobId = job.Id;
+        StateHasChanged();
+
+        try
+        {
+            var result = await AvailabilityService.CheckJobAvailabilityAsync(job);
+
+            if (result.Result == JobAvailabilityResult.Unavailable)
+            {
+                JobService.SetSuitabilityStatus(job.Id, SuitabilityStatus.Unsuitable, HistoryChangeSource.System, result.Reason ?? "Job no longer available");
+            }
+            else if (result.Result == JobAvailabilityResult.Available && result.ParsedJob != null)
+            {
+                JobService.UpdateJobIfBetter(job.Id, result.ParsedJob);
+            }
+
+            JobService.SetLastChecked(job.Id);
+            JobService.ApplyRulesToExistingJobs(job.Id);
+            RefreshData();
+        }
+        finally
+        {
+            fetchingDescriptionJobId = null;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private string TruncateDescription(string description, int maxLength)
+    {
+        if (string.IsNullOrEmpty(description) || description.Length <= maxLength) return description;
+        return description[..maxLength] + "...";
+    }
+
+    private string GetJobTypeBadgeClass(JobType jobType) => jobType switch
+    {
+        JobType.FullTime => "bg-primary",
+        JobType.PartTime => "bg-info",
+        JobType.Contract => "bg-warning text-dark",
+        JobType.Temporary => "bg-secondary",
+        JobType.Internship => "bg-success",
+        JobType.Volunteer => "bg-light text-dark",
+        _ => "bg-dark"
+    };
+
+    private string GetCardBorderClass(InterestStatus interest) => interest switch
+    {
+        InterestStatus.Interested => "border-success",
+        InterestStatus.NotInterested => "border-danger",
+        _ => ""
+    };
+
+    private string GetStageDisplayName(ApplicationStage stage) => stage switch
+    {
+        ApplicationStage.Applied => "Applied",
+        ApplicationStage.NoReply => "No Reply",
+        ApplicationStage.Pending => "Pending",
+        ApplicationStage.Ghosted => "Ghosted",
+        ApplicationStage.Rejected => "Rejected",
+        ApplicationStage.TechTest => "Tech Test",
+        ApplicationStage.Interview => "Interview",
+        ApplicationStage.Offer => "Offer",
+        _ => "Unknown"
+    };
+
+    private string GetStageIcon(ApplicationStage stage) => stage switch
+    {
+        ApplicationStage.Applied => "bi bi-send",
+        ApplicationStage.NoReply => "bi bi-clock-history",
+        ApplicationStage.Pending => "bi bi-hourglass-split",
+        ApplicationStage.Ghosted => "bi bi-emoji-dizzy",
+        ApplicationStage.Rejected => "bi bi-x-circle",
+        ApplicationStage.TechTest => "bi bi-code-slash",
+        ApplicationStage.Interview => "bi bi-person-video3",
+        ApplicationStage.Offer => "bi bi-trophy",
+        _ => "bi bi-question-circle"
+    };
+
+    private string GetStageBadgeClass(ApplicationStage stage) => stage switch
+    {
+        ApplicationStage.Applied => "badge-stage-applied",
+        ApplicationStage.NoReply => "badge-stage-noreply",
+        ApplicationStage.Pending => "badge-stage-pending",
+        ApplicationStage.Ghosted => "badge-stage-ghosted",
+        ApplicationStage.Rejected => "badge-stage-rejected",
+        ApplicationStage.TechTest => "badge-stage-techtest",
+        ApplicationStage.Interview => "badge-stage-interview",
+        ApplicationStage.Offer => "badge-stage-offer",
+        _ => "bg-secondary"
+    };
+
+    private string GetStageBtnClass(ApplicationStage stage) => stage switch
+    {
+        ApplicationStage.Applied => "btn-linkedin-applied",
+        ApplicationStage.NoReply => "btn-secondary",
+        ApplicationStage.Pending => "btn-warning",
+        ApplicationStage.Ghosted => "btn-ghosted",
+        ApplicationStage.Rejected => "btn-danger",
+        ApplicationStage.TechTest => "btn-purple",
+        ApplicationStage.Interview => "btn-teal",
+        ApplicationStage.Offer => "btn-success",
+        _ => "btn-secondary"
+    };
+
+    private string GetSuitabilityDisplayName(SuitabilityStatus status) => status switch
+    {
+        SuitabilityStatus.NotChecked => "Not Checked",
+        SuitabilityStatus.Possible => "Possible",
+        SuitabilityStatus.Unsuitable => "Unsuitable",
+        _ => "Unknown"
+    };
+
+    private string GetSuitabilityIcon(SuitabilityStatus status) => status switch
+    {
+        SuitabilityStatus.NotChecked => "bi bi-question-circle",
+        SuitabilityStatus.Possible => "bi bi-star",
+        SuitabilityStatus.Unsuitable => "bi bi-slash-circle",
+        _ => "bi bi-question-circle"
+    };
+
+    private string GetSuitabilityBadgeClass(SuitabilityStatus status) => status switch
+    {
+        SuitabilityStatus.Possible => "badge-suitability-possible",
+        SuitabilityStatus.Unsuitable => "badge-suitability-unsuitable",
+        _ => "bg-secondary"
+    };
+
+    private DateTime? GetLastStageChangeDate(JobListing job)
+    {
+        if (job.StageHistory == null || !job.StageHistory.Any()) return job.DateApplied;
+        return job.StageHistory.OrderByDescending(h => h.DateChanged).FirstOrDefault()?.DateChanged;
+    }
+
+    private string GetStageTooltip(JobListing job)
+    {
+        var lastChange = GetLastStageChangeDate(job);
+        var tooltip = $"Click to change stage\nCurrent: {GetStageDisplayName(job.ApplicationStage)}";
+        if (lastChange.HasValue) tooltip += $"\nChanged: {lastChange.Value:MMM dd, yyyy 'at' HH:mm}";
+        return tooltip;
+    }
+
+    private string GetSourceIcon(string? source) => (source?.ToLower() ?? "") switch
+    {
+        "linkedin" => "<i class=\"bi bi-linkedin\" style=\"color: #0a66c2;\"></i>",
+        "s1jobs" => "<i class=\"bi bi-briefcase-fill\" style=\"color: #0072CE;\"></i>",
+        "indeed" => "<i class=\"bi bi-search\" style=\"color: #2557a7;\"></i>",
+        "wttj" => "<i class=\"bi bi-tree\" style=\"color: #FFCD00;\"></i>",
+        "energyjobsearch" => "<i class=\"bi bi-lightning-charge\" style=\"color: #FF6B00;\"></i>",
+        _ => "<i class=\"bi bi-globe\" style=\"color: #6c757d;\"></i>"
+    };
+
+    private string GetSourceDisplayName(string? source) => (source?.ToLower() ?? "") switch
+    {
+        "linkedin" => "LinkedIn",
+        "s1jobs" => "S1Jobs",
+        "indeed" => "Indeed",
+        "wttj" => "Welcome to the Jungle",
+        "energyjobsearch" => "EnergyJobSearch",
+        _ => string.IsNullOrEmpty(source) ? "Unknown Source" : source
+    };
+
+    private string GetSourceClass(string? source) => (source?.ToLower() ?? "") switch
+    {
+        "linkedin" => "source-linkedin",
+        "s1jobs" => "source-s1jobs",
+        "indeed" => "source-indeed",
+        "wttj" => "source-wttj",
+        "energyjobsearch" => "source-energyjobsearch",
+        _ => "source-unknown"
+    };
+
+    // Settings methods
+    private void OnSettingsChanged()
+    {
+        jobSiteUrls = SettingsService.GetJobSiteUrls();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OpenSettingsModal()
+    {
+        editingUrls = new JobSiteUrls
+        {
+            LinkedIn = jobSiteUrls.LinkedIn,
+            S1Jobs = jobSiteUrls.S1Jobs,
+            Indeed = jobSiteUrls.Indeed,
+            WTTJ = jobSiteUrls.WTTJ,
+            CrawlLinkedIn = jobSiteUrls.CrawlLinkedIn,
+            CrawlS1Jobs = jobSiteUrls.CrawlS1Jobs,
+            CrawlWTTJ = jobSiteUrls.CrawlWTTJ,
+            EnergyJobSearch = jobSiteUrls.EnergyJobSearch,
+            CrawlEnergyJobSearch = jobSiteUrls.CrawlEnergyJobSearch,
+        };
+        showSettingsModal = true;
+    }
+
+    private void CloseSettingsModal()
+    {
+        showSettingsModal = false;
+    }
+
+    private void SaveSettings()
+    {
+        SettingsService.UpdateJobSiteUrls(editingUrls);
+        jobSiteUrls = SettingsService.GetJobSiteUrls();
+        showSettingsModal = false;
+    }
+
+    private void ResetSettingsToDefaults()
+    {
+        editingUrls = new JobSiteUrls();
+    }
+
+    public void Dispose()
+    {
+        JobService.OnChange -= OnJobServiceChanged;
+        SettingsService.OnChange -= OnSettingsChanged;
+        refreshTimer?.Dispose();
+        scanCts?.Cancel();
+        scanCts?.Dispose();
+    }
+}

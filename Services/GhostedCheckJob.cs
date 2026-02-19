@@ -1,0 +1,53 @@
+using JobTracker.Models;
+
+namespace JobTracker.Services;
+
+public class GhostedCheckJob
+{
+    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly ILogger<GhostedCheckJob> _logger;
+
+    public GhostedCheckJob(IServiceScopeFactory scopeFactory, ILogger<GhostedCheckJob> logger)
+    {
+        _scopeFactory = scopeFactory;
+        _logger = logger;
+    }
+
+    public void Run()
+    {
+        _logger.LogInformation("[Hangfire] Starting ghosted check for applied jobs");
+
+        using var scope = _scopeFactory.CreateScope();
+        var jobService = scope.ServiceProvider.GetRequiredService<JobListingService>();
+        var authService = scope.ServiceProvider.GetRequiredService<AuthService>();
+
+        var users = authService.GetAllUsers();
+        var cutoff = DateTime.Now.AddDays(-7);
+        int totalGhosted = 0;
+
+        foreach (var user in users)
+        {
+            var allJobs = jobService.GetAllJobListings(user.Id);
+            var appliedJobs = allJobs
+                .Where(j => j.HasApplied && j.ApplicationStage == ApplicationStage.Applied)
+                .Where(j => j.DateApplied.HasValue && j.DateApplied.Value < cutoff)
+                .ToList();
+
+            foreach (var job in appliedJobs)
+            {
+                jobService.SetApplicationStage(job.Id, ApplicationStage.Ghosted, HistoryChangeSource.System);
+                totalGhosted++;
+                _logger.LogInformation("[Hangfire] Marked job as ghosted: {Title} (applied {Date})",
+                    job.Title, job.DateApplied?.ToString("yyyy-MM-dd"));
+            }
+
+            if (appliedJobs.Count > 0)
+            {
+                _logger.LogInformation("[Hangfire] Marked {Count} jobs as ghosted for user {User}",
+                    appliedJobs.Count, user.Email);
+            }
+        }
+
+        _logger.LogInformation("[Hangfire] Ghosted check complete: {Total} jobs marked as ghosted", totalGhosted);
+    }
+}
