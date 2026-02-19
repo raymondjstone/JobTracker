@@ -69,7 +69,7 @@
         // Check if already 2FA verified
         if (AuthService.IsTwoFactorVerified(context.User))
         {
-            Navigation.NavigateTo(ReturnUrl ?? "/", forceLoad: true);
+            Navigation.NavigateTo(GetSafeReturnUrl(ReturnUrl), forceLoad: true);
         }
     }
 
@@ -134,12 +134,21 @@
 
             AuthService.RecordLogin(user);
 
-            Navigation.NavigateTo(ReturnUrl ?? "/", forceLoad: true);
+            Navigation.NavigateTo(GetSafeReturnUrl(ReturnUrl), forceLoad: true);
         }
         finally
         {
             isLoading = false;
         }
+    }
+
+    private static string GetSafeReturnUrl(string? returnUrl)
+    {
+        if (string.IsNullOrWhiteSpace(returnUrl))
+            return "/";
+        if (!returnUrl.StartsWith("/") || returnUrl.StartsWith("//") || returnUrl.StartsWith("/\\"))
+            return "/";
+        return returnUrl;
     }
 
     private class VerifyModel

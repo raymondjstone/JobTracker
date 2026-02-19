@@ -1,4 +1,5 @@
 using Hangfire;
+using Hangfire.Dashboard;
 using JobTracker.Components;
 using JobTracker.Data;
 using JobTracker.Models;
@@ -35,8 +36,8 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         options.ExpireTimeSpan = TimeSpan.FromDays(30);
         options.SlidingExpiration = true;
         options.Cookie.HttpOnly = true;
-        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
-        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+        options.Cookie.SameSite = SameSiteMode.Strict;
     });
 
 builder.Services.AddAuthorization();
@@ -129,15 +130,41 @@ if (localMode)
     builder.Services.AddHostedService<LocalBackgroundService>();
 }
 
-// Add CORS for browser extension
+// Add CORS for browser extension — restricted to known origins
+// Content scripts run in the context of web pages, so their Origin is the page's domain.
+// API endpoints are protected by API key auth, so CORS is secondary protection here.
 builder.Services.AddCors(options =>
 {
-    options.AddDefaultPolicy(policy =>
+    options.AddPolicy("Extensions", policy =>
     {
-        policy.AllowAnyOrigin()
+        policy.SetIsOriginAllowed(origin =>
+            {
+                if (origin.StartsWith("chrome-extension://", StringComparison.OrdinalIgnoreCase) ||
+                    origin.StartsWith("edge-extension://", StringComparison.OrdinalIgnoreCase))
+                    return true;
+
+                // Allow localhost (dev)
+                if (Uri.TryCreate(origin, UriKind.Absolute, out var uri) &&
+                    uri.Host == "localhost")
+                    return true;
+
+                // Allow job site domains where content scripts run
+                var allowedDomains = new[] {
+                    "linkedin.com", "indeed.com", "s1jobs.com",
+                    "welcometothejungle.com", "energyjobsearch.com"
+                };
+                if (Uri.TryCreate(origin, UriKind.Absolute, out var siteUri))
+                {
+                    var host = siteUri.Host;
+                    return allowedDomains.Any(d =>
+                        host.Equals(d, StringComparison.OrdinalIgnoreCase) ||
+                        host.EndsWith("." + d, StringComparison.OrdinalIgnoreCase));
+                }
+
+                return false;
+            })
               .AllowAnyMethod()
-              .AllowAnyHeader()
-              .WithExposedHeaders("*");
+              .AllowAnyHeader();
     });
 });
 
@@ -182,15 +209,30 @@ if (!authService.GetAllUsers().Any())
     }
     else
     {
-        var initialPassword = builder.Configuration["InitialUser:Password"] ?? "xxxxxxxxxxxx";
+        var initialPassword = builder.Configuration["InitialUser:Password"]
+            ?? throw new InvalidOperationException("InitialUser:Password must be configured in appsettings.json or environment variables.");
+        var initialEmail = builder.Configuration["InitialUser:Email"] ?? "admin@localhost";
+        var initialName = builder.Configuration["InitialUser:Name"] ?? "Admin";
         var initialUser = authService.CreateUser(
-            email: "jobs@xxxx.com",
-            name: "xxxxxxxx",
+            email: initialEmail,
+            name: initialName,
             password: initialPassword
         );
         startupLogger.LogInformation("Created initial user: {Email}", initialUser.Email);
         storage.MigrateExistingDataToUser(initialUser.Id);
         startupLogger.LogInformation("Migrated existing data to user: {Email}", initialUser.Email);
+    }
+}
+
+// Backfill ApiKey for existing users that don't have one persisted yet.
+// (The property initializer generates a random key on deserialization, but it's
+// not stable until explicitly saved. This ensures it's persisted once.)
+foreach (var existingUser in authService.GetAllUsers())
+{
+    // ApiKey will have been set by the property initializer — save it so it persists
+    if (!string.IsNullOrEmpty(existingUser.ApiKey))
+    {
+        storage.SaveUser(existingUser);
     }
 }
 
@@ -201,11 +243,12 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
-// CORS must be first
-app.UseCors();
+app.UseHttpsRedirection();
 
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
-app.UseHttpsRedirection();
+
+// CORS for browser extensions (only the "Extensions" named policy is defined)
+app.UseCors("Extensions");
 
 // LocalMode: auto-authenticate all requests
 if (localMode)
@@ -231,13 +274,8 @@ Guid? GetUserIdFromRequest(HttpContext context, AuthService authService)
     var apiKey = context.Request.Headers["X-API-Key"].FirstOrDefault();
     if (!string.IsNullOrEmpty(apiKey))
     {
-        // API key format: "userId:secret" - for now just use userId
-        // In production, you'd want proper API key validation
-        if (Guid.TryParse(apiKey.Split(':').FirstOrDefault(), out var apiUserId))
-        {
-            var user = authService.GetUserById(apiUserId);
-            if (user != null) return apiUserId;
-        }
+        var user = authService.ValidateApiKey(apiKey);
+        if (user != null) return user.Id;
     }
 
     // Fall back to cookie auth
@@ -248,8 +286,7 @@ Guid? GetUserIdFromRequest(HttpContext context, AuthService authService)
 app.MapPost("/api/jobs", async (HttpContext context, JobListingService jobService, AuthService authService) =>
 {
     Console.WriteLine($"[API] POST /api/jobs - Content-Type: {context.Request.ContentType}");
-    Console.WriteLine($"[API] Headers: {string.Join(", ", context.Request.Headers.Select(h => $"{h.Key}={h.Value}"))}");
-    
+
     var userId = GetUserIdFromRequest(context, authService);
     if (!userId.HasValue)
     {
@@ -265,6 +302,18 @@ app.MapPost("/api/jobs", async (HttpContext context, JobListingService jobServic
             Console.WriteLine("[API] Error: job is null");
             return Results.BadRequest("Invalid job data");
         }
+
+        // Input validation
+        if (string.IsNullOrWhiteSpace(job.Title))
+            return Results.BadRequest("Title is required.");
+        if (!string.IsNullOrWhiteSpace(job.Url) && !Uri.TryCreate(job.Url, UriKind.Absolute, out _))
+            return Results.BadRequest("Invalid URL format.");
+        if (job.Title.Length > 500)
+            return Results.BadRequest("Title exceeds maximum length.");
+        if (job.Company?.Length > 500)
+            return Results.BadRequest("Company exceeds maximum length.");
+        if (job.Description?.Length > 50000)
+            return Results.BadRequest("Description exceeds maximum length.");
 
         job.UserId = userId.Value;
         var wasAdded = jobService.AddJobListing(job);
@@ -283,8 +332,7 @@ app.MapPost("/api/jobs", async (HttpContext context, JobListingService jobServic
     catch (Exception ex)
     {
         Console.WriteLine($"[API] Error: {ex.Message}");
-        Console.WriteLine($"[API] Stack trace: {ex.StackTrace}");
-        return Results.BadRequest(ex.Message);
+        return Results.BadRequest("An error occurred processing your request.");
     }
 }).DisableAntiforgery();
 
@@ -369,7 +417,7 @@ app.MapPut("/api/jobs/{id:guid}/interest", async (Guid id, HttpContext context, 
     catch (Exception ex)
     {
         Console.WriteLine($"[API] Error: {ex.Message}");
-        return Results.BadRequest(ex.Message);
+        return Results.BadRequest("An error occurred processing your request.");
     }
 }).DisableAntiforgery();
 
@@ -467,7 +515,7 @@ app.MapPut("/api/jobs/description", async (HttpContext context, JobListingServic
     catch (Exception ex)
     {
         Console.WriteLine($"[API] Error: {ex.Message}");
-        return Results.BadRequest(ex.Message);
+        return Results.BadRequest("An error occurred processing your request.");
     }
 }).DisableAntiforgery();
 
@@ -716,7 +764,10 @@ app.MapRazorComponents<App>()
 // Configure Hangfire dashboard and recurring jobs
 if (!localMode && string.Equals(storageProvider, "SqlServer", StringComparison.OrdinalIgnoreCase))
 {
-    app.UseHangfireDashboard("/hangfire");
+    app.UseHangfireDashboard("/hangfire", new DashboardOptions
+    {
+        Authorization = new[] { new HangfireAuthorizationFilter() }
+    });
 
     RecurringJob.AddOrUpdate<AvailabilityCheckJob>(
         "availability-check-browse",
@@ -874,3 +925,13 @@ record MarkUnavailableByUrlRequest(string Url, string? Reason);
 
 // Request model for description update
 record DescriptionUpdateRequest(string Url, string? Description, string? Company = null);
+
+// Hangfire dashboard authorization filter — requires authenticated user
+class HangfireAuthorizationFilter : Hangfire.Dashboard.IDashboardAuthorizationFilter
+{
+    public bool Authorize(Hangfire.Dashboard.DashboardContext context)
+    {
+        var httpContext = context.GetHttpContext();
+        return httpContext.User?.Identity?.IsAuthenticated == true;
+    }
+}

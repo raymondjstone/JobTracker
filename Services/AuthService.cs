@@ -12,6 +12,11 @@ public class AuthService
     private readonly ILogger<AuthService> _logger;
     private readonly PasswordHasher<User> _passwordHasher;
 
+    // Rate limiting: track failed login attempts per email
+    private readonly Dictionary<string, (int Count, DateTime FirstFailure)> _failedAttempts = new();
+    private const int MaxFailedAttempts = 5;
+    private static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(5);
+
     public AuthService(IStorageBackend storage, ILogger<AuthService> logger)
     {
         _storage = storage;
@@ -43,13 +48,24 @@ public class AuthService
     }
 
     /// <summary>
-    /// Validates user credentials and returns the user if valid
+    /// Validates user credentials and returns the user if valid.
+    /// Includes rate limiting: locks out after 5 failed attempts for 5 minutes.
     /// </summary>
     public User? ValidateCredentials(string email, string password)
     {
+        var normalizedEmail = email.ToLowerInvariant();
+
+        // Check rate limiting
+        if (IsLockedOut(normalizedEmail))
+        {
+            _logger.LogWarning("Login attempt for locked-out user: {Email}", email);
+            return null;
+        }
+
         var user = _storage.GetUserByEmail(email);
         if (user == null)
         {
+            RecordFailedAttempt(normalizedEmail);
             _logger.LogWarning("Login attempt for non-existent user: {Email}", email);
             return null;
         }
@@ -57,9 +73,13 @@ public class AuthService
         var result = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, password);
         if (result == PasswordVerificationResult.Failed)
         {
+            RecordFailedAttempt(normalizedEmail);
             _logger.LogWarning("Invalid password for user: {Email}", email);
             return null;
         }
+
+        // Successful login — clear failed attempts
+        ClearFailedAttempts(normalizedEmail);
 
         // If password needs rehash (upgraded algorithm), update it
         if (result == PasswordVerificationResult.SuccessRehashNeeded)
@@ -69,6 +89,78 @@ public class AuthService
         }
 
         return user;
+    }
+
+    /// <summary>
+    /// Returns true if the email is currently locked out due to too many failed attempts
+    /// </summary>
+    public bool IsLockedOut(string email)
+    {
+        var key = email.ToLowerInvariant();
+        lock (_failedAttempts)
+        {
+            if (!_failedAttempts.TryGetValue(key, out var entry))
+                return false;
+
+            // If lockout window has expired, clear and allow
+            if (DateTime.UtcNow - entry.FirstFailure > LockoutDuration)
+            {
+                _failedAttempts.Remove(key);
+                return false;
+            }
+
+            return entry.Count >= MaxFailedAttempts;
+        }
+    }
+
+    private void RecordFailedAttempt(string email)
+    {
+        lock (_failedAttempts)
+        {
+            if (_failedAttempts.TryGetValue(email, out var entry))
+            {
+                // If window expired, start fresh
+                if (DateTime.UtcNow - entry.FirstFailure > LockoutDuration)
+                    _failedAttempts[email] = (1, DateTime.UtcNow);
+                else
+                    _failedAttempts[email] = (entry.Count + 1, entry.FirstFailure);
+            }
+            else
+            {
+                _failedAttempts[email] = (1, DateTime.UtcNow);
+            }
+        }
+    }
+
+    private void ClearFailedAttempts(string email)
+    {
+        lock (_failedAttempts)
+        {
+            _failedAttempts.Remove(email);
+        }
+    }
+
+    /// <summary>
+    /// Validates an API key and returns the user if valid
+    /// </summary>
+    public User? ValidateApiKey(string apiKey)
+    {
+        var users = _storage.GetAllUsers();
+        return users.FirstOrDefault(u => string.Equals(u.ApiKey, apiKey, StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Regenerates the API key for a user
+    /// </summary>
+    public string RegenerateApiKey(Guid userId)
+    {
+        var user = _storage.GetUserById(userId);
+        if (user == null) throw new InvalidOperationException("User not found");
+
+        user.ApiKey = User.GenerateNewApiKey();
+        _storage.SaveUser(user);
+        _logger.LogInformation("API key regenerated for user: {Email}", user.Email);
+        return user.ApiKey;
     }
 
     /// <summary>
@@ -208,7 +300,7 @@ public class AuthService
     }
 
     /// <summary>
-    /// Validates a TOTP code for the user
+    /// Validates a TOTP code for the user, with replay protection
     /// </summary>
     public bool ValidateTwoFactorCode(Guid userId, string code)
     {
@@ -220,7 +312,21 @@ public class AuthService
         var totp = new Totp(secretBytes);
 
         // Verify with a window of +/- 1 time step (30 seconds) to account for clock drift
-        return totp.VerifyTotp(code, out _, new VerificationWindow(previous: 1, future: 1));
+        if (!totp.VerifyTotp(code, out long timeStepMatched, new VerificationWindow(previous: 1, future: 1)))
+            return false;
+
+        // Prevent TOTP replay: reject if this timestep was already used
+        if (user.LastUsedTotpTimestep.HasValue && timeStepMatched <= user.LastUsedTotpTimestep.Value)
+        {
+            _logger.LogWarning("TOTP replay attempt for user {UserId}: timestep {Timestep} already used", userId, timeStepMatched);
+            return false;
+        }
+
+        // Record the used timestep
+        user.LastUsedTotpTimestep = timeStepMatched;
+        _storage.SaveUser(user);
+
+        return true;
     }
 
     /// <summary>

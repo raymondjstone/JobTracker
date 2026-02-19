@@ -17,13 +17,15 @@ public class JobCrawlService
 {
     private readonly HttpClient _httpClient;
     private readonly ILogger<JobCrawlService> _logger;
+    private readonly IConfiguration _configuration;
     private const int MaxPagesPerSite = 5;
     private const int DelayBetweenRequestsMs = 2000;
 
-    public JobCrawlService(HttpClient httpClient, ILogger<JobCrawlService> logger)
+    public JobCrawlService(HttpClient httpClient, ILogger<JobCrawlService> logger, IConfiguration configuration)
     {
         _httpClient = httpClient;
         _logger = logger;
+        _configuration = configuration;
     }
 
     public async Task<CrawlResult> CrawlAllSitesAsync(
@@ -436,10 +438,10 @@ public class JobCrawlService
         }
 
         // WTTJ is a React SPA that uses Algolia for search
-        // Public read-only credentials are embedded in their frontend bundle
-        const string algoliaAppId = "CSEKHVMS53";
-        const string algoliaApiKey = "4bd8f6215d0cc52b26430765769e65a0";
-        const string algoliaIndexPrefix = "wttj_jobs_production";
+        // Public read-only credentials sourced from config (defaults are WTTJ's public frontend keys)
+        var algoliaAppId = _configuration["Algolia:AppId"] ?? "CSEKHVMS53";
+        var algoliaApiKey = _configuration["Algolia:ApiKey"] ?? "4bd8f6215d0cc52b26430765769e65a0";
+        var algoliaIndexPrefix = _configuration["Algolia:IndexPrefix"] ?? "wttj_jobs_production";
 
         // Extract language from URL path (e.g. /en/jobs -> "en", /fr/jobs -> "fr")
         var langMatch = Regex.Match(baseUrl, @"welcometothejungle\.com/(\w{2})/");
@@ -842,8 +844,44 @@ public class JobCrawlService
 
     // --- Helpers ---
 
+    private static readonly HashSet<string> AllowedHosts = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "linkedin.com", "www.linkedin.com",
+        "indeed.com", "www.indeed.com", "uk.indeed.com",
+        "s1jobs.com", "www.s1jobs.com",
+        "welcometothejungle.com", "www.welcometothejungle.com",
+        "energyjobsearch.com", "www.energyjobsearch.com",
+    };
+
+    /// <summary>
+    /// Validates that a URL is safe for server-side requests (SSRF protection).
+    /// Requires HTTPS and an allowed host.
+    /// </summary>
+    internal static bool ValidateExternalUrl(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            return false;
+        if (!string.Equals(uri.Scheme, "https", StringComparison.OrdinalIgnoreCase))
+            return false;
+        var host = uri.Host;
+        if (System.Net.IPAddress.TryParse(host, out var ip))
+        {
+            if (System.Net.IPAddress.IsLoopback(ip) || ip.ToString().StartsWith("10.") ||
+                ip.ToString().StartsWith("172.") || ip.ToString().StartsWith("192.168."))
+                return false;
+        }
+        return AllowedHosts.Contains(host) ||
+               AllowedHosts.Any(allowed => host.EndsWith("." + allowed, StringComparison.OrdinalIgnoreCase));
+    }
+
     private async Task<string?> FetchPageAsync(string url, CancellationToken ct)
     {
+        if (!ValidateExternalUrl(url))
+        {
+            _logger.LogWarning("[Crawl] Blocked URL (SSRF protection): {Url}", url);
+            return null;
+        }
+
         try
         {
             _logger.LogDebug("[Crawl] Fetching: {Url}", url);

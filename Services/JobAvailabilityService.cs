@@ -48,6 +48,13 @@ public class JobAvailabilityService
         if (string.IsNullOrWhiteSpace(job.Url))
             return new JobAvailabilityCheckResult { Result = JobAvailabilityResult.Skipped };
 
+        // SSRF protection: validate URL before making requests
+        if (!ValidateExternalUrl(job.Url))
+        {
+            _logger.LogWarning("Blocked URL (SSRF protection): {Url}", job.Url);
+            return new JobAvailabilityCheckResult { Result = JobAvailabilityResult.Skipped };
+        }
+
         var source = (job.Source ?? "").ToLowerInvariant();
 
         // Indeed blocks all automated requests via Cloudflare (403 for both active and removed jobs)
@@ -377,6 +384,35 @@ public class JobAvailabilityService
         progress.IsComplete = true;
         progress.CurrentJobTitle = "";
         onProgress?.Invoke(progress);
+    }
+
+    private static readonly HashSet<string> AllowedHosts = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "linkedin.com", "www.linkedin.com",
+        "indeed.com", "www.indeed.com", "uk.indeed.com",
+        "s1jobs.com", "www.s1jobs.com",
+        "welcometothejungle.com", "www.welcometothejungle.com",
+        "energyjobsearch.com", "www.energyjobsearch.com",
+    };
+
+    /// <summary>
+    /// Validates that a URL is safe for server-side requests (SSRF protection).
+    /// </summary>
+    internal static bool ValidateExternalUrl(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            return false;
+        if (!string.Equals(uri.Scheme, "https", StringComparison.OrdinalIgnoreCase))
+            return false;
+        var host = uri.Host;
+        if (System.Net.IPAddress.TryParse(host, out var ip))
+        {
+            if (System.Net.IPAddress.IsLoopback(ip) || ip.ToString().StartsWith("10.") ||
+                ip.ToString().StartsWith("172.") || ip.ToString().StartsWith("192.168."))
+                return false;
+        }
+        return AllowedHosts.Contains(host) ||
+               AllowedHosts.Any(allowed => host.EndsWith("." + allowed, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>

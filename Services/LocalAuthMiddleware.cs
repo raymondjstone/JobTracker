@@ -7,7 +7,6 @@ public class LocalAuthMiddleware
     private readonly RequestDelegate _next;
     private readonly AuthService _authService;
     private readonly ILogger<LocalAuthMiddleware> _logger;
-    private Models.User? _localUser;
 
     public LocalAuthMiddleware(RequestDelegate next, AuthService authService, ILogger<LocalAuthMiddleware> logger)
     {
@@ -26,7 +25,7 @@ public class LocalAuthMiddleware
             return;
         }
 
-        var user = GetOrCreateLocalUser();
+        var user = GetLocalUser();
         if (user != null)
         {
             var claims = new[]
@@ -42,19 +41,9 @@ public class LocalAuthMiddleware
         await _next(context);
     }
 
-    private Models.User? GetOrCreateLocalUser()
+    private Models.User? GetLocalUser()
     {
-        if (_localUser != null)
-            return _localUser;
-
         var users = _authService.GetAllUsers();
-        _localUser = users.FirstOrDefault(u => u.Email == "local@localhost");
-
-        if (_localUser == null)
-        {
-            _localUser = users.FirstOrDefault();
-        }
-
-        return _localUser;
+        return users.FirstOrDefault(u => u.Email == "local@localhost") ?? users.FirstOrDefault();
     }
 }

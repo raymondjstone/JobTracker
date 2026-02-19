@@ -10,6 +10,14 @@ public class User
     public string? TwoFactorSecret { get; set; }  // TOTP secret
     public string? PasswordResetToken { get; set; }
     public DateTime? PasswordResetExpiry { get; set; }
+    public string ApiKey { get; set; } = GenerateNewApiKey();
+    public long? LastUsedTotpTimestep { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? LastLoginAt { get; set; }
+
+    public static string GenerateNewApiKey()
+    {
+        var bytes = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
+        return Convert.ToBase64String(bytes).Replace("+", "-").Replace("/", "_").TrimEnd('=');
+    }
 }

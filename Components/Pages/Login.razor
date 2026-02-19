@@ -66,6 +66,12 @@
 
         try
         {
+            if (AuthService.IsLockedOut(loginModel.Email))
+            {
+                errorMessage = "Too many failed attempts. Please try again in a few minutes.";
+                return;
+            }
+
             var user = AuthService.ValidateCredentials(loginModel.Email, loginModel.Password);
             if (user == null)
             {
@@ -125,8 +131,18 @@
 
         AuthService.RecordLogin(user);
 
-        var returnUrl = ReturnUrl ?? "/";
+        var returnUrl = GetSafeReturnUrl(ReturnUrl);
         Navigation.NavigateTo(returnUrl, forceLoad: true);
+    }
+
+    private static string GetSafeReturnUrl(string? returnUrl)
+    {
+        if (string.IsNullOrWhiteSpace(returnUrl))
+            return "/";
+        // Only allow local relative paths
+        if (!returnUrl.StartsWith("/") || returnUrl.StartsWith("//") || returnUrl.StartsWith("/\\"))
+            return "/";
+        return returnUrl;
     }
 
     private class LoginModel

@@ -361,10 +361,9 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
-/Data/jobs.json
-/Data/jobs - Copy.json
-/Data/settings.json
-/Data/history.json
-/Data/background-jobs.json
-/Data/settings_e91def3b-9209-4d86-ae74-f4f78bdf23c5.json
-/Data/users.json
+# Application data files
+Data/*.json
+
+# Environment-specific settings (keep base appsettings.json which has redacted values)
+appsettings.*.json
+!appsettings.json
