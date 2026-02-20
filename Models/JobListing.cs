@@ -25,6 +25,10 @@ public class JobListing
     public DateTime? DateSharedToWhatsApp { get; set; }
     public string Source { get; set; } = string.Empty;
     public DateTime? LastChecked { get; set; }
+    public decimal? SalaryMin { get; set; }
+    public decimal? SalaryMax { get; set; }
+    public string Notes { get; set; } = string.Empty;
+    public string CoverLetter { get; set; } = string.Empty;
 }
 
 public class ApplicationStageChange

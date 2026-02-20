@@ -58,8 +58,34 @@ public class JobListingService
                 _jobListings.AddRange(jobs);
                 _loadedForUser = userId;
                 _logger.LogDebug("Loaded {Count} jobs for user {UserId}", jobs.Count, userId);
+
+                // Backfill parsed salary data for existing jobs
+                BackfillSalaryData(userId);
             }
         }
+    }
+
+    /// <summary>
+    /// Backfills SalaryMin/SalaryMax for jobs that have a Salary string but no parsed values.
+    /// Called once when jobs are loaded.
+    /// </summary>
+    private void BackfillSalaryData(Guid userId)
+    {
+        var jobsToBackfill = _jobListings
+            .Where(j => j.UserId == userId && !string.IsNullOrWhiteSpace(j.Salary) && !j.SalaryMin.HasValue && !j.SalaryMax.HasValue)
+            .ToList();
+
+        if (jobsToBackfill.Count == 0) return;
+
+        foreach (var job in jobsToBackfill)
+        {
+            var (min, max) = SalaryParser.Parse(job.Salary);
+            job.SalaryMin = min;
+            job.SalaryMax = max;
+        }
+
+        _storage.SaveJobs(_jobListings.Where(j => j.UserId == userId).ToList(), userId);
+        _logger.LogInformation("Backfilled salary data for {Count} jobs", jobsToBackfill.Count);
     }
 
     /// <summary>
@@ -172,6 +198,11 @@ public class JobListingService
                 jobListing.Source = InferSourceFromUrl(jobListing.Url);
             }
 
+            // Parse salary into min/max
+            var (salaryMin, salaryMax) = SalaryParser.Parse(jobListing.Salary);
+            jobListing.SalaryMin = salaryMin;
+            jobListing.SalaryMax = salaryMax;
+
             // Apply job rules
             RuleEvaluationResult? ruleResult = null;
             {
@@ -279,6 +310,11 @@ public class JobListingService
                 {
                     job.Source = InferSourceFromUrl(job.Url);
                 }
+
+                // Parse salary into min/max
+                var (salMin, salMax) = SalaryParser.Parse(job.Salary);
+                job.SalaryMin = salMin;
+                job.SalaryMax = salMax;
 
                 // Apply job rules
                 {
@@ -429,6 +465,34 @@ public class JobListingService
         }
     }
 
+    public void SetNotes(Guid id, string notes)
+    {
+        lock (_lock)
+        {
+            var job = _jobListings.FirstOrDefault(j => j.Id == id);
+            if (job != null)
+            {
+                job.Notes = notes ?? string.Empty;
+                _storage.SaveJob(job);
+                NotifyStateChanged();
+            }
+        }
+    }
+
+    public void SetCoverLetter(Guid id, string coverLetter)
+    {
+        lock (_lock)
+        {
+            var job = _jobListings.FirstOrDefault(j => j.Id == id);
+            if (job != null)
+            {
+                job.CoverLetter = coverLetter ?? string.Empty;
+                _storage.SaveJob(job);
+                NotifyStateChanged();
+            }
+        }
+    }
+
     /// <summary>
     /// Cycles to the next application stage
     /// </summary>
@@ -535,6 +599,9 @@ public class JobListingService
             if (!string.IsNullOrWhiteSpace(parsed.Salary) && string.IsNullOrWhiteSpace(job.Salary))
             {
                 job.Salary = parsed.Salary;
+                var (salMin, salMax) = SalaryParser.Parse(job.Salary);
+                job.SalaryMin = salMin;
+                job.SalaryMax = salMax;
                 changed = true;
             }
 
@@ -747,6 +814,11 @@ public class JobListingService
     {
         lock (_lock)
         {
+            // Parse salary into min/max
+            var (salaryMin, salaryMax) = SalaryParser.Parse(jobListing.Salary);
+            jobListing.SalaryMin = salaryMin;
+            jobListing.SalaryMax = salaryMax;
+
             var existingJob = _jobListings.FirstOrDefault(j => j.Id == jobListing.Id);
             if (existingJob != null)
             {
@@ -923,6 +995,16 @@ public class JobListingService
             if (!string.IsNullOrWhiteSpace(filter.SalarySearch))
             query = query.Where(j => j.Salary.Contains(filter.SalarySearch, StringComparison.OrdinalIgnoreCase));
 
+            // Salary target range filter
+            if (filter.SalaryTarget.HasValue)
+            {
+                var target = filter.SalaryTarget.Value;
+                query = query.Where(j =>
+                    (j.SalaryMin.HasValue || j.SalaryMax.HasValue) &&
+                    (!j.SalaryMin.HasValue || j.SalaryMin.Value <= target) &&
+                    (!j.SalaryMax.HasValue || j.SalaryMax.Value >= target));
+            }
+
             // Applied status filter
             if (filter.HasApplied.HasValue)
             {
@@ -965,6 +1047,8 @@ public class JobListingService
                 SortOption.TitleDesc => sorted.ThenByDescending(j => j.Title),
                 SortOption.CompanyAsc => sorted.ThenBy(j => j.Company),
                 SortOption.CompanyDesc => sorted.ThenByDescending(j => j.Company),
+                SortOption.SalaryDesc => sorted.ThenByDescending(j => j.SalaryMax ?? 0),
+                SortOption.SalaryAsc => sorted.ThenBy(j => j.SalaryMin ?? decimal.MaxValue),
                 _ => sorted.ThenByDescending(j => j.DateAdded)
             };
 
@@ -1443,6 +1527,7 @@ public class JobListingFilter
     public InterestStatus? Interest { get; set; }
     public bool? HasSalary { get; set; }
     public string? SalarySearch { get; set; }
+    public decimal? SalaryTarget { get; set; }
     public bool? HasApplied { get; set; }
     public ApplicationStage? ApplicationStage { get; set; }
     public SuitabilityStatus? Suitability { get; set; }
@@ -1459,7 +1544,9 @@ public enum SortOption
     TitleAsc,
     TitleDesc,
     CompanyAsc,
-    CompanyDesc
+    CompanyDesc,
+    SalaryDesc,
+    SalaryAsc
 }
 
 public class JobStats

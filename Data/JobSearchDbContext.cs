@@ -49,6 +49,11 @@ public class JobSearchDbContext : DbContext
             entity.Property(j => j.Url).HasColumnType("nvarchar(max)");
             entity.Property(j => j.Salary).HasColumnType("nvarchar(max)");
             entity.Property(j => j.Source).HasColumnType("nvarchar(max)");
+            entity.Property(j => j.Notes).HasColumnType("nvarchar(max)");
+            entity.Property(j => j.CoverLetter).HasColumnType("nvarchar(max)");
+
+            entity.Property(j => j.SalaryMin).HasColumnType("decimal(18,2)");
+            entity.Property(j => j.SalaryMax).HasColumnType("decimal(18,2)");
 
             // List<string> Skills -> JSON column
             entity.Property(j => j.Skills).HasConversion(

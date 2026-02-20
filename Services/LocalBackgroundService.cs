@@ -29,7 +29,8 @@ public class LocalBackgroundService : BackgroundService
         ["AvailabilityCheck-NotChecked"] = ("Availability Check (NotChecked)", TimeSpan.FromHours(6)),
         ["AvailabilityCheck-Possible"] = ("Availability Check (Possible)", TimeSpan.FromHours(12)),
         ["GhostedCheck"] = ("Ghosted Check", TimeSpan.FromHours(24)),
-        ["JobCrawl"] = ("Job Crawl", TimeSpan.FromHours(24)),
+        ["NoReplyCheck"] = ("No Reply Check", TimeSpan.FromHours(24)),
+        ["JobCrawl"] = ("Job Crawl", TimeSpan.FromHours(48)),
     };
 
     private readonly Dictionary<string, BackgroundJobStatus> _jobStatuses = new();
@@ -115,6 +116,7 @@ public class LocalBackgroundService : BackgroundService
             RunLoop("AvailabilityCheck-NotChecked", RunAvailabilityCheckNotChecked, stoppingToken),
             RunLoop("AvailabilityCheck-Possible", RunAvailabilityCheckPossible, stoppingToken),
             RunLoop("GhostedCheck", RunGhostedCheck, stoppingToken),
+            RunLoop("NoReplyCheck", RunNoReplyCheck, stoppingToken),
             RunLoop("JobCrawl", RunJobCrawl, stoppingToken),
         };
 
@@ -280,6 +282,13 @@ public class LocalBackgroundService : BackgroundService
     {
         using var scope = _scopeFactory.CreateScope();
         var job = scope.ServiceProvider.GetRequiredService<GhostedCheckJob>();
+        job.Run();
+        return Task.CompletedTask;
+    }
+    private Task RunNoReplyCheck()
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var job = scope.ServiceProvider.GetRequiredService<NoReplyCheckJob>();
         job.Run();
         return Task.CompletedTask;
     }

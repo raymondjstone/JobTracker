@@ -2,12 +2,12 @@ using JobTracker.Models;
 
 namespace JobTracker.Services;
 
-public class GhostedCheckJob
+public class NoReplyCheckJob
 {
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly ILogger<GhostedCheckJob> _logger;
+    private readonly ILogger<NoReplyCheckJob> _logger;
 
-    public GhostedCheckJob(IServiceScopeFactory scopeFactory, ILogger<GhostedCheckJob> logger)
+    public NoReplyCheckJob(IServiceScopeFactory scopeFactory, ILogger<NoReplyCheckJob> logger)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
@@ -15,7 +15,7 @@ public class GhostedCheckJob
 
     public void Run()
     {
-        _logger.LogInformation("[Hangfire] Starting ghosted check for applied jobs");
+        _logger.LogInformation("[Hangfire] Starting no reply check for applied jobs");
 
         using var scope = _scopeFactory.CreateScope();
         var jobService = scope.ServiceProvider.GetRequiredService<JobListingService>();
@@ -23,31 +23,31 @@ public class GhostedCheckJob
 
         var users = authService.GetAllUsers();
         var cutoff = DateTime.Now.AddDays(-3);
-        int totalGhosted = 0;
+        int totalNoReply = 0;
 
         foreach (var user in users)
         {
             var allJobs = jobService.GetAllJobListings(user.Id);
             var appliedJobs = allJobs
-                .Where(j => j.HasApplied && j.ApplicationStage == ApplicationStage.NoReply)
+                .Where(j => j.HasApplied && j.ApplicationStage == ApplicationStage.Applied)
                 .Where(j => j.DateApplied.HasValue && j.DateApplied.Value < cutoff)
                 .ToList();
 
             foreach (var job in appliedJobs)
             {
                 jobService.SetApplicationStage(job.Id, ApplicationStage.NoReply, HistoryChangeSource.System);
-                totalGhosted++;
-                _logger.LogInformation("[Hangfire] Marked job as ghosted: {Title} (applied {Date})",
+                totalNoReply++;
+                _logger.LogInformation("[Hangfire] Marked job as no reply: {Title} (applied {Date})",
                     job.Title, job.DateApplied?.ToString("yyyy-MM-dd"));
             }
 
             if (appliedJobs.Count > 0)
             {
-                _logger.LogInformation("[Hangfire] Marked {Count} jobs as ghosted for user {User}",
+                _logger.LogInformation("[Hangfire] Marked {Count} jobs as no reply for user {User}",
                     appliedJobs.Count, user.Email);
             }
         }
 
-        _logger.LogInformation("[Hangfire] Ghosted check complete: {Total} jobs marked as ghosted", totalGhosted);
+        _logger.LogInformation("[Hangfire] no reply check complete: {Total} jobs marked as no reply", totalNoReply);
     }
 }

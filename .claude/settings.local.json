@@ -25,7 +25,8 @@
       "WebFetch(domain:en.blog.mantiks.io)",
       "WebFetch(domain:energyjobsearch.com)",
       "WebFetch(domain:oilandgasjobsearch.com)",
-      "WebFetch(domain:webcache.googleusercontent.com)"
+      "WebFetch(domain:webcache.googleusercontent.com)",
+      "Bash(dotnet ef database update:*)"
     ]
   }
 }

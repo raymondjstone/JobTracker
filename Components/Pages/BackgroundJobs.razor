@@ -163,7 +163,8 @@ else
     {
         "AvailabilityCheck-NotChecked" => "Visits LinkedIn job URLs for listings not yet checked to detect if the posting has been closed or removed.",
         "AvailabilityCheck-Possible" => "Re-checks LinkedIn job URLs for listings previously marked as available to detect if they have since been closed.",
-        "GhostedCheck" => "Marks applied jobs as 'Ghosted' if no status change has occurred within 7 days of applying.",
+        "GhostedCheck" => "Marks applied jobs as 'Ghosted' if no status change has occurred within 3 days of no reply state.",
+        "NoReplyCheck" => "Marks applied jobs as 'No reply' if no status change has occurred within 3 days of applying.",
         "JobCrawl" => "Searches LinkedIn for new job listings matching your saved search queries and adds them automatically.",
         _ => ""
     };

@@ -123,6 +123,7 @@ if (!localMode && string.Equals(storageProvider, "SqlServer", StringComparison.O
 builder.Services.AddTransient<AvailabilityCheckJob>();
 builder.Services.AddTransient<JobCrawlJob>();
 builder.Services.AddTransient<GhostedCheckJob>();
+builder.Services.AddTransient<NoReplyCheckJob>();
 
 // In LocalMode, use a BackgroundService for recurring jobs
 if (localMode)
@@ -783,6 +784,11 @@ if (!localMode && string.Equals(storageProvider, "SqlServer", StringComparison.O
         "ghosted-check",
         job => job.Run(),
         "0 5 * * *"); // 5:00 AM daily
+
+    RecurringJob.AddOrUpdate<NoReplyCheckJob>(
+        "noreply-check",
+        job => job.Run(),
+        "0 8 * * *"); // 8:00 AM daily
 
     RecurringJob.AddOrUpdate<JobCrawlJob>(
         "job-crawl",

@@ -137,6 +137,12 @@
         </button>
     </li>
     <li class="nav-item">
+        <button class="nav-link @(activeTab == TabType.Pipeline ? "active" : "")" @onclick="() => SetActiveTab(TabType.Pipeline)">
+            <i class="bi bi-kanban"></i> Pipeline
+            <span class="badge bg-primary ms-1">@appliedJobsCount</span>
+        </button>
+    </li>
+    <li class="nav-item">
         <button class="nav-link @(activeTab == TabType.Unsuitable ? "active" : "")" @onclick="() => SetActiveTab(TabType.Unsuitable)">
             <i class="bi bi-slash-circle"></i> Unsuitable
             <span class="badge bg-danger ms-1">@unsuitableJobsCount</span>
@@ -225,7 +231,7 @@
                         <input type="text" class="form-control" placeholder="Search job title only..."
                                @bind="filter.TitleOnlySearchTerm" @bind:event="oninput" @onkeyup="ApplyFilter" />
                     </div>
-                    @if (activeTab == TabType.Applied)
+                    @if (activeTab == TabType.Applied || activeTab == TabType.Pipeline)
                     {
                         <div class="col-md-2">
                             <label class="form-label">Stage</label>
@@ -257,12 +263,19 @@
                             <option value="@SortOption.TitleDesc">Title (Z-A)</option>
                             <option value="@SortOption.CompanyAsc">Company (A-Z)</option>
                             <option value="@SortOption.CompanyDesc">Company (Z-A)</option>
+                            <option value="@SortOption.SalaryDesc">Salary (Highest)</option>
+                            <option value="@SortOption.SalaryAsc">Salary (Lowest)</option>
                         </select>
                     </div>
                     <div class="col-md-2">
                         <label class="form-label">Salary Contains</label>
                         <input type="text" class="form-control" placeholder="e.g. 100K"
                                @bind="filter.SalarySearch" @bind:event="oninput" @onkeyup="ApplyFilter" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Min Salary</label>
+                        <input type="number" class="form-control" placeholder="e.g. 50000"
+                               @bind="selectedSalaryTarget" @bind:event="oninput" @bind:after="ApplyFilter" />
                     </div>
                 </div>
                 <div class="row g-3 mt-2">
@@ -368,8 +381,73 @@
     </div>
 }
 
-@* Job Cards *@
-@if (!filteredJobs.Any())
+@* Pipeline / Kanban Board *@
+@if (activeTab == TabType.Pipeline)
+{
+    @if (!filteredJobs.Any())
+    {
+        <div class="alert alert-info">
+            <h4 class="alert-heading">No job listings found</h4>
+            <p>No applied jobs yet. Mark jobs as "Applied" to see them in the pipeline.</p>
+        </div>
+    }
+    else
+    {
+        var pipelineStages = new[] {
+            ApplicationStage.Applied, ApplicationStage.NoReply,ApplicationStage.Pending, ApplicationStage.TechTest,
+            ApplicationStage.Interview, ApplicationStage.Offer,
+             ApplicationStage.Ghosted, ApplicationStage.Rejected
+        };
+        <div class="kanban-board d-flex gap-3" style="overflow-x: auto; padding-bottom: 1rem;">
+            @foreach (var stage in pipelineStages)
+            {
+                var stageJobs = filteredJobs.Where(j => j.ApplicationStage == stage).ToList();
+                <div class="kanban-column">
+                    <div class="kanban-column-header @GetStageBadgeClass(stage)">
+                        <i class="@GetStageIcon(stage)"></i> @GetStageDisplayName(stage)
+                        <span class="badge bg-light text-dark ms-1">@stageJobs.Count</span>
+                    </div>
+                    <div class="kanban-column-body">
+                        @if (!stageJobs.Any())
+                        {
+                            <div class="text-muted text-center small py-3">No jobs</div>
+                        }
+                        else
+                        {
+                            @foreach (var job in stageJobs)
+                            {
+                                <div class="kanban-card" @onclick="() => ShowJobDetails(job)" title="Click to view details">
+                                    <div class="d-flex align-items-start justify-content-between mb-1">
+                                        <strong class="kanban-card-title">
+                                            <span class="source-icon me-1">@((MarkupString)GetSourceIcon(job.Source))</span>@job.Title
+                                        </strong>
+                                    </div>
+                                    <div class="text-muted small mb-1">@job.Company</div>
+                                    @if (job.DateApplied.HasValue)
+                                    {
+                                        <div class="text-muted small mb-2">
+                                            <i class="bi bi-calendar3"></i> @((int)(DateTime.Now - job.DateApplied.Value).TotalDays)d ago
+                                        </div>
+                                    }
+                                    <select class="form-select form-select-sm kanban-stage-select"
+                                            value="@job.ApplicationStage"
+                                            @onclick:stopPropagation="true"
+                                            @onchange="@(e => SetStage(job.Id, Enum.Parse<ApplicationStage>(e.Value?.ToString() ?? "Applied")))">
+                                        @foreach (var s in Enum.GetValues<ApplicationStage>().Where(s => s != ApplicationStage.None))
+                                        {
+                                            <option value="@s" selected="@(job.ApplicationStage == s)">@GetStageDisplayName(s)</option>
+                                        }
+                                    </select>
+                                </div>
+                            }
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+}
+else if (!filteredJobs.Any())
 {
     <div class="alert alert-info">
         <h4 class="alert-heading">No job listings found</h4>
@@ -449,7 +527,28 @@ else
                             </p>
                             @if (!string.IsNullOrEmpty(job.Salary))
                             {
-                                <p class="card-text"><strong class="text-success"><i class="bi bi-currency-dollar"></i> @job.Salary</strong></p>
+                                <p class="card-text mb-1"><strong class="text-success"><i class="bi bi-currency-dollar"></i> @job.Salary</strong></p>
+                                @if (job.SalaryMin.HasValue || job.SalaryMax.HasValue)
+                                {
+                                    <p class="card-text mb-1"><small class="text-muted">
+                                        @if (job.SalaryMin.HasValue && job.SalaryMax.HasValue)
+                                        {
+                                            @($"~{job.SalaryMin.Value:N0} - {job.SalaryMax.Value:N0} /yr")
+                                        }
+                                        else if (job.SalaryMin.HasValue)
+                                        {
+                                            @($"From ~{job.SalaryMin.Value:N0} /yr")
+                                        }
+                                        else
+                                        {
+                                            @($"Up to ~{job.SalaryMax!.Value:N0} /yr")
+                                        }
+                                    </small></p>
+                                }
+                            }
+                            else
+                            {
+                                <p class="card-text mb-1 text-muted"><i class="bi bi-currency-dollar"></i> Not specified</p>
                             }
                             <p class="card-text description-preview">@TruncateDescription(job.Description, 150)</p>
                         </div>
@@ -707,7 +806,84 @@ else
                     </div>
                     
                     <hr />
-                    
+
+                    <div class="mb-3">
+                        <ul class="nav nav-tabs nav-tabs-sm" role="tablist">
+                            <li class="nav-item">
+                                <button class="nav-link @(notesTab == "notes" ? "active" : "") py-1 px-3" @onclick='() => notesTab = "notes"'>
+                                    <i class="bi bi-journal-text"></i> Notes
+                                    @if (!string.IsNullOrWhiteSpace(selectedJob.Notes))
+                                    {
+                                        <span class="badge bg-secondary ms-1" style="font-size: 0.65rem;">1</span>
+                                    }
+                                </button>
+                            </li>
+                            <li class="nav-item">
+                                <button class="nav-link @(notesTab == "cover" ? "active" : "") py-1 px-3" @onclick='() => notesTab = "cover"'>
+                                    <i class="bi bi-envelope-paper"></i> Cover Letter
+                                    @if (!string.IsNullOrWhiteSpace(selectedJob.CoverLetter))
+                                    {
+                                        <span class="badge bg-secondary ms-1" style="font-size: 0.65rem;">1</span>
+                                    }
+                                </button>
+                            </li>
+                        </ul>
+                        <div class="border border-top-0 rounded-bottom p-3">
+                            @if (notesTab == "notes")
+                            {
+                                @if (editingNotes)
+                                {
+                                    <textarea class="form-control mb-2" rows="5" @bind="editNotesText" placeholder="Add notes about this job..."></textarea>
+                                    <div class="d-flex gap-2">
+                                        <button class="btn btn-sm btn-primary" @onclick="SaveNotes"><i class="bi bi-check-lg"></i> Save</button>
+                                        <button class="btn btn-sm btn-outline-secondary" @onclick="CancelEditNotes">Cancel</button>
+                                    </div>
+                                }
+                                else
+                                {
+                                    @if (!string.IsNullOrWhiteSpace(selectedJob.Notes))
+                                    {
+                                        <pre class="description-text mb-2" style="max-height: 200px;">@selectedJob.Notes</pre>
+                                    }
+                                    else
+                                    {
+                                        <p class="text-muted small mb-2">No notes yet.</p>
+                                    }
+                                    <button class="btn btn-sm btn-outline-primary" @onclick="StartEditNotes">
+                                        <i class="bi bi-pencil"></i> @(!string.IsNullOrWhiteSpace(selectedJob.Notes) ? "Edit" : "Add Notes")
+                                    </button>
+                                }
+                            }
+                            else
+                            {
+                                @if (editingCoverLetter)
+                                {
+                                    <textarea class="form-control mb-2" rows="8" @bind="editCoverLetterText" placeholder="Paste or write your cover letter..."></textarea>
+                                    <div class="d-flex gap-2">
+                                        <button class="btn btn-sm btn-primary" @onclick="SaveCoverLetter"><i class="bi bi-check-lg"></i> Save</button>
+                                        <button class="btn btn-sm btn-outline-secondary" @onclick="CancelEditCoverLetter">Cancel</button>
+                                    </div>
+                                }
+                                else
+                                {
+                                    @if (!string.IsNullOrWhiteSpace(selectedJob.CoverLetter))
+                                    {
+                                        <pre class="description-text mb-2" style="max-height: 300px;">@selectedJob.CoverLetter</pre>
+                                    }
+                                    else
+                                    {
+                                        <p class="text-muted small mb-2">No cover letter yet.</p>
+                                    }
+                                    <button class="btn btn-sm btn-outline-primary" @onclick="StartEditCoverLetter">
+                                        <i class="bi bi-pencil"></i> @(!string.IsNullOrWhiteSpace(selectedJob.CoverLetter) ? "Edit" : "Add Cover Letter")
+                                    </button>
+                                }
+                            }
+                        </div>
+                    </div>
+
+                    <hr />
+
                     <div class="row text-muted small">
                         <div class="col-3">
                             <strong>Date Posted:</strong> @selectedJob.DatePosted.ToString("MMM dd, yyyy")
@@ -1062,10 +1238,20 @@ else
 
     .btn-energyjobsearch { background-color: #FF6B00; border-color: #FF6B00; color: #fff; }
     .btn-energyjobsearch:hover { background-color: #cc5500; border-color: #cc5500; color: #fff; }
+
+    /* Kanban Board */
+    .kanban-board { min-height: 400px; }
+    .kanban-column { width: 260px; min-width: 260px; flex-shrink: 0; background-color: #f8f9fa; border-radius: 0.5rem; display: flex; flex-direction: column; }
+    .kanban-column-header { padding: 0.6rem 0.75rem; border-radius: 0.5rem 0.5rem 0 0; font-weight: 600; font-size: 0.9rem; color: #fff; display: flex; align-items: center; gap: 0.4rem; }
+    .kanban-column-body { padding: 0.5rem; flex-grow: 1; overflow-y: auto; max-height: 65vh; }
+    .kanban-card { background: #fff; border: 1px solid #dee2e6; border-radius: 0.375rem; padding: 0.6rem; margin-bottom: 0.5rem; cursor: pointer; transition: box-shadow 0.15s; }
+    .kanban-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
+    .kanban-card-title { font-size: 0.85rem; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .kanban-stage-select { font-size: 0.75rem; padding: 0.15rem 0.4rem; }
 </style>
 
 @code {
-    private enum TabType { Browse, Possible, Applied, Unsuitable }
+    private enum TabType { Browse, Possible, Applied, Pipeline, Unsuitable }
     
     private TabType activeTab = TabType.Browse;
     private JobListingFilter filter = new() { SortBy = SortOption.DateAddedDesc };
@@ -1082,6 +1268,7 @@ else
     private string selectedHasSalary = "";
     private string selectedApplicationStage = "";
     private string selectedSource = "";
+    private string selectedSalaryTarget = "";
     private JobListing? selectedJob = null;
     private JobListing? jobToDelete = null;
     private Guid? lastViewedJobId = null;
@@ -1092,6 +1279,13 @@ else
     private JobAvailabilityProgress? scanProgress = null;
     private CancellationTokenSource? scanCts = null;
     private Guid? fetchingDescriptionJobId = null;
+
+    // Notes / Cover Letter editing state
+    private string notesTab = "notes";
+    private bool editingNotes = false;
+    private bool editingCoverLetter = false;
+    private string editNotesText = "";
+    private string editCoverLetterText = "";
 
     // Crawl state
     private bool isCrawling = false;
@@ -1155,6 +1349,7 @@ else
         filter.HasSalary = string.IsNullOrEmpty(selectedHasSalary) ? null : bool.Parse(selectedHasSalary);
         filter.ApplicationStage = string.IsNullOrEmpty(selectedApplicationStage) ? null : Enum.Parse<ApplicationStage>(selectedApplicationStage);
         filter.Source = string.IsNullOrEmpty(selectedSource) ? null : selectedSource;
+        filter.SalaryTarget = decimal.TryParse(selectedSalaryTarget, out var salTarget) && salTarget > 0 ? salTarget : null;
         filter.PrioritizeJobId = lastViewedJobId;
         
         // Apply tab-specific filtering
@@ -1163,6 +1358,7 @@ else
         filteredJobs = activeTab switch
         {
             TabType.Applied => baseJobs.Where(j => j.HasApplied),
+            TabType.Pipeline => baseJobs.Where(j => j.HasApplied),
             TabType.Possible => baseJobs.Where(j => !j.HasApplied && j.Suitability == SuitabilityStatus.Possible),
             TabType.Unsuitable => baseJobs.Where(j => !j.HasApplied && j.Suitability == SuitabilityStatus.Unsuitable),
             _ => baseJobs.Where(j => !j.HasApplied && j.Suitability == SuitabilityStatus.NotChecked) // Browse - only NotChecked
@@ -1180,6 +1376,7 @@ else
         selectedHasSalary = "";
         selectedApplicationStage = "";
         selectedSource = "";
+        selectedSalaryTarget = "";
         ApplyFilter();
     }
 
@@ -1247,6 +1444,50 @@ else
         RefreshData();
     }
 
+    private void StartEditNotes()
+    {
+        editNotesText = selectedJob?.Notes ?? "";
+        editingNotes = true;
+    }
+
+    private void CancelEditNotes()
+    {
+        editingNotes = false;
+    }
+
+    private void SaveNotes()
+    {
+        if (selectedJob != null)
+        {
+            JobService.SetNotes(selectedJob.Id, editNotesText);
+            selectedJob = JobService.GetJobById(selectedJob.Id);
+            RefreshData();
+        }
+        editingNotes = false;
+    }
+
+    private void StartEditCoverLetter()
+    {
+        editCoverLetterText = selectedJob?.CoverLetter ?? "";
+        editingCoverLetter = true;
+    }
+
+    private void CancelEditCoverLetter()
+    {
+        editingCoverLetter = false;
+    }
+
+    private void SaveCoverLetter()
+    {
+        if (selectedJob != null)
+        {
+            JobService.SetCoverLetter(selectedJob.Id, editCoverLetterText);
+            selectedJob = JobService.GetJobById(selectedJob.Id);
+            RefreshData();
+        }
+        editingCoverLetter = false;
+    }
+
     private void CycleStage(Guid id)
     {
         JobService.CycleApplicationStage(id);
@@ -1278,8 +1519,20 @@ else
         selectedJob = JobService.GetJobById(job.Id);
     }
 
-    private void ShowJobDetails(JobListing job) => selectedJob = job;
-    private void CloseJobDetails() => selectedJob = null;
+    private void ShowJobDetails(JobListing job)
+    {
+        selectedJob = job;
+        notesTab = "notes";
+        editingNotes = false;
+        editingCoverLetter = false;
+    }
+
+    private void CloseJobDetails()
+    {
+        selectedJob = null;
+        editingNotes = false;
+        editingCoverLetter = false;
+    }
     private void ConfirmDelete(JobListing job) => jobToDelete = job;
     private void CancelDelete() => jobToDelete = null;
 
