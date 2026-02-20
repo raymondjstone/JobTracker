@@ -214,6 +214,14 @@ public partial class LinkedInJobExtractor
                 if (root.TryGetProperty("description", out var desc))
                     job.Description = StripHtml(desc.GetString() ?? "");
 
+                // Try to get a richer description from the HTML body
+                var htmlDescription = ExtractDescriptionFromHtml(html);
+                if (!string.IsNullOrWhiteSpace(htmlDescription) &&
+                    htmlDescription.Length > (job.Description?.Length ?? 0) + 50)
+                {
+                    job.Description = htmlDescription;
+                }
+
                 if (root.TryGetProperty("employmentType", out var empType))
                     job.JobType = ParseEmploymentType(empType.GetString() ?? "");
 
@@ -245,7 +253,9 @@ public partial class LinkedInJobExtractor
                    ExtractMetaContent(html, "twitter:title") ??
                    ExtractFromPattern(html, TitlePatternRegex()) ?? "";
 
-        job.Description = ExtractMetaContent(html, "og:description") ??
+        // Try HTML body first (full description), fall back to meta tags (truncated)
+        job.Description = ExtractDescriptionFromHtml(html) ??
+                         ExtractMetaContent(html, "og:description") ??
                          ExtractMetaContent(html, "description") ?? "";
 
         if (!string.IsNullOrEmpty(job.Title))
@@ -287,6 +297,43 @@ public partial class LinkedInJobExtractor
     {
         var match = pattern.Match(html);
         return match.Success ? WebUtility.HtmlDecode(match.Groups[1].Value) : null;
+    }
+
+    /// <summary>
+    /// Extracts the job description from the HTML body (show-more-less-html section).
+    /// This contains the full description, unlike JSON-LD which may be truncated.
+    /// </summary>
+    private static string? ExtractDescriptionFromHtml(string html)
+    {
+        // LinkedIn wraps the full description in show-more-less-html__markup
+        var descMatch = Regex.Match(html,
+            @"<div[^>]*class=""[^""]*show-more-less-html__markup[^""]*""[^>]*>(.*?)</div>",
+            RegexOptions.Singleline | RegexOptions.IgnoreCase);
+
+        if (!descMatch.Success)
+        {
+            // Try jobs-description content area
+            descMatch = Regex.Match(html,
+                @"<div[^>]*class=""[^""]*jobs-description-content__text[^""]*""[^>]*>(.*?)</div>\s*</div>",
+                RegexOptions.Singleline | RegexOptions.IgnoreCase);
+        }
+
+        if (!descMatch.Success)
+        {
+            // Try the jobs-box HTML content
+            descMatch = Regex.Match(html,
+                @"<div[^>]*class=""[^""]*jobs-box__html-content[^""]*""[^>]*>(.*?)</div>",
+                RegexOptions.Singleline | RegexOptions.IgnoreCase);
+        }
+
+        if (!descMatch.Success)
+            return null;
+
+        var descHtml = descMatch.Groups[1].Value;
+        var text = StripHtml(descHtml);
+
+        // Only use if substantial (more than a short snippet)
+        return text.Length > 100 ? text : null;
     }
 
     private static string? ExtractPosterCompany(string html)
@@ -445,9 +492,20 @@ public partial class LinkedInJobExtractor
 
     private static string StripHtml(string html)
     {
-        var text = Regex.Replace(html, "<[^>]+>", " ");
+        if (string.IsNullOrWhiteSpace(html)) return "";
+        var text = html;
+        // Preserve block-level structure as newlines
+        text = Regex.Replace(text, @"<br\s*/?>", "\n");
+        text = Regex.Replace(text, @"</(?:p|div|h\d|tr)>", "\n");
+        text = Regex.Replace(text, @"<li[^>]*>", "- ");
+        text = Regex.Replace(text, @"</li>", "\n");
+        // Strip remaining tags
+        text = Regex.Replace(text, @"<[^>]+>", "");
         text = WebUtility.HtmlDecode(text);
-        text = Regex.Replace(text, @"\s+", " ");
+        // Normalize horizontal whitespace (preserve newlines)
+        text = Regex.Replace(text, @"[ \t]+", " ");
+        text = Regex.Replace(text, @"\n ", "\n");
+        text = Regex.Replace(text, @"\n{3,}", "\n\n");
         return text.Trim();
     }
 
