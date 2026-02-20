@@ -1027,6 +1027,13 @@ public class JobListingService
             if (!string.IsNullOrWhiteSpace(filter.Source))
             query = query.Where(j => string.Equals(j.Source, filter.Source, StringComparison.OrdinalIgnoreCase));
 
+            // Skill filter
+            if (!string.IsNullOrWhiteSpace(filter.SkillSearch))
+            {
+                var skillTerm = filter.SkillSearch.Trim();
+                query = query.Where(j => j.Skills != null && j.Skills.Any(s => s.Contains(skillTerm, StringComparison.OrdinalIgnoreCase)));
+            }
+
             // Sort order:
             // 1. Prioritized job first (if specified)
             // 2. Applied jobs next
@@ -1086,6 +1093,21 @@ public class JobListingService
         {
             return _jobListings.Where(j => j.UserId == userId).Select(j => j.Source).Distinct()
                 .Where(s => !string.IsNullOrWhiteSpace(s)).OrderBy(s => s).ToList();
+        }
+    }
+
+    public IEnumerable<string> GetDistinctSkills()
+    {
+        EnsureJobsLoaded();
+        var userId = CurrentUserId;
+        lock (_lock)
+        {
+            return _jobListings.Where(j => j.UserId == userId)
+                .SelectMany(j => j.Skills ?? new List<string>())
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(s => s)
+                .ToList();
         }
     }
 
@@ -1533,6 +1555,7 @@ public class JobListingFilter
     public SuitabilityStatus? Suitability { get; set; }
     public Guid? PrioritizeJobId { get; set; }
     public string? Source { get; set; }
+    public string? SkillSearch { get; set; }
 }
 
 public enum SortOption

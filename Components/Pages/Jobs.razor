@@ -277,6 +277,18 @@
                         <input type="number" class="form-control" placeholder="e.g. 50000"
                                @bind="selectedSalaryTarget" @bind:event="oninput" @bind:after="ApplyFilter" />
                     </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Skill</label>
+                        <input type="text" class="form-control" placeholder="e.g. C#, Python..."
+                               list="skill-suggestions"
+                               @bind="selectedSkill" @bind:event="oninput" @bind:after="ApplyFilter" />
+                        <datalist id="skill-suggestions">
+                            @foreach (var skill in availableSkills)
+                            {
+                                <option value="@skill" />
+                            }
+                        </datalist>
+                    </div>
                 </div>
                 <div class="row g-3 mt-2">
                     <div class="col-md-3">
@@ -401,8 +413,20 @@
         <div class="kanban-board d-flex gap-3" style="overflow-x: auto; padding-bottom: 1rem;">
             @foreach (var stage in pipelineStages)
             {
-                var stageJobs = filteredJobs.Where(j => j.ApplicationStage == stage).ToList();
-                <div class="kanban-column">
+                var currentStage = stage;
+                var stageJobs = filteredJobs
+                    .Where(j => j.ApplicationStage == stage)
+                    .OrderByDescending(j => j.StageHistory?
+                        .Where(s => s.Stage == stage)
+                        .OrderByDescending(s => s.DateChanged)
+                        .Select(s => s.DateChanged)
+                        .FirstOrDefault() ?? j.DateApplied ?? j.DateAdded)
+                    .ToList();
+                <div class="kanban-column @(dragOverStage == currentStage ? "kanban-column-drag-over" : "")"
+                     ondragover="event.preventDefault();"
+                     @ondragenter="() => dragOverStage = currentStage"
+                     @ondragleave="() => { if (dragOverStage == currentStage) dragOverStage = null; }"
+                     @ondrop="() => OnKanbanDrop(currentStage)">
                     <div class="kanban-column-header @GetStageBadgeClass(stage)">
                         <i class="@GetStageIcon(stage)"></i> @GetStageDisplayName(stage)
                         <span class="badge bg-light text-dark ms-1">@stageJobs.Count</span>
@@ -416,7 +440,12 @@
                         {
                             @foreach (var job in stageJobs)
                             {
-                                <div class="kanban-card" @onclick="() => ShowJobDetails(job)" title="Click to view details">
+                                var currentJob = job;
+                                <div class="kanban-card @(draggingJobId == job.Id ? "kanban-card-dragging" : "")"
+                                     draggable="true"
+                                     @ondragstart="() => draggingJobId = currentJob.Id"
+                                     @ondragend="() => { draggingJobId = null; dragOverStage = null; }"
+                                     @onclick="() => ShowJobDetails(job)" title="Drag to move stage, click to view details">
                                     <div class="d-flex align-items-start justify-content-between mb-1">
                                         <strong class="kanban-card-title">
                                             <span class="source-icon me-1">@((MarkupString)GetSourceIcon(job.Source))</span>@job.Title
@@ -1248,6 +1277,10 @@ else
     .kanban-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
     .kanban-card-title { font-size: 0.85rem; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
     .kanban-stage-select { font-size: 0.75rem; padding: 0.15rem 0.4rem; }
+    .kanban-card[draggable="true"] { cursor: grab; }
+    .kanban-card[draggable="true"]:active { cursor: grabbing; }
+    .kanban-card-dragging { opacity: 0.4; }
+    .kanban-column-drag-over { outline: 2px dashed #0d6efd; outline-offset: -2px; background-color: #e8f0fe !important; }
 </style>
 
 @code {
@@ -1269,6 +1302,8 @@ else
     private string selectedApplicationStage = "";
     private string selectedSource = "";
     private string selectedSalaryTarget = "";
+    private string selectedSkill = "";
+    private List<string> availableSkills = new();
     private JobListing? selectedJob = null;
     private JobListing? jobToDelete = null;
     private Guid? lastViewedJobId = null;
@@ -1291,6 +1326,10 @@ else
     private bool isCrawling = false;
     private string? crawlStatusMessage = null;
     private bool crawlStatusIsError = false;
+
+    // Kanban drag & drop state
+    private Guid? draggingJobId = null;
+    private ApplicationStage? dragOverStage = null;
 
     // Settings
     private JobSiteUrls jobSiteUrls = new();
@@ -1322,6 +1361,7 @@ else
     {
         JobService.ForceReload(); // Force reload from storage to pick up changes
         stats = JobService.GetStats();
+        availableSkills = JobService.GetDistinctSkills().ToList();
         UpdateTabCounts();
         ApplyFilter();
     }
@@ -1350,6 +1390,7 @@ else
         filter.ApplicationStage = string.IsNullOrEmpty(selectedApplicationStage) ? null : Enum.Parse<ApplicationStage>(selectedApplicationStage);
         filter.Source = string.IsNullOrEmpty(selectedSource) ? null : selectedSource;
         filter.SalaryTarget = decimal.TryParse(selectedSalaryTarget, out var salTarget) && salTarget > 0 ? salTarget : null;
+        filter.SkillSearch = string.IsNullOrEmpty(selectedSkill) ? null : selectedSkill;
         filter.PrioritizeJobId = lastViewedJobId;
         
         // Apply tab-specific filtering
@@ -1377,6 +1418,7 @@ else
         selectedApplicationStage = "";
         selectedSource = "";
         selectedSalaryTarget = "";
+        selectedSkill = "";
         ApplyFilter();
     }
 
@@ -1435,6 +1477,18 @@ else
     {
         JobService.SetApplicationStage(id, stage);
         RefreshData();
+    }
+
+    private void OnKanbanDrop(ApplicationStage targetStage)
+    {
+        if (draggingJobId.HasValue)
+        {
+            var jobId = draggingJobId.Value;
+            draggingJobId = null;
+            dragOverStage = null;
+            JobService.SetApplicationStage(jobId, targetStage);
+            RefreshData();
+        }
     }
 
     private void SetStageInModal(Guid id, ApplicationStage stage)

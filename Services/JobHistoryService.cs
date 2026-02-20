@@ -4,6 +4,7 @@ namespace JobTracker.Services;
 
 public class JobHistoryService
 {
+    private const int HistoryLimit = 50000;
     private readonly ILogger<JobHistoryService> _logger;
     private readonly IStorageBackend _storage;
     private readonly CurrentUserService _currentUser;
@@ -268,11 +269,11 @@ public class JobHistoryService
         {
             _history.Insert(0, entry); // Add to beginning for reverse chronological
 
-            // Keep history manageable - cap at 10000 entries per user
+            // Keep history manageable - cap at HistoryLimit entries per user
             var userHistory = _history.Where(h => h.UserId == userId).ToList();
-            if (userHistory.Count > 10000)
+            if (userHistory.Count > HistoryLimit)
             {
-                var toRemove = userHistory.Skip(10000).Select(h => h.Id).ToHashSet();
+                var toRemove = userHistory.Skip(HistoryLimit).Select(h => h.Id).ToHashSet();
                 _history.RemoveAll(h => toRemove.Contains(h.Id));
             }
 
