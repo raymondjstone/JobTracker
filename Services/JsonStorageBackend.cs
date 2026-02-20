@@ -285,7 +285,7 @@ public class JsonStorageBackend : IStorageBackend
             allHistory.Insert(0, entry);
 
             // Enforce per-user cap
-            var userHistory = allHistory.Where(h => h.UserId == entry.UserId).Take(10000).ToList();
+            var userHistory = allHistory.Where(h => h.UserId == entry.UserId).Take(50000).ToList();
             var otherHistory = allHistory.Where(h => h.UserId != entry.UserId).ToList();
             allHistory = otherHistory.Concat(userHistory).ToList();
 

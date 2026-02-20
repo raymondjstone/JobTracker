@@ -155,14 +155,14 @@ public class SqlServerStorageBackend : IStorageBackend
             db.SaveChanges();
         }
 
-        // Enforce 10k cap per user
+        // Enforce 50k cap per user
         var totalCount = db.HistoryEntries.Where(h => h.UserId == userId).Count();
-        if (totalCount > 10000)
+        if (totalCount > 50000)
         {
             var idsToRemove = db.HistoryEntries
                 .Where(h => h.UserId == userId)
                 .OrderBy(h => h.Timestamp)
-                .Take(totalCount - 10000)
+                .Take(totalCount - 50000)
                 .Select(h => h.Id)
                 .ToList();
             db.HistoryEntries.Where(h => idsToRemove.Contains(h.Id)).ExecuteDelete();
@@ -177,14 +177,14 @@ public class SqlServerStorageBackend : IStorageBackend
         db.HistoryEntries.Add(entry);
         db.SaveChanges();
 
-        // Enforce 10k cap per user
+        // Enforce 50k cap per user
         var totalCount = db.HistoryEntries.Where(h => h.UserId == entry.UserId).Count();
-        if (totalCount > 10000)
+        if (totalCount > 50000)
         {
             db.HistoryEntries
                 .Where(h => h.UserId == entry.UserId)
                 .OrderBy(h => h.Timestamp)
-                .Take(totalCount - 10000)
+                .Take(totalCount - 50000)
                 .ExecuteDelete();
         }
     }
