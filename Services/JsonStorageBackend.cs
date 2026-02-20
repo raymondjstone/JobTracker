@@ -12,6 +12,12 @@ public class JsonStorageBackend : IStorageBackend
     private readonly string _usersFilePath;
     private readonly ILogger<JsonStorageBackend> _logger;
 
+    // File-level locks to prevent concurrent read-modify-write corruption
+    private readonly object _jobsLock = new();
+    private readonly object _usersLock = new();
+    private readonly object _historyLock = new();
+    private readonly object _settingsLock = new();
+
     private static readonly JsonSerializerOptions ReadOptions = new()
     {
         PropertyNameCaseInsensitive = true
@@ -55,13 +61,69 @@ public class JsonStorageBackend : IStorageBackend
 
     public List<User> GetAllUsers()
     {
+        lock (_usersLock)
+        {
+            try
+            {
+                if (File.Exists(_usersFilePath))
+                {
+                    var json = File.ReadAllText(_usersFilePath);
+                    var users = JsonSerializer.Deserialize<List<User>>(json, ReadOptions);
+                    return users ?? new List<User>();
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error loading users from file");
+            }
+            return new List<User>();
+        }
+    }
+
+    public void SaveUser(User user)
+    {
+        lock (_usersLock)
+        {
+            var users = LoadUsersUnsafe();
+            var index = users.FindIndex(u => u.Id == user.Id);
+            if (index >= 0)
+                users[index] = user;
+            else
+                users.Add(user);
+            WriteUsersUnsafe(users);
+        }
+    }
+
+    public void AddUser(User user)
+    {
+        lock (_usersLock)
+        {
+            var users = LoadUsersUnsafe();
+            users.Add(user);
+            WriteUsersUnsafe(users);
+            _logger.LogInformation("Added user: {Email}", user.Email);
+        }
+    }
+
+    public void DeleteUser(Guid id)
+    {
+        lock (_usersLock)
+        {
+            var users = LoadUsersUnsafe();
+            users.RemoveAll(u => u.Id == id);
+            WriteUsersUnsafe(users);
+        }
+    }
+
+    // Internal helpers that assume _usersLock is already held
+    private List<User> LoadUsersUnsafe()
+    {
         try
         {
             if (File.Exists(_usersFilePath))
             {
                 var json = File.ReadAllText(_usersFilePath);
-                var users = JsonSerializer.Deserialize<List<User>>(json, ReadOptions);
-                return users ?? new List<User>();
+                return JsonSerializer.Deserialize<List<User>>(json, ReadOptions) ?? new List<User>();
             }
         }
         catch (Exception ex)
@@ -71,33 +133,7 @@ public class JsonStorageBackend : IStorageBackend
         return new List<User>();
     }
 
-    public void SaveUser(User user)
-    {
-        var users = GetAllUsers();
-        var index = users.FindIndex(u => u.Id == user.Id);
-        if (index >= 0)
-            users[index] = user;
-        else
-            users.Add(user);
-        SaveUsers(users);
-    }
-
-    public void AddUser(User user)
-    {
-        var users = GetAllUsers();
-        users.Add(user);
-        SaveUsers(users);
-        _logger.LogInformation("Added user: {Email}", user.Email);
-    }
-
-    public void DeleteUser(Guid id)
-    {
-        var users = GetAllUsers();
-        users.RemoveAll(u => u.Id == id);
-        SaveUsers(users);
-    }
-
-    private void SaveUsers(List<User> users)
+    private void WriteUsersUnsafe(List<User> users)
     {
         try
         {
@@ -112,23 +148,120 @@ public class JsonStorageBackend : IStorageBackend
 
     public List<JobListing> LoadJobs(Guid userId)
     {
+        lock (_jobsLock)
+        {
+            try
+            {
+                if (File.Exists(_jobsFilePath))
+                {
+                    var json = File.ReadAllText(_jobsFilePath);
+                    var jobs = JsonSerializer.Deserialize<List<JobListing>>(json, ReadOptions);
+                    if (jobs != null)
+                    {
+                        // Filter by user, but also include jobs with empty UserId for migration
+                        var userJobs = jobs.Where(j => j.UserId == userId || j.UserId == Guid.Empty).ToList();
+                        _logger.LogInformation("Loaded {Count} jobs from {Path} for user {UserId}", userJobs.Count, _jobsFilePath, userId);
+                        return userJobs;
+                    }
+                }
+                else
+                {
+                    _logger.LogInformation("No existing data file found at {Path}", _jobsFilePath);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error loading jobs from file");
+            }
+            return new List<JobListing>();
+        }
+    }
+
+    public void SaveJobs(List<JobListing> jobs, Guid userId)
+    {
+        lock (_jobsLock)
+        {
+            try
+            {
+                // Load all jobs, remove this user's jobs, then add the new list
+                var allJobs = new List<JobListing>();
+                if (File.Exists(_jobsFilePath))
+                {
+                    var existingJson = File.ReadAllText(_jobsFilePath);
+                    var existingJobs = JsonSerializer.Deserialize<List<JobListing>>(existingJson, ReadOptions);
+                    if (existingJobs != null)
+                    {
+                        allJobs = existingJobs.Where(j => j.UserId != userId).ToList();
+                    }
+                }
+                allJobs.AddRange(jobs);
+
+                var json = JsonSerializer.Serialize(allJobs, WriteOptions);
+                File.WriteAllText(_jobsFilePath, json);
+                _logger.LogDebug("Saved {Count} jobs to {Path} for user {UserId}", jobs.Count, _jobsFilePath, userId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error saving jobs to file");
+            }
+        }
+    }
+
+    // For JSON, targeted operations do a read-modify-write of the full file.
+    // Less efficient than SQL targeted ops, but still correct and fast enough for file I/O.
+
+    public void SaveJob(JobListing job)
+    {
+        lock (_jobsLock)
+        {
+            var allJobs = LoadAllJobsUnsafe();
+            var index = allJobs.FindIndex(j => j.Id == job.Id);
+            if (index >= 0)
+                allJobs[index] = job;
+
+            WriteAllJobsUnsafe(allJobs);
+        }
+    }
+
+    public void AddJob(JobListing job)
+    {
+        lock (_jobsLock)
+        {
+            var allJobs = LoadAllJobsUnsafe();
+            allJobs.Add(job);
+            WriteAllJobsUnsafe(allJobs);
+        }
+    }
+
+    public void DeleteJob(Guid id)
+    {
+        lock (_jobsLock)
+        {
+            var allJobs = LoadAllJobsUnsafe();
+            allJobs.RemoveAll(j => j.Id == id);
+            WriteAllJobsUnsafe(allJobs);
+        }
+    }
+
+    public void DeleteAllJobs(Guid userId)
+    {
+        lock (_jobsLock)
+        {
+            var allJobs = LoadAllJobsUnsafe();
+            allJobs.RemoveAll(j => j.UserId == userId);
+            WriteAllJobsUnsafe(allJobs);
+        }
+    }
+
+    // Internal helpers that assume _jobsLock is already held
+    private List<JobListing> LoadAllJobsUnsafe()
+    {
         try
         {
             if (File.Exists(_jobsFilePath))
             {
                 var json = File.ReadAllText(_jobsFilePath);
-                var jobs = JsonSerializer.Deserialize<List<JobListing>>(json, ReadOptions);
-                if (jobs != null)
-                {
-                    // Filter by user, but also include jobs with empty UserId for migration
-                    var userJobs = jobs.Where(j => j.UserId == userId || j.UserId == Guid.Empty).ToList();
-                    _logger.LogInformation("Loaded {Count} jobs from {Path} for user {UserId}", userJobs.Count, _jobsFilePath, userId);
-                    return userJobs;
-                }
-            }
-            else
-            {
-                _logger.LogInformation("No existing data file found at {Path}", _jobsFilePath);
+                return JsonSerializer.Deserialize<List<JobListing>>(json, ReadOptions) ?? new List<JobListing>();
             }
         }
         catch (Exception ex)
@@ -138,126 +271,63 @@ public class JsonStorageBackend : IStorageBackend
         return new List<JobListing>();
     }
 
-    public void SaveJobs(List<JobListing> jobs, Guid userId)
+    private void WriteAllJobsUnsafe(List<JobListing> allJobs)
     {
-        try
-        {
-            // Load all jobs, remove this user's jobs, then add the new list
-            var allJobs = new List<JobListing>();
-            if (File.Exists(_jobsFilePath))
-            {
-                var existingJson = File.ReadAllText(_jobsFilePath);
-                var existingJobs = JsonSerializer.Deserialize<List<JobListing>>(existingJson, ReadOptions);
-                if (existingJobs != null)
-                {
-                    allJobs = existingJobs.Where(j => j.UserId != userId).ToList();
-                }
-            }
-            allJobs.AddRange(jobs);
-
-            var json = JsonSerializer.Serialize(allJobs, WriteOptions);
-            File.WriteAllText(_jobsFilePath, json);
-            _logger.LogDebug("Saved {Count} jobs to {Path} for user {UserId}", jobs.Count, _jobsFilePath, userId);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error saving jobs to file");
-        }
-    }
-
-    // For JSON, targeted operations do a read-modify-write of the full file.
-    // Less efficient than SQL targeted ops, but still correct and fast enough for file I/O.
-
-    public void SaveJob(JobListing job)
-    {
-        // Load all jobs, update this one
-        var allJobs = new List<JobListing>();
-        if (File.Exists(_jobsFilePath))
-        {
-            var existingJson = File.ReadAllText(_jobsFilePath);
-            allJobs = JsonSerializer.Deserialize<List<JobListing>>(existingJson, ReadOptions) ?? new List<JobListing>();
-        }
-
-        var index = allJobs.FindIndex(j => j.Id == job.Id);
-        if (index >= 0)
-            allJobs[index] = job;
-
-        var json = JsonSerializer.Serialize(allJobs, WriteOptions);
-        File.WriteAllText(_jobsFilePath, json);
-    }
-
-    public void AddJob(JobListing job)
-    {
-        var allJobs = new List<JobListing>();
-        if (File.Exists(_jobsFilePath))
-        {
-            var existingJson = File.ReadAllText(_jobsFilePath);
-            allJobs = JsonSerializer.Deserialize<List<JobListing>>(existingJson, ReadOptions) ?? new List<JobListing>();
-        }
-        allJobs.Add(job);
-
-        var json = JsonSerializer.Serialize(allJobs, WriteOptions);
-        File.WriteAllText(_jobsFilePath, json);
-    }
-
-    public void DeleteJob(Guid id)
-    {
-        var allJobs = new List<JobListing>();
-        if (File.Exists(_jobsFilePath))
-        {
-            var existingJson = File.ReadAllText(_jobsFilePath);
-            allJobs = JsonSerializer.Deserialize<List<JobListing>>(existingJson, ReadOptions) ?? new List<JobListing>();
-        }
-        allJobs.RemoveAll(j => j.Id == id);
-
-        var json = JsonSerializer.Serialize(allJobs, WriteOptions);
-        File.WriteAllText(_jobsFilePath, json);
-    }
-
-    public void DeleteAllJobs(Guid userId)
-    {
-        var allJobs = new List<JobListing>();
-        if (File.Exists(_jobsFilePath))
-        {
-            var existingJson = File.ReadAllText(_jobsFilePath);
-            allJobs = JsonSerializer.Deserialize<List<JobListing>>(existingJson, ReadOptions) ?? new List<JobListing>();
-        }
-        allJobs.RemoveAll(j => j.UserId == userId);
-
         var json = JsonSerializer.Serialize(allJobs, WriteOptions);
         File.WriteAllText(_jobsFilePath, json);
     }
 
     public void AddHistoryEntry(JobHistoryEntry entry)
     {
-        var allHistory = LoadAllHistory();
-        allHistory.Insert(0, entry);
+        lock (_historyLock)
+        {
+            var allHistory = LoadAllHistoryUnsafe();
+            allHistory.Insert(0, entry);
 
-        // Enforce per-user cap
-        var userHistory = allHistory.Where(h => h.UserId == entry.UserId).Take(10000).ToList();
-        var otherHistory = allHistory.Where(h => h.UserId != entry.UserId).ToList();
-        allHistory = otherHistory.Concat(userHistory).ToList();
+            // Enforce per-user cap
+            var userHistory = allHistory.Where(h => h.UserId == entry.UserId).Take(10000).ToList();
+            var otherHistory = allHistory.Where(h => h.UserId != entry.UserId).ToList();
+            allHistory = otherHistory.Concat(userHistory).ToList();
 
-        SaveAllHistory(allHistory);
+            WriteAllHistoryUnsafe(allHistory);
+        }
     }
 
     public void DeleteAllHistory(Guid userId)
     {
-        var allHistory = LoadAllHistory();
-        allHistory.RemoveAll(h => h.UserId == userId);
-        SaveAllHistory(allHistory);
+        lock (_historyLock)
+        {
+            var allHistory = LoadAllHistoryUnsafe();
+            allHistory.RemoveAll(h => h.UserId == userId);
+            WriteAllHistoryUnsafe(allHistory);
+        }
     }
 
     public List<JobHistoryEntry> LoadHistory(Guid userId)
     {
-        var allHistory = LoadAllHistory();
-        return allHistory
-            .Where(h => h.UserId == userId || h.UserId == Guid.Empty)
-            .OrderByDescending(h => h.Timestamp)
-            .ToList();
+        lock (_historyLock)
+        {
+            var allHistory = LoadAllHistoryUnsafe();
+            return allHistory
+                .Where(h => h.UserId == userId || h.UserId == Guid.Empty)
+                .OrderByDescending(h => h.Timestamp)
+                .ToList();
+        }
     }
 
-    private List<JobHistoryEntry> LoadAllHistory()
+    public void SaveHistory(List<JobHistoryEntry> history, Guid userId)
+    {
+        lock (_historyLock)
+        {
+            var allHistory = LoadAllHistoryUnsafe();
+            allHistory.RemoveAll(h => h.UserId == userId);
+            allHistory.AddRange(history);
+            WriteAllHistoryUnsafe(allHistory);
+        }
+    }
+
+    // Internal helpers that assume _historyLock is already held
+    private List<JobHistoryEntry> LoadAllHistoryUnsafe()
     {
         try
         {
@@ -266,9 +336,7 @@ public class JsonStorageBackend : IStorageBackend
                 var json = File.ReadAllText(_historyFilePath);
                 var history = JsonSerializer.Deserialize<List<JobHistoryEntry>>(json, ReadOptions);
                 if (history != null)
-                {
                     return history;
-                }
             }
         }
         catch (Exception ex)
@@ -278,15 +346,7 @@ public class JsonStorageBackend : IStorageBackend
         return new List<JobHistoryEntry>();
     }
 
-    public void SaveHistory(List<JobHistoryEntry> history, Guid userId)
-    {
-        var allHistory = LoadAllHistory();
-        allHistory.RemoveAll(h => h.UserId == userId);
-        allHistory.AddRange(history);
-        SaveAllHistory(allHistory);
-    }
-
-    private void SaveAllHistory(List<JobHistoryEntry> history)
+    private void WriteAllHistoryUnsafe(List<JobHistoryEntry> history)
     {
         try
         {
@@ -307,55 +367,61 @@ public class JsonStorageBackend : IStorageBackend
 
     public AppSettings LoadSettings(Guid userId)
     {
-        try
+        lock (_settingsLock)
         {
-            // For JSON backend, we use a per-user settings file
-            var userSettingsPath = Path.Combine(_dataDirectory, $"settings_{userId}.json");
-            if (File.Exists(userSettingsPath))
+            try
             {
-                var json = File.ReadAllText(userSettingsPath);
-                var settings = JsonSerializer.Deserialize<AppSettings>(json, ReadOptions);
-                if (settings != null)
+                // For JSON backend, we use a per-user settings file
+                var userSettingsPath = Path.Combine(_dataDirectory, $"settings_{userId}.json");
+                if (File.Exists(userSettingsPath))
                 {
-                    _logger.LogInformation("Settings loaded from {Path} for user {UserId}", userSettingsPath, userId);
-                    return settings;
+                    var json = File.ReadAllText(userSettingsPath);
+                    var settings = JsonSerializer.Deserialize<AppSettings>(json, ReadOptions);
+                    if (settings != null)
+                    {
+                        _logger.LogInformation("Settings loaded from {Path} for user {UserId}", userSettingsPath, userId);
+                        return settings;
+                    }
+                }
+                // Fallback to old settings file for migration
+                else if (File.Exists(_settingsFilePath))
+                {
+                    var json = File.ReadAllText(_settingsFilePath);
+                    var settings = JsonSerializer.Deserialize<AppSettings>(json, ReadOptions);
+                    if (settings != null)
+                    {
+                        _logger.LogInformation("Settings loaded from legacy {Path}", _settingsFilePath);
+                        return settings;
+                    }
+                }
+                else
+                {
+                    _logger.LogInformation("No settings file found for user {UserId}, using defaults", userId);
                 }
             }
-            // Fallback to old settings file for migration
-            else if (File.Exists(_settingsFilePath))
+            catch (Exception ex)
             {
-                var json = File.ReadAllText(_settingsFilePath);
-                var settings = JsonSerializer.Deserialize<AppSettings>(json, ReadOptions);
-                if (settings != null)
-                {
-                    _logger.LogInformation("Settings loaded from legacy {Path}", _settingsFilePath);
-                    return settings;
-                }
+                _logger.LogError(ex, "Error loading settings from file");
             }
-            else
-            {
-                _logger.LogInformation("No settings file found for user {UserId}, using defaults", userId);
-            }
+            return new AppSettings();
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error loading settings from file");
-        }
-        return new AppSettings();
     }
 
     public void SaveSettings(AppSettings settings, Guid userId)
     {
-        try
+        lock (_settingsLock)
         {
-            var userSettingsPath = Path.Combine(_dataDirectory, $"settings_{userId}.json");
-            var json = JsonSerializer.Serialize(settings, WriteOptions);
-            File.WriteAllText(userSettingsPath, json);
-            _logger.LogDebug("Settings saved to {Path} for user {UserId}", userSettingsPath, userId);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error saving settings to file");
+            try
+            {
+                var userSettingsPath = Path.Combine(_dataDirectory, $"settings_{userId}.json");
+                var json = JsonSerializer.Serialize(settings, WriteOptions);
+                File.WriteAllText(userSettingsPath, json);
+                _logger.LogDebug("Settings saved to {Path} for user {UserId}", userSettingsPath, userId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error saving settings to file");
+            }
         }
     }
 
@@ -365,55 +431,64 @@ public class JsonStorageBackend : IStorageBackend
     public void MigrateExistingDataToUser(Guid userId)
     {
         // Migrate jobs
-        if (File.Exists(_jobsFilePath))
+        lock (_jobsLock)
         {
-            var json = File.ReadAllText(_jobsFilePath);
-            var jobs = JsonSerializer.Deserialize<List<JobListing>>(json, ReadOptions);
-            if (jobs != null)
+            if (File.Exists(_jobsFilePath))
             {
-                var migratedCount = 0;
-                foreach (var job in jobs.Where(j => j.UserId == Guid.Empty))
+                var json = File.ReadAllText(_jobsFilePath);
+                var jobs = JsonSerializer.Deserialize<List<JobListing>>(json, ReadOptions);
+                if (jobs != null)
                 {
-                    job.UserId = userId;
-                    migratedCount++;
-                }
-                if (migratedCount > 0)
-                {
-                    File.WriteAllText(_jobsFilePath, JsonSerializer.Serialize(jobs, WriteOptions));
-                    _logger.LogInformation("Migrated {Count} jobs to user {UserId}", migratedCount, userId);
+                    var migratedCount = 0;
+                    foreach (var job in jobs.Where(j => j.UserId == Guid.Empty))
+                    {
+                        job.UserId = userId;
+                        migratedCount++;
+                    }
+                    if (migratedCount > 0)
+                    {
+                        File.WriteAllText(_jobsFilePath, JsonSerializer.Serialize(jobs, WriteOptions));
+                        _logger.LogInformation("Migrated {Count} jobs to user {UserId}", migratedCount, userId);
+                    }
                 }
             }
         }
 
         // Migrate history
-        if (File.Exists(_historyFilePath))
+        lock (_historyLock)
         {
-            var json = File.ReadAllText(_historyFilePath);
-            var history = JsonSerializer.Deserialize<List<JobHistoryEntry>>(json, ReadOptions);
-            if (history != null)
+            if (File.Exists(_historyFilePath))
             {
-                var migratedCount = 0;
-                foreach (var entry in history.Where(h => h.UserId == Guid.Empty))
+                var json = File.ReadAllText(_historyFilePath);
+                var history = JsonSerializer.Deserialize<List<JobHistoryEntry>>(json, ReadOptions);
+                if (history != null)
                 {
-                    entry.UserId = userId;
-                    migratedCount++;
-                }
-                if (migratedCount > 0)
-                {
-                    File.WriteAllText(_historyFilePath, JsonSerializer.Serialize(history, WriteOptions));
-                    _logger.LogInformation("Migrated {Count} history entries to user {UserId}", migratedCount, userId);
+                    var migratedCount = 0;
+                    foreach (var entry in history.Where(h => h.UserId == Guid.Empty))
+                    {
+                        entry.UserId = userId;
+                        migratedCount++;
+                    }
+                    if (migratedCount > 0)
+                    {
+                        File.WriteAllText(_historyFilePath, JsonSerializer.Serialize(history, WriteOptions));
+                        _logger.LogInformation("Migrated {Count} history entries to user {UserId}", migratedCount, userId);
+                    }
                 }
             }
         }
 
         // Migrate settings - copy old settings file to user-specific file
-        if (File.Exists(_settingsFilePath))
+        lock (_settingsLock)
         {
-            var userSettingsPath = Path.Combine(_dataDirectory, $"settings_{userId}.json");
-            if (!File.Exists(userSettingsPath))
+            if (File.Exists(_settingsFilePath))
             {
-                File.Copy(_settingsFilePath, userSettingsPath);
-                _logger.LogInformation("Migrated settings to user {UserId}", userId);
+                var userSettingsPath = Path.Combine(_dataDirectory, $"settings_{userId}.json");
+                if (!File.Exists(userSettingsPath))
+                {
+                    File.Copy(_settingsFilePath, userSettingsPath);
+                    _logger.LogInformation("Migrated settings to user {UserId}", userId);
+                }
             }
         }
     }
