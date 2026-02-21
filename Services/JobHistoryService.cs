@@ -1,24 +1,26 @@
 using JobTracker.Models;
+using Microsoft.Extensions.Configuration;
 
 namespace JobTracker.Services;
 
 public class JobHistoryService
 {
-    private const int HistoryLimit = 50000;
     private readonly ILogger<JobHistoryService> _logger;
     private readonly IStorageBackend _storage;
     private readonly CurrentUserService _currentUser;
+    private readonly int _historyLimit;
     private readonly object _lock = new();
     private List<JobHistoryEntry> _history = new();
     private Guid _loadedForUser = Guid.Empty;
 
     public event Action? OnChange;
 
-    public JobHistoryService(IStorageBackend storage, ILogger<JobHistoryService> logger, CurrentUserService currentUser)
+    public JobHistoryService(IStorageBackend storage, ILogger<JobHistoryService> logger, CurrentUserService currentUser, IConfiguration configuration)
     {
         _logger = logger;
         _storage = storage;
         _currentUser = currentUser;
+        _historyLimit = configuration.GetValue<int>("HistoryMax", 50000);
         // Don't load here - will load lazily when needed
     }
 
@@ -271,9 +273,9 @@ public class JobHistoryService
 
             // Keep history manageable - cap at HistoryLimit entries per user
             var userHistory = _history.Where(h => h.UserId == userId).ToList();
-            if (userHistory.Count > HistoryLimit)
+            if (userHistory.Count > _historyLimit)
             {
-                var toRemove = userHistory.Skip(HistoryLimit).Select(h => h.Id).ToHashSet();
+                var toRemove = userHistory.Skip(_historyLimit).Select(h => h.Id).ToHashSet();
                 _history.RemoveAll(h => toRemove.Contains(h.Id));
             }
 

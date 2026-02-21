@@ -19,6 +19,8 @@ if (args.Contains("--migrate-to-local"))
 // Read LocalMode setting early
 var localMode = builder.Configuration.GetValue<bool>("LocalMode");
 
+var historyMax = builder.Configuration.GetValue<int>("HistoryMax");
+
 // Add services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
@@ -59,7 +61,8 @@ else
         var env = sp.GetRequiredService<IWebHostEnvironment>();
         var logger = sp.GetRequiredService<ILogger<JsonStorageBackend>>();
         var dataDir = Path.Combine(env.ContentRootPath, "Data");
-        return new JsonStorageBackend(dataDir, logger);
+        var historyMax = builder.Configuration.GetValue<int>("HistoryMax", 50000);
+        return new JsonStorageBackend(dataDir, logger, historyMax);
     });
 }
 
@@ -313,7 +316,7 @@ app.MapPost("/api/jobs", async (HttpContext context, JobListingService jobServic
             return Results.BadRequest("Title exceeds maximum length.");
         if (job.Company?.Length > 500)
             return Results.BadRequest("Company exceeds maximum length.");
-        if (job.Description?.Length > 50000)
+        if (job.Description?.Length > 10000)
             return Results.BadRequest("Description exceeds maximum length.");
 
         job.UserId = userId.Value;
@@ -818,7 +821,8 @@ async Task MigrateToLocal(WebApplicationBuilder b)
     // Set up JSON storage target
     var dataDir = Path.Combine(b.Environment.ContentRootPath, "Data");
     var jsonLogger = LoggerFactory.Create(l => l.AddConsole()).CreateLogger<JsonStorageBackend>();
-    var jsonStorage = new JsonStorageBackend(dataDir, jsonLogger);
+    var historyMax = b.Configuration.GetValue<int>("HistoryMax", 50000);
+    var jsonStorage = new JsonStorageBackend(dataDir, jsonLogger, historyMax);
 
     // Read all users from SQL
     var users = db.Users.AsNoTracking().ToList();

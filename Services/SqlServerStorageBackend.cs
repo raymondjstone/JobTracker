@@ -8,11 +8,13 @@ public class SqlServerStorageBackend : IStorageBackend
 {
     private readonly IDbContextFactory<JobSearchDbContext> _factory;
     private readonly ILogger<SqlServerStorageBackend> _logger;
+    private readonly int _historyMax;
 
-    public SqlServerStorageBackend(IDbContextFactory<JobSearchDbContext> factory, ILogger<SqlServerStorageBackend> logger)
+    public SqlServerStorageBackend(IDbContextFactory<JobSearchDbContext> factory, ILogger<SqlServerStorageBackend> logger, IConfiguration configuration)
     {
         _factory = factory;
         _logger = logger;
+        _historyMax = configuration.GetValue<int>("HistoryMax", 50000);
     }
 
     // User operations
@@ -157,12 +159,12 @@ public class SqlServerStorageBackend : IStorageBackend
 
         // Enforce 50k cap per user
         var totalCount = db.HistoryEntries.Where(h => h.UserId == userId).Count();
-        if (totalCount > 50000)
+        if (totalCount > _historyMax)
         {
             var idsToRemove = db.HistoryEntries
                 .Where(h => h.UserId == userId)
                 .OrderBy(h => h.Timestamp)
-                .Take(totalCount - 50000)
+                .Take(totalCount - _historyMax)
                 .Select(h => h.Id)
                 .ToList();
             db.HistoryEntries.Where(h => idsToRemove.Contains(h.Id)).ExecuteDelete();
@@ -179,12 +181,12 @@ public class SqlServerStorageBackend : IStorageBackend
 
         // Enforce 50k cap per user
         var totalCount = db.HistoryEntries.Where(h => h.UserId == entry.UserId).Count();
-        if (totalCount > 50000)
+        if (totalCount > _historyMax)
         {
             db.HistoryEntries
                 .Where(h => h.UserId == entry.UserId)
                 .OrderBy(h => h.Timestamp)
-                .Take(totalCount - 50000)
+                .Take(totalCount - _historyMax)
                 .ExecuteDelete();
         }
     }

@@ -11,6 +11,7 @@ public class JsonStorageBackend : IStorageBackend
     private readonly string _settingsFilePath;
     private readonly string _usersFilePath;
     private readonly ILogger<JsonStorageBackend> _logger;
+    private readonly int _historyMax;
 
     // File-level locks to prevent concurrent read-modify-write corruption
     private readonly object _jobsLock = new();
@@ -28,10 +29,11 @@ public class JsonStorageBackend : IStorageBackend
         WriteIndented = true
     };
 
-    public JsonStorageBackend(string dataDirectory, ILogger<JsonStorageBackend> logger)
+    public JsonStorageBackend(string dataDirectory, ILogger<JsonStorageBackend> logger, int historyMax)
     {
         _dataDirectory = dataDirectory;
         _logger = logger;
+        _historyMax = historyMax <= 0 ? 50000 : historyMax;
         _jobsFilePath = Path.Combine(dataDirectory, "jobs.json");
         _historyFilePath = Path.Combine(dataDirectory, "history.json");
         _settingsFilePath = Path.Combine(dataDirectory, "settings.json");
@@ -285,7 +287,7 @@ public class JsonStorageBackend : IStorageBackend
             allHistory.Insert(0, entry);
 
             // Enforce per-user cap
-            var userHistory = allHistory.Where(h => h.UserId == entry.UserId).Take(50000).ToList();
+            var userHistory = allHistory.Where(h => h.UserId == entry.UserId).Take(_historyMax).ToList();
             var otherHistory = allHistory.Where(h => h.UserId != entry.UserId).ToList();
             allHistory = otherHistory.Concat(userHistory).ToList();
 
