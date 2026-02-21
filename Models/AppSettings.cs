@@ -4,6 +4,26 @@ public class AppSettings
 {
     public JobSiteUrls JobSiteUrls { get; set; } = new();
     public JobRulesSettings JobRules { get; set; } = new();
+    public List<SavedFilterPreset> FilterPresets { get; set; } = new();
+    public List<string> HighlightKeywords { get; set; } = new();
+}
+
+public class SavedFilterPreset
+{
+    public string Name { get; set; } = string.Empty;
+    public string? SearchTerm { get; set; }
+    public string? TitleOnlySearchTerm { get; set; }
+    public string? Location { get; set; }
+    public string? JobType { get; set; }
+    public string? IsRemote { get; set; }
+    public string? Interest { get; set; }
+    public string? HasSalary { get; set; }
+    public string? SalarySearch { get; set; }
+    public string? SalaryTarget { get; set; }
+    public string? Source { get; set; }
+    public string? SkillSearch { get; set; }
+    public string? ApplicationStage { get; set; }
+    public string? SortBy { get; set; }
 }
 
 public class JobSiteUrls

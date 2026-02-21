@@ -24,6 +24,9 @@
         <button class="btn btn-outline-secondary" @onclick="OpenSettingsModal" title="Configure job site URLs">
             <i class="bi bi-gear"></i>
         </button>
+        <button class="btn btn-outline-secondary" @onclick="ExportToCsv" title="Export applied jobs to CSV">
+            <i class="bi bi-download"></i>
+        </button>
         <a href="@jobSiteUrls.LinkedIn" target="_blank" class="btn btn-primary">
             <i class="bi bi-linkedin"></i> LinkedIn
         </a>
@@ -156,7 +159,27 @@
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0">Filter Jobs</h5>
-                <div class="d-flex gap-2">
+                <div class="d-flex gap-2 align-items-center">
+                    @if (filterPresets.Any())
+                    {
+                        <select class="form-select form-select-sm" style="width: auto; min-width: 140px;"
+                                @onchange="OnPresetSelected">
+                            <option value="">Presets...</option>
+                            @foreach (var preset in filterPresets)
+                            {
+                                <option value="@preset.Name">@preset.Name</option>
+                            }
+                        </select>
+                        @if (!string.IsNullOrEmpty(activePresetName))
+                        {
+                            <button class="btn btn-sm btn-outline-danger" @onclick="DeleteActivePreset" title="Delete this preset">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        }
+                    }
+                    <button class="btn btn-sm btn-outline-primary" @onclick="SaveCurrentAsPreset" title="Save current filters as preset">
+                        <i class="bi bi-bookmark-plus"></i> Save Preset
+                    </button>
                     @if (lastViewedJobId.HasValue)
                     {
                         <button class="btn btn-sm btn-outline-primary" @onclick="ClearLastViewedJob" title="Clear last viewed highlight">
@@ -826,7 +849,7 @@ else
                     <div class="job-description">
                         @if (!string.IsNullOrEmpty(selectedJob.Description))
                         {
-                            <pre class="description-text">@selectedJob.Description</pre>
+                            <pre class="description-text">@((MarkupString)HighlightKeywords(selectedJob.Description))</pre>
                         }
                         else
                         {
@@ -1074,6 +1097,15 @@ else
                         </div>
                         <input type="url" class="form-control" @bind="editingUrls.EnergyJobSearch" placeholder="https://energyjobsearch.com/jobs?title=.net" />
                         <small class="text-muted">React SPA - browser extension recommended for best results</small>
+                    </div>
+                    <hr />
+                    <div class="mb-3">
+                        <label class="form-label">
+                            <i class="bi bi-highlighter"></i> Highlight Keywords
+                        </label>
+                        <input type="text" class="form-control" @bind="editHighlightKeywords"
+                               placeholder="C#, Python, Azure, React (comma-separated)" />
+                        <small class="text-muted">Keywords to highlight in job descriptions. Comma-separated.</small>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -1331,6 +1363,14 @@ else
     private Guid? draggingJobId = null;
     private ApplicationStage? dragOverStage = null;
 
+    // Filter presets
+    private List<SavedFilterPreset> filterPresets = new();
+    private string activePresetName = "";
+
+    // Highlight keywords
+    private List<string> highlightKeywords = new();
+    private string editHighlightKeywords = "";
+
     // Settings
     private JobSiteUrls jobSiteUrls = new();
     private bool showSettingsModal = false;
@@ -1341,6 +1381,8 @@ else
         JobService.OnChange += OnJobServiceChanged;
         SettingsService.OnChange += OnSettingsChanged;
         jobSiteUrls = SettingsService.GetJobSiteUrls();
+        filterPresets = SettingsService.GetFilterPresets();
+        highlightKeywords = SettingsService.GetHighlightKeywords();
         RefreshData();
         
         // Auto-refresh every 5 seconds to pick up changes from extensions
@@ -1899,6 +1941,8 @@ else
     private void OnSettingsChanged()
     {
         jobSiteUrls = SettingsService.GetJobSiteUrls();
+        filterPresets = SettingsService.GetFilterPresets();
+        highlightKeywords = SettingsService.GetHighlightKeywords();
         InvokeAsync(StateHasChanged);
     }
 
@@ -1916,6 +1960,7 @@ else
             EnergyJobSearch = jobSiteUrls.EnergyJobSearch,
             CrawlEnergyJobSearch = jobSiteUrls.CrawlEnergyJobSearch,
         };
+        editHighlightKeywords = string.Join(", ", highlightKeywords);
         showSettingsModal = true;
     }
 
@@ -1928,12 +1973,145 @@ else
     {
         SettingsService.UpdateJobSiteUrls(editingUrls);
         jobSiteUrls = SettingsService.GetJobSiteUrls();
+
+        // Save highlight keywords
+        highlightKeywords = editHighlightKeywords
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(k => !string.IsNullOrWhiteSpace(k))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        SettingsService.UpdateHighlightKeywords(highlightKeywords);
+
         showSettingsModal = false;
     }
 
     private void ResetSettingsToDefaults()
     {
         editingUrls = new JobSiteUrls();
+    }
+
+    // --- CSV Export ---
+    private async Task ExportToCsv()
+    {
+        var jobs = JobService.GetAllJobListings()
+            .Where(j => j.HasApplied)
+            .OrderByDescending(j => j.DateApplied)
+            .ToList();
+
+        if (!jobs.Any())
+        {
+            // Export all filtered jobs if none applied
+            jobs = filteredJobs.ToList();
+        }
+
+        var csv = new System.Text.StringBuilder();
+        csv.AppendLine("Title,Company,Location,Salary,Stage,Date Applied,Date Added,Remote,Source,URL");
+        foreach (var job in jobs)
+        {
+            csv.AppendLine($"{CsvEscape(job.Title)},{CsvEscape(job.Company)},{CsvEscape(job.Location)},{CsvEscape(job.Salary)},{job.ApplicationStage},{job.DateApplied?.ToString("yyyy-MM-dd") ?? ""},{job.DateAdded:yyyy-MM-dd},{job.IsRemote},{CsvEscape(job.Source)},{CsvEscape(job.Url)}");
+        }
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(csv.ToString());
+        var base64 = Convert.ToBase64String(bytes);
+        await JSRuntime.InvokeVoidAsync("eval", $"(function(){{var a=document.createElement('a');a.href='data:text/csv;base64,{base64}';a.download='jobs-export-{DateTime.Now:yyyy-MM-dd}.csv';document.body.appendChild(a);a.click();document.body.removeChild(a);}})()");
+    }
+
+    private static string CsvEscape(string? value)
+    {
+        if (string.IsNullOrEmpty(value)) return "";
+        if (value.Contains(',') || value.Contains('"') || value.Contains('\n'))
+            return $"\"{value.Replace("\"", "\"\"")}\"";
+        return value;
+    }
+
+    // --- Filter Presets ---
+    private async Task SaveCurrentAsPreset()
+    {
+        var name = await JSRuntime.InvokeAsync<string>("prompt", "Preset name:");
+        if (string.IsNullOrWhiteSpace(name)) return;
+
+        var preset = new SavedFilterPreset
+        {
+            Name = name.Trim(),
+            SearchTerm = filter.SearchTerm,
+            TitleOnlySearchTerm = filter.TitleOnlySearchTerm,
+            Location = filter.Location,
+            JobType = selectedJobType,
+            IsRemote = selectedRemote,
+            Interest = selectedInterest,
+            HasSalary = selectedHasSalary,
+            SalarySearch = filter.SalarySearch,
+            SalaryTarget = selectedSalaryTarget,
+            Source = selectedSource,
+            SkillSearch = selectedSkill,
+            ApplicationStage = selectedApplicationStage,
+            SortBy = filter.SortBy.ToString()
+        };
+
+        SettingsService.SaveFilterPreset(preset);
+        filterPresets = SettingsService.GetFilterPresets();
+        activePresetName = name.Trim();
+    }
+
+    private void OnPresetSelected(ChangeEventArgs e)
+    {
+        var name = e.Value?.ToString();
+        if (string.IsNullOrEmpty(name))
+        {
+            activePresetName = "";
+            return;
+        }
+
+        var preset = filterPresets.FirstOrDefault(p => p.Name == name);
+        if (preset == null) return;
+
+        activePresetName = name;
+        filter.SearchTerm = preset.SearchTerm;
+        filter.TitleOnlySearchTerm = preset.TitleOnlySearchTerm;
+        filter.Location = preset.Location;
+        filter.SalarySearch = preset.SalarySearch;
+        selectedJobType = preset.JobType ?? "";
+        selectedRemote = preset.IsRemote ?? "";
+        selectedInterest = preset.Interest ?? "";
+        selectedHasSalary = preset.HasSalary ?? "";
+        selectedSalaryTarget = preset.SalaryTarget ?? "";
+        selectedSource = preset.Source ?? "";
+        selectedSkill = preset.SkillSearch ?? "";
+        selectedApplicationStage = preset.ApplicationStage ?? "";
+        if (!string.IsNullOrEmpty(preset.SortBy) && Enum.TryParse<SortOption>(preset.SortBy, out var sort))
+            filter.SortBy = sort;
+
+        ApplyFilter();
+    }
+
+    private void DeleteActivePreset()
+    {
+        if (!string.IsNullOrEmpty(activePresetName))
+        {
+            SettingsService.DeleteFilterPreset(activePresetName);
+            filterPresets = SettingsService.GetFilterPresets();
+            activePresetName = "";
+        }
+    }
+
+    // --- Keyword Highlighting ---
+    private string HighlightKeywords(string text)
+    {
+        if (highlightKeywords.Count == 0 || string.IsNullOrEmpty(text))
+            return System.Net.WebUtility.HtmlEncode(text);
+
+        // Escape HTML first
+        var encoded = System.Net.WebUtility.HtmlEncode(text);
+
+        // Build regex pattern from keywords (escaped for regex)
+        var pattern = string.Join("|", highlightKeywords
+            .Select(k => System.Text.RegularExpressions.Regex.Escape(System.Net.WebUtility.HtmlEncode(k))));
+
+        return System.Text.RegularExpressions.Regex.Replace(
+            encoded,
+            $"({pattern})",
+            "<mark>$1</mark>",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
     }
 
     public void Dispose()

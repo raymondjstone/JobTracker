@@ -5,6 +5,7 @@
 @attribute [Authorize]
 @inject JobHistoryService HistoryService
 @inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
 @implements IDisposable
 @rendermode InteractiveServer
 
@@ -13,8 +14,17 @@
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1><i class="bi bi-clock-history"></i> Activity History</h1>
-        <div>
-            <button class="btn btn-outline-secondary me-2" @onclick="RefreshHistory">
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-secondary" @onclick="ExportAllToCsv" disabled="@(totalCount == 0)" title="Export all history to CSV">
+                <i class="bi bi-download"></i> Export All
+            </button>
+            @if (HasActiveFilters)
+            {
+                <button class="btn btn-outline-secondary" @onclick="ExportFilteredToCsv" title="Export filtered history to CSV">
+                    <i class="bi bi-funnel"></i> Export Filtered
+                </button>
+            }
+            <button class="btn btn-outline-secondary" @onclick="RefreshHistory">
                 <i class="bi bi-arrow-clockwise"></i> Refresh
             </button>
             <button class="btn btn-outline-danger" @onclick="ShowClearConfirm" disabled="@(totalCount == 0)">
@@ -481,6 +491,41 @@
             HistoryChangeSource.System => "bg-dark",
             _ => "bg-secondary"
         };
+    }
+
+    private async Task ExportAllToCsv()
+    {
+        var all = HistoryService.GetHistory(null, 1, int.MaxValue);
+        await DownloadHistoryCsv(all.Entries, "history-all");
+    }
+
+    private async Task ExportFilteredToCsv()
+    {
+        var filter = BuildFilter();
+        var filtered = HistoryService.GetHistory(filter, 1, int.MaxValue);
+        await DownloadHistoryCsv(filtered.Entries, "history-filtered");
+    }
+
+    private async Task DownloadHistoryCsv(List<JobHistoryEntry> entries, string filePrefix)
+    {
+        var csv = new System.Text.StringBuilder();
+        csv.AppendLine("Date,Time,Action,Job Title,Company,Source,Old Value,New Value,Details,Rule,URL");
+        foreach (var e in entries)
+        {
+            csv.AppendLine($"{e.Timestamp:yyyy-MM-dd},{e.Timestamp:HH:mm:ss},{GetActionTypeDisplay(e.ActionType)},{CsvEscape(e.JobTitle)},{CsvEscape(e.Company)},{e.ChangeSource},{CsvEscape(e.OldValue)},{CsvEscape(e.NewValue)},{CsvEscape(e.Details)},{CsvEscape(e.RuleName)},{CsvEscape(e.JobUrl)}");
+        }
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(csv.ToString());
+        var base64 = Convert.ToBase64String(bytes);
+        await JSRuntime.InvokeVoidAsync("eval", $"(function(){{var a=document.createElement('a');a.href='data:text/csv;base64,{base64}';a.download='{filePrefix}-{DateTime.Now:yyyy-MM-dd}.csv';document.body.appendChild(a);a.click();document.body.removeChild(a);}})()");
+    }
+
+    private static string CsvEscape(string? value)
+    {
+        if (string.IsNullOrEmpty(value)) return "";
+        if (value.Contains(',') || value.Contains('"') || value.Contains('\n'))
+            return $"\"{value.Replace("\"", "\"\"")}\"";
+        return value;
     }
 
     public void Dispose()

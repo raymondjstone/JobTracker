@@ -136,6 +136,55 @@ public class AppSettingsService
         }
     }
 
+    public List<SavedFilterPreset> GetFilterPresets()
+    {
+        EnsureSettingsLoaded();
+        lock (_lock) { return _settings.FilterPresets; }
+    }
+
+    public void SaveFilterPreset(SavedFilterPreset preset)
+    {
+        EnsureSettingsLoaded();
+        var userId = CurrentUserId;
+        lock (_lock)
+        {
+            _settings.FilterPresets.RemoveAll(p => p.Name == preset.Name);
+            _settings.FilterPresets.Add(preset);
+            SaveSettings(userId);
+            NotifyStateChanged();
+        }
+    }
+
+    public void DeleteFilterPreset(string name)
+    {
+        EnsureSettingsLoaded();
+        var userId = CurrentUserId;
+        lock (_lock)
+        {
+            _settings.FilterPresets.RemoveAll(p => p.Name == name);
+            SaveSettings(userId);
+            NotifyStateChanged();
+        }
+    }
+
+    public List<string> GetHighlightKeywords()
+    {
+        EnsureSettingsLoaded();
+        lock (_lock) { return _settings.HighlightKeywords; }
+    }
+
+    public void UpdateHighlightKeywords(List<string> keywords)
+    {
+        EnsureSettingsLoaded();
+        var userId = CurrentUserId;
+        lock (_lock)
+        {
+            _settings.HighlightKeywords = keywords;
+            SaveSettings(userId);
+            NotifyStateChanged();
+        }
+    }
+
     private void SaveSettings(Guid userId)
     {
         _storage.SaveSettings(_settings, userId);
