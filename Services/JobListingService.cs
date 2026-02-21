@@ -479,6 +479,20 @@ public class JobListingService
         }
     }
 
+    public void SetFollowUpDate(Guid id, DateTime? date)
+    {
+        lock (_lock)
+        {
+            var job = _jobListings.FirstOrDefault(j => j.Id == id);
+            if (job != null)
+            {
+                job.FollowUpDate = date;
+                _storage.SaveJob(job);
+                NotifyStateChanged();
+            }
+        }
+    }
+
     public void SetCoverLetter(Guid id, string coverLetter)
     {
         lock (_lock)
@@ -1213,6 +1227,101 @@ public class JobListingService
         }
     }
 
+    public PipelineStats GetPipelineStats(int staleDays, Guid? forUserId = null)
+    {
+        var userId = forUserId ?? CurrentUserId;
+        EnsureJobsLoaded(userId);
+        lock (_lock)
+        {
+            var userJobs = _jobListings.Where(j => j.UserId == userId).ToList();
+            var appliedJobs = userJobs.Where(j => j.HasApplied).ToList();
+            var now = DateTime.Now;
+            var staleCutoff = now.AddDays(-staleDays);
+
+            var stats = new PipelineStats
+            {
+                TotalApplied = appliedJobs.Count,
+                PendingCount = appliedJobs.Count(j => j.ApplicationStage == ApplicationStage.Pending),
+                InterviewCount = appliedJobs.Count(j => j.ApplicationStage == ApplicationStage.Interview),
+                TechTestCount = appliedJobs.Count(j => j.ApplicationStage == ApplicationStage.TechTest),
+                OfferCount = appliedJobs.Count(j => j.ApplicationStage == ApplicationStage.Offer),
+                RejectedCount = appliedJobs.Count(j => j.ApplicationStage == ApplicationStage.Rejected),
+                GhostedCount = appliedJobs.Count(j => j.ApplicationStage == ApplicationStage.Ghosted),
+                NoReplyCount = appliedJobs.Count(j => j.ApplicationStage == ApplicationStage.NoReply),
+                FollowUpsDueCount = appliedJobs.Count(j => j.FollowUpDate.HasValue && j.FollowUpDate.Value.Date <= now.Date),
+            };
+
+            // Stale = active pipeline jobs (Applied/Pending/TechTest/Interview) with no stage change in N days
+            var activeStages = new[] { ApplicationStage.Applied, ApplicationStage.Pending, ApplicationStage.TechTest, ApplicationStage.Interview };
+            stats.StaleCount = appliedJobs.Count(j =>
+                activeStages.Contains(j.ApplicationStage) &&
+                (j.StageHistory?.Any() == true
+                    ? j.StageHistory.Max(s => s.DateChanged) < staleCutoff
+                    : j.DateApplied.HasValue && j.DateApplied.Value < staleCutoff));
+
+            // Avg days to reply (Applied -> anything other than NoReply/Ghosted)
+            var repliedJobs = appliedJobs
+                .Where(j => j.StageHistory?.Count >= 2)
+                .Where(j => j.ApplicationStage != ApplicationStage.Applied && j.ApplicationStage != ApplicationStage.NoReply && j.ApplicationStage != ApplicationStage.Ghosted)
+                .Select(j =>
+                {
+                    var applied = j.StageHistory!.FirstOrDefault(s => s.Stage == ApplicationStage.Applied);
+                    var next = j.StageHistory!.Where(s => s.Stage != ApplicationStage.Applied).OrderBy(s => s.DateChanged).FirstOrDefault();
+                    if (applied != null && next != null)
+                        return (next.DateChanged - applied.DateChanged).TotalDays;
+                    return (double?)null;
+                })
+                .Where(d => d.HasValue)
+                .Select(d => d!.Value)
+                .ToList();
+            stats.AvgDaysToReply = repliedJobs.Count > 0 ? Math.Round(repliedJobs.Average(), 1) : 0;
+
+            // Avg days to interview
+            var interviewJobs = appliedJobs
+                .Where(j => j.StageHistory?.Any(s => s.Stage == ApplicationStage.Interview) == true)
+                .Select(j =>
+                {
+                    var applied = j.StageHistory!.FirstOrDefault(s => s.Stage == ApplicationStage.Applied);
+                    var interview = j.StageHistory!.FirstOrDefault(s => s.Stage == ApplicationStage.Interview);
+                    if (applied != null && interview != null)
+                        return (interview.DateChanged - applied.DateChanged).TotalDays;
+                    return (double?)null;
+                })
+                .Where(d => d.HasValue)
+                .Select(d => d!.Value)
+                .ToList();
+            stats.AvgDaysToInterview = interviewJobs.Count > 0 ? Math.Round(interviewJobs.Average(), 1) : 0;
+
+            // Jobs added per week (last 12 weeks)
+            for (int i = 0; i < 12; i++)
+            {
+                var weekStart = now.AddDays(-(i + 1) * 7);
+                var weekEnd = now.AddDays(-i * 7);
+                var label = weekStart.ToString("dd MMM");
+                stats.JobsAddedPerWeek[label] = userJobs.Count(j => j.DateAdded >= weekStart && j.DateAdded < weekEnd);
+            }
+
+            // Applications per week (last 12 weeks)
+            for (int i = 0; i < 12; i++)
+            {
+                var weekStart = now.AddDays(-(i + 1) * 7);
+                var weekEnd = now.AddDays(-i * 7);
+                var label = weekStart.ToString("dd MMM");
+                stats.ApplicationsPerWeek[label] = appliedJobs.Count(j => j.DateApplied.HasValue && j.DateApplied.Value >= weekStart && j.DateApplied.Value < weekEnd);
+            }
+
+            // Stage breakdown
+            foreach (ApplicationStage stage in Enum.GetValues<ApplicationStage>())
+            {
+                if (stage == ApplicationStage.None) continue;
+                var count = appliedJobs.Count(j => j.ApplicationStage == stage);
+                if (count > 0) stats.StageBreakdown[stage.ToString()] = count;
+            }
+
+            return stats;
+        }
+    }
+
     /// <summary>
     /// Gets jobs that need descriptions (have no description or very short one)
     /// Excludes jobs marked as Unsuitable (no point fetching descriptions for those)
@@ -1584,4 +1693,23 @@ public class JobStats
     public int AppliedCount { get; set; }
     public int NeedingDescriptionCount { get; set; }
     public Dictionary<string, int> NeedingDescriptionBySource { get; set; } = new();
+}
+
+public class PipelineStats
+{
+    public int TotalApplied { get; set; }
+    public int PendingCount { get; set; }
+    public int InterviewCount { get; set; }
+    public int TechTestCount { get; set; }
+    public int OfferCount { get; set; }
+    public int RejectedCount { get; set; }
+    public int GhostedCount { get; set; }
+    public int NoReplyCount { get; set; }
+    public int StaleCount { get; set; }
+    public int FollowUpsDueCount { get; set; }
+    public double AvgDaysToReply { get; set; }
+    public double AvgDaysToInterview { get; set; }
+    public Dictionary<string, int> JobsAddedPerWeek { get; set; } = new();
+    public Dictionary<string, int> ApplicationsPerWeek { get; set; } = new();
+    public Dictionary<string, int> StageBreakdown { get; set; } = new();
 }

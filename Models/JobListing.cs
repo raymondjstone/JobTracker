@@ -27,6 +27,7 @@ public class JobListing
     public DateTime? LastChecked { get; set; }
     public decimal? SalaryMin { get; set; }
     public decimal? SalaryMax { get; set; }
+    public DateTime? FollowUpDate { get; set; }
     public string Notes { get; set; } = string.Empty;
     public string CoverLetter { get; set; } = string.Empty;
 }

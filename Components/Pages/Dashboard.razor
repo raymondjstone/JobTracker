@@ -1,0 +1,268 @@
+@page "/dashboard"
+@using JobTracker.Models
+@using JobTracker.Services
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject JobListingService JobService
+@inject AppSettingsService SettingsService
+@implements IDisposable
+@rendermode InteractiveServer
+
+<PageTitle>Dashboard</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="mb-0"><i class="bi bi-graph-up"></i> Application Dashboard</h1>
+    <button class="btn btn-outline-secondary btn-sm" @onclick="Refresh">
+        <i class="bi bi-arrow-clockwise"></i> Refresh
+    </button>
+</div>
+
+@if (pipelineStats == null)
+{
+    <p class="text-muted">Loading...</p>
+}
+else
+{
+    @* Top summary cards *@
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3">
+            <div class="card text-center">
+                <div class="card-body py-3">
+                    <div class="text-muted small">Total Applied</div>
+                    <div class="fs-2 fw-bold text-primary">@pipelineStats.TotalApplied</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card text-center">
+                <div class="card-body py-3">
+                    <div class="text-muted small">Interviews</div>
+                    <div class="fs-2 fw-bold text-success">@pipelineStats.InterviewCount</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card text-center">
+                <div class="card-body py-3">
+                    <div class="text-muted small">Offers</div>
+                    <div class="fs-2 fw-bold" style="color: #198754;">@pipelineStats.OfferCount</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card text-center">
+                <div class="card-body py-3">
+                    <div class="text-muted small">Rejected</div>
+                    <div class="fs-2 fw-bold text-danger">@pipelineStats.RejectedCount</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @* Conversion funnel *@
+    <div class="row g-3 mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header"><strong>Conversion Funnel</strong></div>
+                <div class="card-body">
+                    @if (pipelineStats.TotalApplied > 0)
+                    {
+                        @foreach (var stage in funnelStages)
+                        {
+                            var count = GetStageCount(stage);
+                            var pct = Math.Round(100.0 * count / pipelineStats.TotalApplied, 1);
+                            <div class="d-flex align-items-center mb-2">
+                                <span class="badge @GetStageBadgeClass(stage) me-2" style="width: 100px; text-align: center;">@GetStageDisplayName(stage)</span>
+                                <div class="progress flex-grow-1" style="height: 22px;">
+                                    <div class="progress-bar @GetStageProgressClass(stage)" role="progressbar"
+                                         style="width: @pct%;" aria-valuenow="@pct" aria-valuemin="0" aria-valuemax="100">
+                                        @count (@pct%)
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <p class="text-muted">No applications yet.</p>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header"><strong>Pipeline Health</strong></div>
+                <div class="card-body">
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <div class="border rounded p-3 text-center">
+                                <div class="text-muted small">Avg Days to Reply</div>
+                                <div class="fs-4 fw-bold">@(pipelineStats.AvgDaysToReply > 0 ? $"{pipelineStats.AvgDaysToReply:F1}" : "-")</div>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="border rounded p-3 text-center">
+                                <div class="text-muted small">Avg Days to Interview</div>
+                                <div class="fs-4 fw-bold">@(pipelineStats.AvgDaysToInterview > 0 ? $"{pipelineStats.AvgDaysToInterview:F1}" : "-")</div>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="border rounded p-3 text-center">
+                                <div class="text-muted small">Stale Applications</div>
+                                <div class="fs-4 fw-bold @(pipelineStats.StaleCount > 0 ? "text-warning" : "")">@pipelineStats.StaleCount</div>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="border rounded p-3 text-center">
+                                <div class="text-muted small">Follow-ups Due</div>
+                                <div class="fs-4 fw-bold @(pipelineStats.FollowUpsDueCount > 0 ? "text-danger" : "")">@pipelineStats.FollowUpsDueCount</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    @if (pipelineStats.TotalApplied > 0)
+                    {
+                        <hr />
+                        <div class="d-flex justify-content-between small text-muted">
+                            <span>Success rate (Interview+Offer): <strong>@(Math.Round(100.0 * (pipelineStats.InterviewCount + pipelineStats.OfferCount) / pipelineStats.TotalApplied, 1))%</strong></span>
+                            <span>Ghosted rate: <strong>@(Math.Round(100.0 * pipelineStats.GhostedCount / pipelineStats.TotalApplied, 1))%</strong></span>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @* Weekly activity charts (text-based) *@
+    <div class="row g-3 mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header"><strong>Jobs Added (Last 12 Weeks)</strong></div>
+                <div class="card-body">
+                    @foreach (var entry in pipelineStats.JobsAddedPerWeek.Reverse())
+                    {
+                        var maxVal = pipelineStats.JobsAddedPerWeek.Values.DefaultIfEmpty(1).Max();
+                        var pct = maxVal > 0 ? Math.Round(100.0 * entry.Value / maxVal) : 0;
+                        <div class="d-flex align-items-center mb-1">
+                            <span class="text-muted small" style="width: 60px;">@entry.Key</span>
+                            <div class="progress flex-grow-1" style="height: 18px;">
+                                <div class="progress-bar bg-info" style="width: @pct%;">@entry.Value</div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header"><strong>Applications (Last 12 Weeks)</strong></div>
+                <div class="card-body">
+                    @foreach (var entry in pipelineStats.ApplicationsPerWeek.Reverse())
+                    {
+                        var maxVal = pipelineStats.ApplicationsPerWeek.Values.DefaultIfEmpty(1).Max();
+                        var pct = maxVal > 0 ? Math.Round(100.0 * entry.Value / maxVal) : 0;
+                        <div class="d-flex align-items-center mb-1">
+                            <span class="text-muted small" style="width: 60px;">@entry.Key</span>
+                            <div class="progress flex-grow-1" style="height: 18px;">
+                                <div class="progress-bar bg-primary" style="width: @pct%;">@entry.Value</div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private PipelineStats? pipelineStats;
+    private PipelineSettings pipelineSettings = new();
+
+    private readonly ApplicationStage[] funnelStages = new[]
+    {
+        ApplicationStage.Applied,
+        ApplicationStage.Pending,
+        ApplicationStage.TechTest,
+        ApplicationStage.Interview,
+        ApplicationStage.Offer,
+        ApplicationStage.NoReply,
+        ApplicationStage.Ghosted,
+        ApplicationStage.Rejected
+    };
+
+    protected override void OnInitialized()
+    {
+        pipelineSettings = SettingsService.GetSettings().Pipeline;
+        JobService.OnChange += OnChanged;
+        Refresh();
+    }
+
+    private void OnChanged()
+    {
+        Refresh();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void Refresh()
+    {
+        pipelineStats = JobService.GetPipelineStats(pipelineSettings.StaleDays);
+    }
+
+    private int GetStageCount(ApplicationStage stage) => stage switch
+    {
+        ApplicationStage.Applied => pipelineStats!.TotalApplied,
+        ApplicationStage.Pending => pipelineStats!.PendingCount,
+        ApplicationStage.TechTest => pipelineStats!.TechTestCount,
+        ApplicationStage.Interview => pipelineStats!.InterviewCount,
+        ApplicationStage.Offer => pipelineStats!.OfferCount,
+        ApplicationStage.NoReply => pipelineStats!.NoReplyCount,
+        ApplicationStage.Ghosted => pipelineStats!.GhostedCount,
+        ApplicationStage.Rejected => pipelineStats!.RejectedCount,
+        _ => 0
+    };
+
+    private static string GetStageDisplayName(ApplicationStage stage) => stage switch
+    {
+        ApplicationStage.Applied => "Applied",
+        ApplicationStage.NoReply => "No Reply",
+        ApplicationStage.Pending => "Pending",
+        ApplicationStage.TechTest => "Tech Test",
+        ApplicationStage.Interview => "Interview",
+        ApplicationStage.Offer => "Offer",
+        ApplicationStage.Ghosted => "Ghosted",
+        ApplicationStage.Rejected => "Rejected",
+        _ => stage.ToString()
+    };
+
+    private static string GetStageBadgeClass(ApplicationStage stage) => stage switch
+    {
+        ApplicationStage.Applied => "bg-primary",
+        ApplicationStage.Pending => "bg-info text-dark",
+        ApplicationStage.TechTest => "bg-warning text-dark",
+        ApplicationStage.Interview => "bg-success",
+        ApplicationStage.Offer => "bg-success",
+        ApplicationStage.NoReply => "bg-secondary",
+        ApplicationStage.Ghosted => "bg-dark",
+        ApplicationStage.Rejected => "bg-danger",
+        _ => "bg-secondary"
+    };
+
+    private static string GetStageProgressClass(ApplicationStage stage) => stage switch
+    {
+        ApplicationStage.Applied => "bg-primary",
+        ApplicationStage.Pending => "bg-info",
+        ApplicationStage.TechTest => "bg-warning",
+        ApplicationStage.Interview => "bg-success",
+        ApplicationStage.Offer => "bg-success",
+        ApplicationStage.NoReply => "bg-secondary",
+        ApplicationStage.Ghosted => "bg-dark",
+        ApplicationStage.Rejected => "bg-danger",
+        _ => "bg-secondary"
+    };
+
+    public void Dispose()
+    {
+        JobService.OnChange -= OnChanged;
+    }
+}

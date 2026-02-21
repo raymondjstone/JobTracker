@@ -143,6 +143,10 @@
         <button class="nav-link @(activeTab == TabType.Pipeline ? "active" : "")" @onclick="() => SetActiveTab(TabType.Pipeline)">
             <i class="bi bi-kanban"></i> Pipeline
             <span class="badge bg-primary ms-1">@appliedJobsCount</span>
+            @if (followUpsDueCount > 0)
+            {
+                <span class="badge bg-warning text-dark ms-1" title="@followUpsDueCount follow-up(s) due">@followUpsDueCount <i class="bi bi-bell-fill"></i></span>
+            }
         </button>
     </li>
     <li class="nav-item">
@@ -477,8 +481,31 @@
                                     <div class="text-muted small mb-1">@job.Company</div>
                                     @if (job.DateApplied.HasValue)
                                     {
-                                        <div class="text-muted small mb-2">
+                                        <div class="text-muted small mb-1">
                                             <i class="bi bi-calendar3"></i> @((int)(DateTime.Now - job.DateApplied.Value).TotalDays)d ago
+                                        </div>
+                                    }
+                                    @{
+                                        var lastStageDate = job.StageHistory?.Any() == true
+                                            ? job.StageHistory.Max(s => s.DateChanged)
+                                            : job.DateApplied ?? job.DateAdded;
+                                        var daysSinceChange = (int)(DateTime.Now - lastStageDate).TotalDays;
+                                        var activeStagesForStale = new[] { ApplicationStage.Applied, ApplicationStage.Pending, ApplicationStage.TechTest, ApplicationStage.Interview };
+                                        var isStale = activeStagesForStale.Contains(job.ApplicationStage) && daysSinceChange >= pipelineSettings.StaleDays;
+                                    }
+                                    @if (isStale)
+                                    {
+                                        <div class="small mb-1">
+                                            <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle"></i> Stale (@daysSinceChange d)</span>
+                                        </div>
+                                    }
+                                    @if (job.FollowUpDate.HasValue)
+                                    {
+                                        var isOverdue = job.FollowUpDate.Value.Date <= DateTime.Now.Date;
+                                        <div class="small mb-1">
+                                            <span class="badge @(isOverdue ? "bg-danger" : "bg-info text-dark")">
+                                                <i class="bi bi-bell"></i> @job.FollowUpDate.Value.ToString("dd MMM")
+                                            </span>
                                         </div>
                                     }
                                     <select class="form-select form-select-sm kanban-stage-select"
@@ -829,7 +856,30 @@ else
                             </div>
                         }
                     }
-                    
+
+                        <div class="mb-3">
+                            <label class="form-label"><strong>Follow-up Date:</strong></label>
+                            <div class="d-flex align-items-center gap-2">
+                                <input type="date" class="form-control form-control-sm" style="width: 180px;"
+                                       value="@(selectedJob.FollowUpDate?.ToString("yyyy-MM-dd") ?? "")"
+                                       @onchange="e => SetFollowUpDate(selectedJob.Id, e.Value?.ToString())" />
+                                @if (selectedJob.FollowUpDate.HasValue)
+                                {
+                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => SetFollowUpDate(selectedJob.Id, null)" title="Clear follow-up date">
+                                        <i class="bi bi-x"></i>
+                                    </button>
+                                    @if (selectedJob.FollowUpDate.Value.Date <= DateTime.Now.Date)
+                                    {
+                                        <span class="badge bg-danger"><i class="bi bi-bell-fill"></i> Due</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted small">in @((int)(selectedJob.FollowUpDate.Value.Date - DateTime.Now.Date).TotalDays) day(s)</span>
+                                    }
+                                }
+                            </div>
+                        </div>
+
                     @if (selectedJob.Skills.Any())
                     {
                         <div class="mb-3">
@@ -1107,6 +1157,26 @@ else
                                placeholder="C#, Python, Azure, React (comma-separated)" />
                         <small class="text-muted">Keywords to highlight in job descriptions. Comma-separated.</small>
                     </div>
+
+                    <hr />
+                    <h6><i class="bi bi-kanban"></i> Pipeline Thresholds</h6>
+                    <div class="row g-2 mb-2">
+                        <div class="col-4">
+                            <label class="form-label small">No Reply (days)</label>
+                            <input type="number" class="form-control form-control-sm" min="1" @bind="editingPipeline.NoReplyDays" />
+                            <small class="text-muted">Auto-mark as No Reply</small>
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label small">Ghosted (days)</label>
+                            <input type="number" class="form-control form-control-sm" min="1" @bind="editingPipeline.GhostedDays" />
+                            <small class="text-muted">Auto-mark as Ghosted</small>
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label small">Stale (days)</label>
+                            <input type="number" class="form-control form-control-sm" min="1" @bind="editingPipeline.StaleDays" />
+                            <small class="text-muted">Show stale badge</small>
+                        </div>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" @onclick="ResetSettingsToDefaults">
@@ -1371,6 +1441,11 @@ else
     private List<string> highlightKeywords = new();
     private string editHighlightKeywords = "";
 
+    // Pipeline settings
+    private PipelineSettings pipelineSettings = new();
+    private PipelineSettings editingPipeline = new();
+    private int followUpsDueCount = 0;
+
     // Settings
     private JobSiteUrls jobSiteUrls = new();
     private bool showSettingsModal = false;
@@ -1383,6 +1458,7 @@ else
         jobSiteUrls = SettingsService.GetJobSiteUrls();
         filterPresets = SettingsService.GetFilterPresets();
         highlightKeywords = SettingsService.GetHighlightKeywords();
+        pipelineSettings = SettingsService.GetSettings().Pipeline;
         RefreshData();
         
         // Auto-refresh every 5 seconds to pick up changes from extensions
@@ -1415,6 +1491,7 @@ else
         possibleJobsCount = allJobs.Count(j => !j.HasApplied && j.Suitability == SuitabilityStatus.Possible);
         unsuitableJobsCount = allJobs.Count(j => !j.HasApplied && j.Suitability == SuitabilityStatus.Unsuitable);
         browseJobsCount = allJobs.Count(j => !j.HasApplied && j.Suitability == SuitabilityStatus.NotChecked);
+        followUpsDueCount = allJobs.Count(j => j.HasApplied && j.FollowUpDate.HasValue && j.FollowUpDate.Value.Date <= DateTime.Now.Date);
     }
 
     private void SetActiveTab(TabType tab)
@@ -1537,6 +1614,17 @@ else
     {
         JobService.SetApplicationStage(id, stage);
         selectedJob = JobService.GetJobById(id);
+        RefreshData();
+    }
+
+    private void SetFollowUpDate(Guid id, string? dateStr)
+    {
+        DateTime? date = null;
+        if (!string.IsNullOrEmpty(dateStr) && DateTime.TryParse(dateStr, out var parsed))
+            date = parsed;
+        JobService.SetFollowUpDate(id, date);
+        if (selectedJob != null)
+            selectedJob = JobService.GetJobById(selectedJob.Id);
         RefreshData();
     }
 
@@ -1961,6 +2049,12 @@ else
             CrawlEnergyJobSearch = jobSiteUrls.CrawlEnergyJobSearch,
         };
         editHighlightKeywords = string.Join(", ", highlightKeywords);
+        editingPipeline = new PipelineSettings
+        {
+            NoReplyDays = pipelineSettings.NoReplyDays,
+            GhostedDays = pipelineSettings.GhostedDays,
+            StaleDays = pipelineSettings.StaleDays
+        };
         showSettingsModal = true;
     }
 
@@ -1981,6 +2075,12 @@ else
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
         SettingsService.UpdateHighlightKeywords(highlightKeywords);
+
+        // Save pipeline settings
+        var settings = SettingsService.GetSettings();
+        settings.Pipeline = editingPipeline;
+        pipelineSettings = editingPipeline;
+        SettingsService.Save();
 
         showSettingsModal = false;
     }

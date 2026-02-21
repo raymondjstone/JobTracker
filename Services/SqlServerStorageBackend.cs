@@ -221,6 +221,12 @@ public class SqlServerStorageBackend : IStorageBackend
                 StopOnFirstMatch = entity.StopOnFirstMatch,
                 Rules = rules
             };
+            settings.Pipeline = new PipelineSettings
+            {
+                NoReplyDays = entity.NoReplyDays,
+                GhostedDays = entity.GhostedDays,
+                StaleDays = entity.StaleDays
+            };
         }
         else
         {
@@ -249,6 +255,9 @@ public class SqlServerStorageBackend : IStorageBackend
         entity.WTTJUrl = settings.JobSiteUrls.WTTJ;
         entity.EnableAutoRules = settings.JobRules.EnableAutoRules;
         entity.StopOnFirstMatch = settings.JobRules.StopOnFirstMatch;
+        entity.NoReplyDays = settings.Pipeline.NoReplyDays;
+        entity.GhostedDays = settings.Pipeline.GhostedDays;
+        entity.StaleDays = settings.Pipeline.StaleDays;
 
         // Sync rules for this user: diff-based
         var existingRules = db.JobRules.Where(r => r.UserId == userId).ToList();
@@ -385,7 +394,10 @@ public class SqlServerStorageBackend : IStorageBackend
             IndeedUrl = settings.JobSiteUrls.Indeed,
             WTTJUrl = settings.JobSiteUrls.WTTJ,
             EnableAutoRules = settings.JobRules.EnableAutoRules,
-            StopOnFirstMatch = settings.JobRules.StopOnFirstMatch
+            StopOnFirstMatch = settings.JobRules.StopOnFirstMatch,
+            NoReplyDays = settings.Pipeline.NoReplyDays,
+            GhostedDays = settings.Pipeline.GhostedDays,
+            StaleDays = settings.Pipeline.StaleDays
         };
         db.AppSettings.Add(entity);
 

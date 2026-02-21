@@ -10,4 +10,7 @@ public class AppSettingsEntity
     public string WTTJUrl { get; set; } = "https://www.welcometothejungle.com/en/jobs";
     public bool EnableAutoRules { get; set; } = true;
     public bool StopOnFirstMatch { get; set; } = false;
+    public int NoReplyDays { get; set; } = 3;
+    public int GhostedDays { get; set; } = 3;
+    public int StaleDays { get; set; } = 14;
 }

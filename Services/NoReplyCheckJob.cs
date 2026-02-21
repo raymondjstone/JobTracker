@@ -20,13 +20,17 @@ public class NoReplyCheckJob
         using var scope = _scopeFactory.CreateScope();
         var jobService = scope.ServiceProvider.GetRequiredService<JobListingService>();
         var authService = scope.ServiceProvider.GetRequiredService<AuthService>();
+        var settingsService = scope.ServiceProvider.GetRequiredService<AppSettingsService>();
 
         var users = authService.GetAllUsers();
-        var cutoff = DateTime.Now.AddDays(-3);
         int totalNoReply = 0;
 
         foreach (var user in users)
         {
+            var settings = settingsService.GetSettings(user.Id);
+            var noReplyDays = settings.Pipeline.NoReplyDays;
+            var cutoff = DateTime.Now.AddDays(-noReplyDays);
+
             var allJobs = jobService.GetAllJobListings(user.Id);
             var appliedJobs = allJobs
                 .Where(j => j.HasApplied && j.ApplicationStage == ApplicationStage.Applied)
@@ -37,8 +41,8 @@ public class NoReplyCheckJob
             {
                 jobService.SetApplicationStage(job.Id, ApplicationStage.NoReply, HistoryChangeSource.System);
                 totalNoReply++;
-                _logger.LogInformation("[Hangfire] Marked job as no reply: {Title} (applied {Date})",
-                    job.Title, job.DateApplied?.ToString("yyyy-MM-dd"));
+                _logger.LogInformation("[Hangfire] Marked job as no reply: {Title} (applied {Date}, threshold {Days} days)",
+                    job.Title, job.DateApplied?.ToString("yyyy-MM-dd"), noReplyDays);
             }
 
             if (appliedJobs.Count > 0)

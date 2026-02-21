@@ -20,13 +20,17 @@ public class GhostedCheckJob
         using var scope = _scopeFactory.CreateScope();
         var jobService = scope.ServiceProvider.GetRequiredService<JobListingService>();
         var authService = scope.ServiceProvider.GetRequiredService<AuthService>();
+        var settingsService = scope.ServiceProvider.GetRequiredService<AppSettingsService>();
 
         var users = authService.GetAllUsers();
-        var cutoff = DateTime.Now.AddDays(-3);
         int totalGhosted = 0;
 
         foreach (var user in users)
         {
+            var settings = settingsService.GetSettings(user.Id);
+            var ghostedDays = settings.Pipeline.GhostedDays;
+            var cutoff = DateTime.Now.AddDays(-ghostedDays);
+
             var allJobs = jobService.GetAllJobListings(user.Id);
             var appliedJobs = allJobs
                 .Where(j => j.HasApplied && j.ApplicationStage == ApplicationStage.NoReply)
@@ -35,10 +39,10 @@ public class GhostedCheckJob
 
             foreach (var job in appliedJobs)
             {
-                jobService.SetApplicationStage(job.Id, ApplicationStage.NoReply, HistoryChangeSource.System);
+                jobService.SetApplicationStage(job.Id, ApplicationStage.Ghosted, HistoryChangeSource.System);
                 totalGhosted++;
-                _logger.LogInformation("[Hangfire] Marked job as ghosted: {Title} (applied {Date})",
-                    job.Title, job.DateApplied?.ToString("yyyy-MM-dd"));
+                _logger.LogInformation("[Hangfire] Marked job as ghosted: {Title} (applied {Date}, threshold {Days} days)",
+                    job.Title, job.DateApplied?.ToString("yyyy-MM-dd"), ghostedDays);
             }
 
             if (appliedJobs.Count > 0)

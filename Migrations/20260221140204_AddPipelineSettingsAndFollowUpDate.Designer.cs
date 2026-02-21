@@ -4,6 +4,7 @@ using JobTracker.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace JobTracker.Migrations
 {
     [DbContext(typeof(JobSearchDbContext))]
-    partial class JobSearchDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260221140204_AddPipelineSettingsAndFollowUpDate")]
+    partial class AddPipelineSettingsAndFollowUpDate
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

@@ -6,6 +6,14 @@ public class AppSettings
     public JobRulesSettings JobRules { get; set; } = new();
     public List<SavedFilterPreset> FilterPresets { get; set; } = new();
     public List<string> HighlightKeywords { get; set; } = new();
+    public PipelineSettings Pipeline { get; set; } = new();
+}
+
+public class PipelineSettings
+{
+    public int NoReplyDays { get; set; } = 3;
+    public int GhostedDays { get; set; } = 3;
+    public int StaleDays { get; set; } = 14;
 }
 
 public class SavedFilterPreset
