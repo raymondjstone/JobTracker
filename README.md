@@ -26,9 +26,12 @@ A Blazor application with browser extensions that automatically extract job list
 
 ### Job Management
 - **Dashboard** - View all jobs with statistics (total, interested, applied, etc.)
-- **Tabbed Interface** - Browse, Possible, Applied, and Unsuitable tabs
-- **Filtering** - Filter by search, location, job type, remote, salary, interest, source, and date
+- **Tabbed Interface** - Browse, Possible, Applied, Pipeline (Kanban), and Unsuitable tabs
+- **Filtering** - Filter by search, location, job type, remote, salary, interest, source, skills, and date
 - **Title-Only Search** - Search specifically in job titles
+- **Salary Range Filter** - Parse salary strings into min/max values and filter by target salary
+- **Skill Filter** - Filter by skill with autocomplete from existing job skills
+- **Saved Filter Presets** - Save and load named filter configurations
 - **Bulk Actions** - Mark all filtered jobs as Possible or Unsuitable
 
 ### Application Tracking
@@ -37,6 +40,15 @@ A Blazor application with browser extensions that automatically extract job list
 - **Applied Tracking** - Track which jobs you've applied to
 - **Application Stages** - Track progress: Applied → No Reply → Pending → Tech Test → Interview → Offer (or Ghosted/Rejected)
 - **Stage History** - View timeline of stage changes for each application
+- **Pipeline Kanban Board** - Drag-and-drop kanban board view of all applied jobs grouped by stage
+- **Stale Application Alerts** - Visual badges on pipeline cards when applications have had no stage change beyond a configurable threshold
+- **Follow-up Reminders** - Set per-job follow-up dates with due indicators and a count badge on the Pipeline tab
+
+### Application Stats Dashboard
+- **Conversion Funnel** - Visual funnel showing progression from Applied through to Offer/Rejected
+- **Pipeline Health** - Average days to reply, average days to interview, stale count, follow-ups due
+- **Success & Ghosted Rates** - Percentage breakdowns of application outcomes
+- **Weekly Activity Charts** - Jobs added and applications submitted over the last 12 weeks
 
 ### Rules Engine
 - **Auto-classification Rules** - Automatically set interest, suitability, and remote status based on configurable rules
@@ -46,8 +58,10 @@ A Blazor application with browser extensions that automatically extract job list
 - **Server-side Crawling** - Crawl job sites directly from the server without browser extensions
 - **Supported Crawl Sites** - LinkedIn, S1Jobs, Welcome to the Jungle, and EnergyJobSearch
 - **Scheduled Crawling** - Automatic crawling via Hangfire (SQL Server mode) or LocalBackgroundService
-- **Ghosted Detection** - Automatically marks old applications with no reply as Ghosted
+- **Ghosted Detection** - Automatically marks old applications with no reply as Ghosted (configurable threshold)
+- **No Reply Detection** - Automatically marks applied jobs as No Reply after configurable days
 - **Availability Checks** - Background checks for job listing availability
+- **Configurable Thresholds** - No Reply, Ghosted, and Stale days are all configurable per-user in Settings
 
 ### Authentication (SQL Server mode)
 - **User Accounts** - Login with cookie-based authentication and API key support
@@ -56,7 +70,10 @@ A Blazor application with browser extensions that automatically extract job list
 
 ### Sharing & Export
 - **WhatsApp Sharing** - Share job details directly to WhatsApp
+- **CSV Export** - Export applied jobs to CSV from the Jobs page
+- **History Export** - Export full or filtered history to CSV
 - **Direct Links** - Open original job postings with one click
+- **Keyword Highlighting** - Configurable keyword highlighting in job descriptions
 
 ## Prerequisites
 
@@ -165,9 +182,10 @@ Navigate to `https://localhost:7046` to access the dashboard.
 |------|------|-------------|
 | Jobs Dashboard | `/` or `/jobs` | Main job listing and management |
 | Add Job | `/jobs/add` | Manually add a job |
+| Dashboard | `/dashboard` | Application stats, conversion funnel, and weekly activity |
 | Rules | `/rules` | Manage auto-classification rules |
 | Settings | `/settings` | Configure site URLs and preferences |
-| History | `/history` | View audit log of changes |
+| History | `/history` | View audit log of changes with CSV export |
 | Background Jobs | `/background-jobs` | Monitor background crawl jobs |
 | Extension Install | `/extension-install` | Extension installation guide |
 | About | `/about` | Application information |
@@ -175,7 +193,8 @@ Navigate to `https://localhost:7046` to access the dashboard.
 #### Tabs
 - **Browse** - New jobs that haven't been categorized
 - **Possible** - Jobs marked as potentially suitable
-- **Applied** - Jobs you've applied to
+- **Applied** - Jobs you've applied to (list view)
+- **Pipeline** - Kanban board of applied jobs grouped by stage (drag-and-drop)
 - **Unsuitable** - Jobs that don't match your criteria
 
 #### Job Cards
@@ -200,9 +219,11 @@ Navigate to `https://localhost:7046` to access the dashboard.
 | Interest | Interested, Not Interested, or Not Rated |
 | Salary Info | Has salary or No salary listed |
 | Salary Contains | Search within salary text (e.g., "100K") |
+| Salary Target | Filter jobs whose parsed salary range covers the target value |
+| Skill | Filter by skill with autocomplete |
 | Stage | Filter applied jobs by application stage |
 | Date Range | Filter by date posted |
-| Sort By | Sort by date added, date posted, title, or company |
+| Sort By | Sort by date added, date posted, title, company, or salary |
 
 ## API Endpoints
 
@@ -260,10 +281,11 @@ To switch back to JSON, set `"StorageProvider": "Json"`. The JSON files are neve
 
 | Table | Contents |
 |-------|----------|
-| `JobListings` | All tracked jobs |
+| `Users` | User accounts and authentication |
+| `JobListings` | All tracked jobs (with parsed salary, follow-up dates) |
 | `HistoryEntries` | Audit log of changes |
 | `JobRules` | Auto-classification rules |
-| `AppSettings` | Single-row config (site URLs, rule settings) |
+| `AppSettings` | Per-user config (site URLs, rule settings, pipeline thresholds) |
 
 ## Project Structure
 
@@ -271,25 +293,28 @@ To switch back to JSON, set `"StorageProvider": "Json"`. The JSON files are neve
 JobTracker/
 ├── Components/
 │   ├── Pages/
-│   │   ├── Jobs.razor              # Main job dashboard
+│   │   ├── Jobs.razor              # Main job dashboard (browse, filter, kanban pipeline)
 │   │   ├── AddJob.razor            # Manual job entry
+│   │   ├── Dashboard.razor         # Application stats and conversion funnel
 │   │   ├── Rules.razor             # Auto-classification rules
 │   │   ├── Settings.razor          # App settings
-│   │   ├── History.razor           # Change audit log
+│   │   ├── History.razor           # Change audit log with CSV export
 │   │   ├── BackgroundJobs.razor    # Background job monitoring
 │   │   └── ExtensionInstall.razor  # Extension setup guide
 │   └── Layout/
 │       └── NavMenu.razor           # Navigation menu
 ├── Models/
-│   ├── JobListing.cs               # Job data model
-│   ├── AppSettings.cs              # Settings and site URL config
+│   ├── JobListing.cs               # Job data model (with salary parsing, follow-up dates)
+│   ├── AppSettings.cs              # Settings, site URLs, pipeline thresholds, filter presets
 │   ├── JobHistory.cs               # History entry model
 │   └── JobRule.cs                  # Rule model
 ├── Services/
-│   ├── JobListingService.cs        # Job storage, filtering, source detection
+│   ├── JobListingService.cs        # Job storage, filtering, pipeline stats
+│   ├── SalaryParser.cs             # Salary string parser (min/max extraction)
 │   ├── JobCrawlService.cs          # Server-side site crawling
 │   ├── JobCrawlJob.cs              # Scheduled crawl job
-│   ├── GhostedCheckJob.cs          # Auto-ghosted detection
+│   ├── GhostedCheckJob.cs          # Auto-ghosted detection (configurable threshold)
+│   ├── NoReplyCheckJob.cs          # Auto no-reply detection (configurable threshold)
 │   ├── AvailabilityCheckJob.cs     # Job availability checks
 │   └── LocalBackgroundService.cs   # Background task runner
 ├── Data/
