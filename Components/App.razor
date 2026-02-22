@@ -15,6 +15,15 @@
     <ImportMap />
     <link rel="icon" type="image/png" href="favicon.png" />
     <HeadOutlet />
+    <script>
+        // Apply dark mode from localStorage BEFORE first paint to avoid flash.
+        // This must be in <head> so it runs before body renders.
+        (function() {
+            if (localStorage.getItem('darkMode') === 'true') {
+                document.documentElement.setAttribute('data-bs-theme', 'dark');
+            }
+        })();
+    </script>
 </head>
 
 <body>
@@ -23,6 +32,54 @@
     </CascadingAuthenticationState>
     <ReconnectModal />
     <script src="@Assets["_framework/blazor.web.js"]"></script>
+    <script>
+        // Dark mode toggle and persistence
+        (function() {
+            var dotNetRef = null;
+
+            function isDark() {
+                return localStorage.getItem('darkMode') === 'true';
+            }
+
+            function applyTheme() {
+                var dark = isDark();
+                document.documentElement.setAttribute('data-bs-theme', dark ? 'dark' : 'light');
+                // Update icon — may have been re-rendered by Blazor with default class
+                var icon = document.getElementById('dark-mode-icon');
+                if (icon) icon.className = dark ? 'bi bi-sun' : 'bi bi-moon';
+            }
+
+            window.__toggleDarkMode = function() {
+                var dark = !isDark();
+                localStorage.setItem('darkMode', dark ? 'true' : 'false');
+                applyTheme();
+                if (dotNetRef) {
+                    try { dotNetRef.invokeMethodAsync('OnDarkModeToggled', dark); } catch(e) {}
+                }
+            };
+
+            // Called from Blazor to seed localStorage from server setting
+            // Only applies if the user has never toggled (no localStorage value yet)
+            window.__seedDarkMode = function(enabled) {
+                if (localStorage.getItem('darkMode') === null) {
+                    localStorage.setItem('darkMode', enabled ? 'true' : 'false');
+                    applyTheme();
+                }
+            };
+
+            // Called from Blazor to register .NET callback
+            window.__registerDarkModeCallback = function(ref) {
+                dotNetRef = ref;
+            };
+
+            // Re-apply after Blazor enhanced navigation patches the DOM
+            // (the icon element gets replaced with server-rendered default)
+            Blazor.addEventListener('enhancedload', applyTheme);
+
+            // Also apply now for initial load
+            applyTheme();
+        })();
+    </script>
 </body>
 
 </html>

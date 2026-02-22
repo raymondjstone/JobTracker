@@ -15,6 +15,9 @@
             <a href="" class="header-logo">
                 <img src="images/logo.png" alt="Job Tracker" />
             </a>
+            <button id="dark-mode-toggle" class="btn btn-sm btn-outline-secondary me-3" onclick="window.__toggleDarkMode()" title="Toggle dark mode">
+                <i id="dark-mode-icon" class="bi bi-moon"></i>
+            </button>
             @if (Configuration.GetValue<bool>("LocalMode"))
             {
                 <span class="me-3">

@@ -31,6 +31,8 @@ public class LocalBackgroundService : BackgroundService
         ["GhostedCheck"] = ("Ghosted Check", TimeSpan.FromHours(24)),
         ["NoReplyCheck"] = ("No Reply Check", TimeSpan.FromHours(24)),
         ["JobCrawl"] = ("Job Crawl", TimeSpan.FromHours(48)),
+        ["AutoArchive"] = ("Auto Archive", TimeSpan.FromHours(24)),
+        ["EmailNotifications"] = ("Email Notifications", TimeSpan.FromHours(24)),
     };
 
     private readonly Dictionary<string, BackgroundJobStatus> _jobStatuses = new();
@@ -118,6 +120,8 @@ public class LocalBackgroundService : BackgroundService
             RunLoop("GhostedCheck", RunGhostedCheck, stoppingToken),
             RunLoop("NoReplyCheck", RunNoReplyCheck, stoppingToken),
             RunLoop("JobCrawl", RunJobCrawl, stoppingToken),
+            RunLoop("AutoArchive", RunAutoArchive, stoppingToken),
+            RunLoop("EmailNotifications", RunEmailNotifications, stoppingToken),
         };
 
         await Task.WhenAll(tasks);
@@ -297,6 +301,21 @@ public class LocalBackgroundService : BackgroundService
     {
         using var scope = _scopeFactory.CreateScope();
         var job = scope.ServiceProvider.GetRequiredService<JobCrawlJob>();
+        await job.RunAsync();
+    }
+
+    private Task RunAutoArchive()
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var job = scope.ServiceProvider.GetRequiredService<AutoArchiveJob>();
+        job.Run();
+        return Task.CompletedTask;
+    }
+
+    private async Task RunEmailNotifications()
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var job = scope.ServiceProvider.GetRequiredService<EmailNotificationJob>();
         await job.RunAsync();
     }
 }

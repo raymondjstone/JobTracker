@@ -175,17 +175,42 @@
   }
 
   function getJobDescription() {
-    // Priority rule: extract text between "About the job" and "Set alert for similar jobs"
-    // when both markers are present on the page — this gives the cleanest description.
+    // Method 1: Text markers — extract between "About the job" and end markers.
+    // This works regardless of DOM structure.
     try {
       var bodyText = document.body.innerText || '';
-      var aboutIdx = bodyText.search(/About the job\s*\n/i);
-      var alertIdx = bodyText.search(/\nSet alert for similar jobs/i);
-      if (aboutIdx !== -1 && alertIdx !== -1 && alertIdx > aboutIdx) {
-        var startOffset = aboutIdx + bodyText.slice(aboutIdx).match(/About the job\s*\n/i)[0].length;
-        var extracted = bodyText.substring(startOffset, alertIdx).trim();
+
+      // Try multiple start markers
+      var startMarkers = [/About the job\s*\n/i, /About this role\s*\n/i, /Job description\s*\n/i];
+      var endMarkers = [/\nSet alert for similar jobs/i, /\nShow more$/im, /\nSee more$/im, /\nAbout the company/i, /\nSimilar jobs/i, /\nPeople also viewed/i, /\nActivity on this job/i];
+
+      for (var si = 0; si < startMarkers.length; si++) {
+        var aboutIdx = bodyText.search(startMarkers[si]);
+        if (aboutIdx === -1) continue;
+        var startOffset = aboutIdx + bodyText.slice(aboutIdx).match(startMarkers[si])[0].length;
+
+        // Try each end marker, pick the closest one after start
+        var bestEnd = -1;
+        for (var ei = 0; ei < endMarkers.length; ei++) {
+          var remaining = bodyText.substring(startOffset);
+          var endMatch = remaining.search(endMarkers[ei]);
+          if (endMatch !== -1) {
+            var absEnd = startOffset + endMatch;
+            if (bestEnd === -1 || absEnd < bestEnd) bestEnd = absEnd;
+          }
+        }
+
+        var extracted = bestEnd !== -1
+          ? bodyText.substring(startOffset, bestEnd).trim()
+          : bodyText.substring(startOffset, startOffset + 10000).trim(); // no end marker: take up to 10k
+
+        // Truncate at reasonable boundary if no end marker was found
+        if (bestEnd === -1 && extracted.length > 3000) {
+          extracted = extracted.substring(0, 3000);
+        }
+
         if (extracted.length > 50) {
-          console.log('[LJE] Found description between "About the job" and "Set alert for similar jobs"');
+          console.log('[LJE] Found description via text marker (start #' + si + ', len=' + extracted.length + ')');
           return extracted.substring(0, 10000);
         }
       }
@@ -193,56 +218,81 @@
       console.log('[LJE] Error in marker-based extraction: ' + e.message);
     }
 
+    // Method 2: CSS selectors for known description containers
     var descSelectors = [
-      // Current LinkedIn selectors (2025)
+      // Current LinkedIn selectors (2025-2026)
+      '#job-details',
       '.jobs-description__container',
       '.jobs-description-content',
       '.jobs-description__content',
       '.jobs-description-content__text',
-      '#job-details',
       '.jobs-box__html-content',
       '.jobs-description',
       '.jobs-description-content__text--stretch',
       '.show-more-less-html__markup',
-      // Additional fallback selectors
+      // Collection/recommendation page selectors
+      '.job-details-module__content',
+      '.jobs-details__main-content',
+      '.jobs-details-top-card__job-description',
+      '.jobs-company__description',
+      // Generic pattern matches
       '[class*="jobs-description"]',
       '[class*="job-details"]',
+      '[class*="description-module"]',
+      '[class*="job-detail"] [class*="description"]',
       '.job-view-layout [class*="description"]',
-      '.jobs-unified-top-card__job-insight',
       'article[class*="jobs"]',
-      '.jobs-details__main-content'
+      // Aria-based selectors
+      '[aria-label*="description" i]',
+      '[aria-label*="job detail" i]'
     ];
 
     for (var i = 0; i < descSelectors.length; i++) {
       try {
-        var el = document.querySelector(descSelectors[i]);
-        if (el && el.innerText && el.innerText.trim().length > 50) {
-          console.log('[LJE] Found description using selector: ' + descSelectors[i]);
-          return el.innerText.trim().substring(0, 10000);
+        var els = document.querySelectorAll(descSelectors[i]);
+        for (var ei2 = 0; ei2 < els.length; ei2++) {
+          var el = els[ei2];
+          if (el && el.innerText && el.innerText.trim().length > 50) {
+            console.log('[LJE] Found description using selector: ' + descSelectors[i] + ' (len=' + el.innerText.trim().length + ')');
+            return el.innerText.trim().substring(0, 10000);
+          }
         }
       } catch (e) {
         // Invalid selector, skip
       }
     }
 
-    // Last resort: find any element with substantial text in the main content area
-    var mainContent = document.querySelector('.scaffold-layout__detail') ||
-                      document.querySelector('[class*="job-view"]') ||
-                      document.querySelector('main');
-    if (mainContent) {
-      var allDivs = mainContent.querySelectorAll('div, section, article');
-      for (var j = 0; j < allDivs.length; j++) {
-        var text = allDivs[j].innerText;
-        if (text && text.trim().length > 200 && text.trim().length < 15000) {
-          // Check if this looks like a job description (has multiple lines/paragraphs)
-          if (text.split('\n').length > 3) {
-            console.log('[LJE] Found description using fallback method');
-            return text.trim().substring(0, 10000);
+    // Method 3: Find the detail/right panel and look for substantial text blocks
+    var detailPanelSelectors = [
+      '.scaffold-layout__detail',
+      '.jobs-search__job-details',
+      '.job-details-module',
+      '[class*="job-view"]',
+      '[class*="detail-panel"]',
+      '[class*="job-details"]',
+      'main [class*="detail"]',
+      'main'
+    ];
+
+    for (var pi = 0; pi < detailPanelSelectors.length; pi++) {
+      try {
+        var panel = document.querySelector(detailPanelSelectors[pi]);
+        if (!panel) continue;
+
+        var allDivs = panel.querySelectorAll('div, section, article');
+        for (var j = 0; j < allDivs.length; j++) {
+          var text = allDivs[j].innerText;
+          if (text && text.trim().length > 200 && text.trim().length < 15000) {
+            if (text.split('\n').length > 3) {
+              console.log('[LJE] Found description in panel (' + detailPanelSelectors[pi] + ', len=' + text.trim().length + ')');
+              return text.trim().substring(0, 10000);
+            }
           }
         }
-      }
+      } catch (e) { }
     }
 
+    console.log('[LJE] WARNING: No description found on page. URL: ' + window.location.href.substring(0, 80));
     return '';
   }
 
@@ -542,7 +592,11 @@
       console.log('[LJE] Skipping extraction - crawl is running');
       return;
     }
-    
+    if (inPageFetchRunning) {
+      console.log('[LJE] Skipping extraction - in-page description fetch is running');
+      return;
+    }
+
     if (sending) return;
     updateUI('Scanning', totalSent);
 
@@ -567,9 +621,11 @@
     // Get description for currently viewed job
     var currentDesc = getJobDescription();
     var currentUrl = getCurrentJobUrl();
-    
+    var currentId = getCurrentJobId();
+    console.log('[LJE] Current job: id=' + currentId + ', url=' + currentUrl + ', descLen=' + (currentDesc ? currentDesc.length : 0));
+
     if (currentDesc && currentDesc.length > 50 && currentUrl) {
-      console.log('[LJE] Found description (' + currentDesc.length + ' chars) for job ' + getCurrentJobId());
+      console.log('[LJE] Found description (' + currentDesc.length + ' chars) for job ' + currentId);
       
       var foundInList = false;
       for (var k = 0; k < jobs.length; k++) {
@@ -627,6 +683,78 @@
     }
   }
 
+  // In-page description fetcher: clicks through sidebar job cards to load descriptions
+  var inPageFetchRunning = false;
+
+  function fetchDescriptionsInPage(jobsNeedingDesc) {
+    if (inPageFetchRunning || autoFetchEnabled || crawlEnabled) return;
+
+    // Build a map of job URLs that need descriptions
+    var needsDesc = {};
+    jobsNeedingDesc.forEach(function(j) { needsDesc[j.Url] = true; });
+
+    // Find clickable job cards in the sidebar, deduplicated by jobId
+    var cards = findAllJobCards();
+    var cardsToClick = [];
+    var seenJobIds = {};
+
+    cards.forEach(function(card) {
+      if (seenJobIds[card.jobId]) return; // skip duplicate DOM elements for same job
+      seenJobIds[card.jobId] = true;
+
+      var url = 'https://www.linkedin.com/jobs/view/' + card.jobId;
+      if (needsDesc[url]) {
+        var clickTarget = card.element.querySelector('a[href*="jobs"]') || card.element.querySelector('a') || card.element;
+        cardsToClick.push({ url: url, element: clickTarget, jobId: card.jobId });
+      }
+    });
+
+    if (cardsToClick.length === 0) {
+      console.log('[LJE] No clickable cards found for description fetch');
+      return;
+    }
+
+    console.log('[LJE] Will click through ' + cardsToClick.length + ' unique cards to fetch descriptions');
+    inPageFetchRunning = true;
+    var idx = 0;
+    var descUpdated = 0;
+
+    function clickNext() {
+      if (idx >= cardsToClick.length || !inPageFetchRunning) {
+        inPageFetchRunning = false;
+        console.log('[LJE] In-page description fetch complete (' + descUpdated + '/' + cardsToClick.length + ' updated)');
+        updateUI('Monitoring', totalSent);
+        return;
+      }
+
+      var card = cardsToClick[idx];
+      idx++;
+      updateUI('Desc ' + idx + '/' + cardsToClick.length, totalSent);
+
+      try {
+        card.element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      } catch(e) {
+        try { card.element.click(); } catch(e2) {}
+      }
+
+      // Wait for the detail panel to load, then extract description
+      setTimeout(function() {
+        var desc = getJobDescription();
+        if (desc && desc.length > 50) {
+          descUpdated++;
+          console.log('[LJE] Desc ' + idx + '/' + cardsToClick.length + ': ' + desc.length + ' chars for job ' + card.jobId);
+          var company = getCompanyFromDetailPage();
+          updateDescription(card.url, desc, company);
+        } else {
+          console.log('[LJE] Desc ' + idx + '/' + cardsToClick.length + ': none found for job ' + card.jobId);
+        }
+        setTimeout(clickNext, 1000);
+      }, 2500);
+    }
+
+    clickNext();
+  }
+
   function sendJobs(jobs) {
     sending = true;
     var i = 0;
@@ -636,6 +764,12 @@
         sending = false;
         updateUI('Done', totalSent);
         setTimeout(function() { updateUI('Monitoring', totalSent); }, 2000);
+        // After sending, fetch descriptions for jobs that were sent without one
+        var jobsNeedingDesc = jobs.filter(function(j) { return !j.Description || j.Description.length < 50; });
+        if (jobsNeedingDesc.length > 0) {
+          console.log('[LJE] ' + jobsNeedingDesc.length + ' jobs need descriptions - starting in-page fetch');
+          setTimeout(function() { fetchDescriptionsInPage(jobsNeedingDesc); }, 2000);
+        }
         return;
       }
 
@@ -691,14 +825,14 @@
 
   // Function to check server for jobs needing descriptions and fetch them
   function checkAndFetchDescriptions() {
-    if (fetchingDescriptions || sending) return;
-    
+    if (fetchingDescriptions || sending || inPageFetchRunning) return;
+
     // Only proceed if we're on a LinkedIn jobs page
     if (!window.location.href.includes('linkedin.com/jobs')) return;
-    
+
     fetchingDescriptions = true;
-    
-    fetch(SERVER_URL + '/api/jobs/needing-descriptions?limit=5', {
+
+    fetch(SERVER_URL + '/api/jobs/needing-descriptions?limit=50', {
       headers: getHeaders()
     })
       .then(function(r) { return r.json(); })
@@ -707,18 +841,18 @@
           fetchingDescriptions = false;
           return;
         }
-        
+
         console.log('[LJE] Found ' + data.count + ' jobs needing descriptions');
-        
+
         // Check if the currently viewed job is one that needs a description
         var currentJobId = getCurrentJobId();
         var currentUrl = getCurrentJobUrl();
-        
+
         if (currentJobId) {
           var currentJobNeedsDesc = data.jobs.some(function(j) {
             return j.Url && j.Url.toLowerCase().includes(currentJobId);
           });
-          
+
           if (currentJobNeedsDesc) {
             var desc = getJobDescription();
             if (desc && desc.length > 50) {
@@ -727,7 +861,34 @@
             }
           }
         }
-        
+
+        // Check if any visible sidebar cards match jobs needing descriptions
+        // and trigger in-page fetch if so
+        if (!inPageFetchRunning && !autoFetchEnabled && !crawlEnabled) {
+          var visibleCards = findAllJobCards();
+          var jobsOnPage = [];
+          var needsDescUrls = {};
+          data.jobs.forEach(function(j) {
+            var url = (j.Url || j.url || '').toLowerCase().replace(/\/$/, '');
+            if (url) needsDescUrls[url] = true;
+          });
+
+          visibleCards.forEach(function(card) {
+            var url = 'https://www.linkedin.com/jobs/view/' + card.jobId;
+            var normalized = url.toLowerCase().replace(/\/$/, '');
+            if (needsDescUrls[normalized]) {
+              jobsOnPage.push({ Url: url });
+            }
+          });
+
+          if (jobsOnPage.length > 0) {
+            console.log('[LJE] ' + jobsOnPage.length + ' visible jobs need descriptions - starting in-page fetch');
+            fetchingDescriptions = false;
+            fetchDescriptionsInPage(jobsOnPage);
+            return;
+          }
+        }
+
         fetchingDescriptions = false;
       })
       .catch(function(e) {

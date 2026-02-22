@@ -5,8 +5,10 @@
 @using Microsoft.AspNetCore.Components.Authorization
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject AuthService AuthService
+@inject AppSettingsService SettingsService
 @inject IJSRuntime JS
 @inject IConfiguration Configuration
+@inject NavigationManager Navigation
 @rendermode InteractiveServer
 
 <PageTitle>Settings - Job Tracker</PageTitle>
@@ -16,11 +18,12 @@
 
     @if (Configuration.GetValue<bool>("LocalMode"))
     {
-        <div class="alert alert-info">
-            <i class="bi bi-info-circle"></i> Settings are not available in Local Mode. Authentication and user profiles are managed automatically.
+        <div class="alert alert-info mb-4">
+            <i class="bi bi-info-circle"></i> Running in Local Mode. User profile and authentication settings are managed automatically.
         </div>
     }
-    else if (currentUser != null)
+
+    @if (!Configuration.GetValue<bool>("LocalMode") && currentUser != null)
     {
         <div class="card mb-4">
             <div class="card-header bg-primary text-white">
@@ -137,24 +140,263 @@
                 </div>
             </div>
         </div>
+    }
 
-        <div class="card">
-            <div class="card-header bg-warning text-dark">
-                <h5 class="mb-0"><i class="bi bi-shield-exclamation"></i> Security Note</h5>
+    @* Application Settings - Available in all modes *@
+    <div class="card mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-globe"></i> Job Site URLs</h5>
             </div>
             <div class="card-body">
-                <p class="mb-0">
-                    Your API key authenticates browser extensions. Keep it private and don't share it with anyone.
-                    If you suspect it's been compromised, you can regenerate it from this page.
-                </p>
+                <p class="text-muted small mb-3">Configure the URLs for job site quick links. Check "Crawl" to include a site in auto-crawl.</p>
+
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <label class="form-label mb-0">
+                            <i class="bi bi-linkedin" style="color: #0a66c2;"></i> LinkedIn URL
+                        </label>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="crawlLinkedIn" @bind="editingUrls.CrawlLinkedIn" />
+                            <label class="form-check-label small" for="crawlLinkedIn">Crawl</label>
+                        </div>
+                    </div>
+                    <input type="url" class="form-control" @bind="editingUrls.LinkedIn" placeholder="https://www.linkedin.com/jobs/" />
+                </div>
+
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <label class="form-label mb-0">
+                            <i class="bi bi-briefcase-fill" style="color: #0072CE;"></i> S1Jobs URL
+                        </label>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="crawlS1Jobs" @bind="editingUrls.CrawlS1Jobs" />
+                            <label class="form-check-label small" for="crawlS1Jobs">Crawl</label>
+                        </div>
+                    </div>
+                    <input type="url" class="form-control" @bind="editingUrls.S1Jobs" placeholder="https://www.s1jobs.com/jobs/" />
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">
+                        <i class="bi bi-search" style="color: #2557a7;"></i> Indeed URL
+                    </label>
+                    <input type="url" class="form-control" @bind="editingUrls.Indeed" placeholder="https://uk.indeed.com/jobs" />
+                    <small class="text-muted">Crawl not supported (Cloudflare protected)</small>
+                </div>
+
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <label class="form-label mb-0">
+                            <i class="bi bi-tree" style="color: #FFCD00;"></i> Welcome to the Jungle URL
+                        </label>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="crawlWTTJ" @bind="editingUrls.CrawlWTTJ" />
+                            <label class="form-check-label small" for="crawlWTTJ">Crawl</label>
+                        </div>
+                    </div>
+                    <input type="url" class="form-control" @bind="editingUrls.WTTJ" placeholder="https://www.welcometothejungle.com/en/jobs" />
+                    <small class="text-muted">Use a search URL with filters, not a saved job link</small>
+                </div>
+
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <label class="form-label mb-0">
+                            <i class="bi bi-lightning-charge" style="color: #FF6B00;"></i> EnergyJobSearch URL
+                        </label>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="crawlEnergyJobSearch" @bind="editingUrls.CrawlEnergyJobSearch" />
+                            <label class="form-check-label small" for="crawlEnergyJobSearch">Crawl</label>
+                        </div>
+                    </div>
+                    <input type="url" class="form-control" @bind="editingUrls.EnergyJobSearch" placeholder="https://energyjobsearch.com/jobs?title=.net" />
+                    <small class="text-muted">React SPA - browser extension recommended for best results</small>
+                </div>
+
+                <button type="button" class="btn btn-primary" @onclick="SaveJobSiteUrls">
+                    <i class="bi bi-check-lg"></i> Save URLs
+                </button>
+                <button type="button" class="btn btn-outline-secondary ms-2" @onclick="ResetJobSiteUrls">
+                    <i class="bi bi-arrow-counterclockwise"></i> Reset to Defaults
+                </button>
             </div>
         </div>
-    }
-    else
-    {
-        <div class="alert alert-warning">
-            <h5><i class="bi bi-exclamation-triangle"></i> Not Logged In</h5>
-            <p class="mb-0">Please <a href="/login">log in</a> to view your settings.</p>
+
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-highlighter"></i> Highlight Keywords</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">Keywords to highlight in job descriptions</label>
+                    <input type="text" class="form-control" @bind="editHighlightKeywords"
+                           placeholder="C#, Python, Azure, React (comma-separated)" />
+                    <small class="text-muted">Comma-separated list. These will be highlighted when viewing job descriptions.</small>
+                </div>
+                <button type="button" class="btn btn-primary" @onclick="SaveHighlightKeywords">
+                    <i class="bi bi-check-lg"></i> Save Keywords
+                </button>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-kanban"></i> Pipeline Thresholds</h5>
+            </div>
+            <div class="card-body">
+                <div class="row g-3 mb-3">
+                    <div class="col-md-4">
+                        <label class="form-label">No Reply (days)</label>
+                        <input type="number" class="form-control" min="1" @bind="editingPipeline.NoReplyDays" />
+                        <small class="text-muted">Auto-mark as No Reply after this many days</small>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Ghosted (days)</label>
+                        <input type="number" class="form-control" min="1" @bind="editingPipeline.GhostedDays" />
+                        <small class="text-muted">Auto-mark as Ghosted after this many days</small>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Stale (days)</label>
+                        <input type="number" class="form-control" min="1" @bind="editingPipeline.StaleDays" />
+                        <small class="text-muted">Show stale badge after this many days</small>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-primary" @onclick="SavePipelineSettings">
+                    <i class="bi bi-check-lg"></i> Save Thresholds
+                </button>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-archive"></i> Auto-Archive</h5>
+            </div>
+            <div class="card-body">
+                <div class="form-check form-switch mb-3">
+                    <input class="form-check-input" type="checkbox" id="autoArchiveEnabled" @bind="editAutoArchiveEnabled" />
+                    <label class="form-check-label" for="autoArchiveEnabled">Auto-archive rejected/ghosted jobs</label>
+                </div>
+                @if (editAutoArchiveEnabled)
+                {
+                    <div class="mb-3">
+                        <label class="form-label">Archive after (days)</label>
+                        <input type="number" class="form-control" min="1" max="365" style="width: 150px" @bind="editAutoArchiveDays" />
+                        <small class="text-muted">Move to archive after this many days</small>
+                    </div>
+                }
+                <button type="button" class="btn btn-primary" @onclick="SaveAutoArchiveSettings">
+                    <i class="bi bi-check-lg"></i> Save Settings
+                </button>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-envelope"></i> Email / SMTP</h5>
+            </div>
+            <div class="card-body">
+                <div class="row g-3 mb-3">
+                    <div class="col-md-8">
+                        <label class="form-label">SMTP Host</label>
+                        <input type="text" class="form-control" placeholder="smtp.example.com" @bind="editSmtpHost" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Port</label>
+                        <input type="number" class="form-control" @bind="editSmtpPort" />
+                    </div>
+                </div>
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Username</label>
+                        <input type="text" class="form-control" @bind="editSmtpUsername" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Password</label>
+                        <input type="password" class="form-control" @bind="editSmtpPassword" />
+                    </div>
+                </div>
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label">From Email</label>
+                        <input type="email" class="form-control" @bind="editSmtpFromEmail" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">From Name</label>
+                        <input type="text" class="form-control" @bind="editSmtpFromName" />
+                    </div>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(editSmtpHost))
+                {
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" id="emailNotificationsEnabled" @bind="editEmailNotificationsEnabled" />
+                        <label class="form-check-label" for="emailNotificationsEnabled">Enable daily email digest</label>
+                    </div>
+                    @if (editEmailNotificationsEnabled)
+                    {
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="emailOnFollowUp" @bind="editEmailOnFollowUpDue" />
+                            <label class="form-check-label" for="emailOnFollowUp">Notify on follow-ups due</label>
+                        </div>
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" id="emailOnStale" @bind="editEmailOnStaleApplications" />
+                            <label class="form-check-label" for="emailOnStale">Notify on stale applications</label>
+                        </div>
+                    }
+                }
+                <button type="button" class="btn btn-primary" @onclick="SaveEmailSettings">
+                    <i class="bi bi-check-lg"></i> Save SMTP Settings
+                </button>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-file-earmark-text"></i> Cover Letter Templates</h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted small mb-3">Create reusable templates with placeholders: {Company}, {Title}, {Location}</p>
+                @if (coverLetterTemplates.Any())
+                {
+                    <div class="list-group mb-3">
+                        @foreach (var tpl in coverLetterTemplates)
+                        {
+                            <div class="list-group-item d-flex justify-content-between align-items-center">
+                                <span>@tpl.Name</span>
+                                <div>
+                                    <button class="btn btn-sm btn-outline-primary" @onclick="() => StartEditTemplate(tpl)" title="Edit">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger ms-1" @onclick="() => DeleteTemplate(tpl.Id)" title="Delete">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+                @if (showTemplateManager)
+                {
+                    <div class="border rounded p-3 mb-3">
+                        <div class="mb-2">
+                            <label class="form-label">Template Name</label>
+                            <input type="text" class="form-control" @bind="editTemplateName" placeholder="e.g., Tech Company" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Template Content</label>
+                            <textarea class="form-control" rows="6" @bind="editTemplateContent" placeholder="Dear {Company} hiring team..."></textarea>
+                        </div>
+                        <button class="btn btn-primary" @onclick="SaveTemplate">
+                            <i class="bi bi-check-lg"></i> Save Template
+                        </button>
+                        <button class="btn btn-outline-secondary ms-2" @onclick="CancelEditTemplate">Cancel</button>
+                    </div>
+                }
+                else
+                {
+                    <button class="btn btn-outline-primary" @onclick="StartNewTemplate">
+                        <i class="bi bi-plus"></i> Add Template
+                    </button>
+                }
+            </div>
         </div>
     }
 </div>
@@ -166,6 +408,27 @@
     private string? nameErrorMessage;
     private string? nameSuccessMessage;
     private bool isSavingName;
+
+    // Settings state
+    private JobSiteUrls editingUrls = new();
+    private string editHighlightKeywords = "";
+    private PipelineSettings editingPipeline = new();
+    private bool editAutoArchiveEnabled;
+    private int editAutoArchiveDays = 30;
+    private string editSmtpHost = "";
+    private int editSmtpPort = 587;
+    private string editSmtpUsername = "";
+    private string editSmtpPassword = "";
+    private string editSmtpFromEmail = "";
+    private string editSmtpFromName = "";
+    private bool editEmailNotificationsEnabled;
+    private bool editEmailOnStaleApplications;
+    private bool editEmailOnFollowUpDue;
+    private List<CoverLetterTemplate> coverLetterTemplates = new();
+    private bool showTemplateManager = false;
+    private CoverLetterTemplate? editingTemplate;
+    private string editTemplateName = "";
+    private string editTemplateContent = "";
 
     protected override async Task OnInitializedAsync()
     {
@@ -184,6 +447,165 @@
                 }
             }
         }
+
+        // Load current settings
+        LoadSettings();
+    }
+
+    private void LoadSettings()
+    {
+        var settings = SettingsService.GetSettings();
+        var jobSiteUrls = SettingsService.GetJobSiteUrls();
+
+        editingUrls = new JobSiteUrls
+        {
+            LinkedIn = jobSiteUrls.LinkedIn,
+            S1Jobs = jobSiteUrls.S1Jobs,
+            Indeed = jobSiteUrls.Indeed,
+            WTTJ = jobSiteUrls.WTTJ,
+            EnergyJobSearch = jobSiteUrls.EnergyJobSearch,
+            CrawlLinkedIn = jobSiteUrls.CrawlLinkedIn,
+            CrawlS1Jobs = jobSiteUrls.CrawlS1Jobs,
+            CrawlWTTJ = jobSiteUrls.CrawlWTTJ,
+            CrawlEnergyJobSearch = jobSiteUrls.CrawlEnergyJobSearch
+        };
+
+        editHighlightKeywords = string.Join(", ", SettingsService.GetHighlightKeywords());
+
+        editingPipeline = new PipelineSettings
+        {
+            NoReplyDays = settings.Pipeline.NoReplyDays,
+            GhostedDays = settings.Pipeline.GhostedDays,
+            StaleDays = settings.Pipeline.StaleDays
+        };
+
+        editAutoArchiveEnabled = settings.AutoArchiveEnabled;
+        editAutoArchiveDays = settings.AutoArchiveDays;
+        editSmtpHost = settings.SmtpHost;
+        editSmtpPort = settings.SmtpPort;
+        editSmtpUsername = settings.SmtpUsername;
+        editSmtpPassword = settings.SmtpPassword;
+        editSmtpFromEmail = settings.SmtpFromEmail;
+        editSmtpFromName = settings.SmtpFromName;
+        editEmailNotificationsEnabled = settings.EmailNotificationsEnabled;
+        editEmailOnStaleApplications = settings.EmailOnStaleApplications;
+        editEmailOnFollowUpDue = settings.EmailOnFollowUpDue;
+        coverLetterTemplates = settings.CoverLetterTemplates;
+    }
+
+    private void SaveJobSiteUrls()
+    {
+        SettingsService.UpdateJobSiteUrls(editingUrls);
+        SettingsService.Save();
+    }
+
+    private void ResetJobSiteUrls()
+    {
+        editingUrls = new JobSiteUrls();
+    }
+
+    private void SaveHighlightKeywords()
+    {
+        var keywords = editHighlightKeywords
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(k => !string.IsNullOrWhiteSpace(k))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        SettingsService.UpdateHighlightKeywords(keywords);
+        SettingsService.Save();
+    }
+
+    private void SavePipelineSettings()
+    {
+        var settings = SettingsService.GetSettings();
+        settings.Pipeline = editingPipeline;
+        SettingsService.Save();
+    }
+
+    private void SaveAutoArchiveSettings()
+    {
+        var settings = SettingsService.GetSettings();
+        settings.AutoArchiveEnabled = editAutoArchiveEnabled;
+        settings.AutoArchiveDays = editAutoArchiveDays;
+        SettingsService.Save();
+    }
+
+    private void SaveEmailSettings()
+    {
+        var settings = SettingsService.GetSettings();
+        settings.SmtpHost = editSmtpHost;
+        settings.SmtpPort = editSmtpPort;
+        settings.SmtpUsername = editSmtpUsername;
+        settings.SmtpPassword = editSmtpPassword;
+        settings.SmtpFromEmail = editSmtpFromEmail;
+        settings.SmtpFromName = editSmtpFromName;
+        settings.EmailNotificationsEnabled = editEmailNotificationsEnabled;
+        settings.EmailOnStaleApplications = editEmailOnStaleApplications;
+        settings.EmailOnFollowUpDue = editEmailOnFollowUpDue;
+        SettingsService.Save();
+    }
+
+    private void StartNewTemplate()
+    {
+        editingTemplate = null;
+        editTemplateName = "";
+        editTemplateContent = "";
+        showTemplateManager = true;
+    }
+
+    private void StartEditTemplate(CoverLetterTemplate template)
+    {
+        editingTemplate = template;
+        editTemplateName = template.Name;
+        editTemplateContent = template.Content;
+        showTemplateManager = true;
+    }
+
+    private void CancelEditTemplate()
+    {
+        showTemplateManager = false;
+        editingTemplate = null;
+        editTemplateName = "";
+        editTemplateContent = "";
+    }
+
+    private void SaveTemplate()
+    {
+        if (string.IsNullOrWhiteSpace(editTemplateName) || string.IsNullOrWhiteSpace(editTemplateContent))
+            return;
+
+        var settings = SettingsService.GetSettings();
+
+        if (editingTemplate != null)
+        {
+            var existing = settings.CoverLetterTemplates.FirstOrDefault(t => t.Id == editingTemplate.Id);
+            if (existing != null)
+            {
+                existing.Name = editTemplateName;
+                existing.Content = editTemplateContent;
+            }
+        }
+        else
+        {
+            settings.CoverLetterTemplates.Add(new CoverLetterTemplate
+            {
+                Id = Guid.NewGuid(),
+                Name = editTemplateName,
+                Content = editTemplateContent
+            });
+        }
+
+        SettingsService.Save();
+        coverLetterTemplates = settings.CoverLetterTemplates;
+        CancelEditTemplate();
+    }
+
+    private void DeleteTemplate(Guid id)
+    {
+        var settings = SettingsService.GetSettings();
+        settings.CoverLetterTemplates.RemoveAll(t => t.Id == id);
+        SettingsService.Save();
+        coverLetterTemplates = settings.CoverLetterTemplates;
     }
 
     private async Task CopyUserId()

@@ -26,7 +26,8 @@
       "WebFetch(domain:energyjobsearch.com)",
       "WebFetch(domain:oilandgasjobsearch.com)",
       "WebFetch(domain:webcache.googleusercontent.com)",
-      "Bash(dotnet ef database update:*)"
+      "Bash(dotnet ef database update:*)",
+      "Bash(xargs -I {} sh -c 'echo \"\"=== {} ===\"\" && head -20 \"\"{}\"\"')"
     ]
   }
 }

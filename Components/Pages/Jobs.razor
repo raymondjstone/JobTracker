@@ -11,6 +11,7 @@
 @inject JobAvailabilityService AvailabilityService
 @inject JobCrawlService CrawlService
 @inject CurrentUserService CurrentUser
+@inject IConfiguration Configuration
 @implements IDisposable
 @rendermode InteractiveServer
 
@@ -21,9 +22,6 @@
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h1 class="mb-0">Job Listings</h1>
     <div class="d-flex gap-2">
-        <button class="btn btn-outline-secondary" @onclick="OpenSettingsModal" title="Configure job site URLs">
-            <i class="bi bi-gear"></i>
-        </button>
         <button class="btn btn-outline-secondary" @onclick="ExportToCsv" title="Export applied jobs to CSV">
             <i class="bi bi-download"></i>
         </button>
@@ -153,6 +151,12 @@
         <button class="nav-link @(activeTab == TabType.Unsuitable ? "active" : "")" @onclick="() => SetActiveTab(TabType.Unsuitable)">
             <i class="bi bi-slash-circle"></i> Unsuitable
             <span class="badge bg-danger ms-1">@unsuitableJobsCount</span>
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link @(activeTab == TabType.Archived ? "active" : "")" @onclick="() => SetActiveTab(TabType.Archived)">
+            <i class="bi bi-archive"></i> Archived
+            <span class="badge bg-secondary ms-1">@archivedJobsCount</span>
         </button>
     </li>
 </ul>
@@ -475,6 +479,10 @@
                                      @onclick="() => ShowJobDetails(job)" title="Drag to move stage, click to view details">
                                     <div class="d-flex align-items-start justify-content-between mb-1">
                                         <strong class="kanban-card-title">
+                                            @if (job.IsPinned)
+                                            {
+                                                <i class="bi bi-pin-fill text-warning me-1" title="Pinned"></i>
+                                            }
                                             <span class="source-icon me-1">@((MarkupString)GetSourceIcon(job.Source))</span>@job.Title
                                         </strong>
                                     </div>
@@ -543,6 +551,10 @@ else if (!filteredJobs.Any())
             {
                 <span>No applied jobs yet. Mark jobs as "Applied" to see them here.</span>
             }
+            else if (activeTab == TabType.Archived)
+            {
+                <span>No archived jobs. Jobs are archived manually or automatically after being rejected/ghosted.</span>
+            }
             else
             {
                 <span>No unsuitable jobs. Mark jobs as "Unsuitable" to move them here.</span>
@@ -562,6 +574,10 @@ else
                          title="Click to open job">
                         <div class="flex-grow-1">
                             <h5 class="card-title mb-1">
+                                @if (job.IsPinned)
+                                {
+                                    <i class="bi bi-pin-fill text-warning me-1" title="Pinned"></i>
+                                }
                                 @if (lastViewedJobId == job.Id)
                                 {
                                     <i class="bi bi-eye-fill text-primary me-1" title="Last viewed"></i>
@@ -739,6 +755,16 @@ else
                             }
                         </small>
                         <div class="d-flex gap-1">
+                            <button class="btn btn-sm @(job.IsPinned ? "btn-warning" : "btn-outline-warning")"
+                                    @onclick="() => TogglePinned(job.Id)"
+                                    title="@(job.IsPinned ? "Unpin" : "Pin to top")">
+                                <i class="bi @(job.IsPinned ? "bi-pin-fill" : "bi-pin")"></i>
+                            </button>
+                            <button class="btn btn-sm @(job.IsArchived ? "btn-secondary" : "btn-outline-secondary")"
+                                    @onclick="() => ToggleArchived(job.Id)"
+                                    title="@(job.IsArchived ? "Unarchive" : "Archive")">
+                                <i class="bi @(job.IsArchived ? "bi-archive-fill" : "bi-archive")"></i>
+                            </button>
                             <button class="btn btn-sm @(job.SharedToWhatsApp ? "btn-whatsapp-shared" : "btn-outline-success")"
                                     @onclick="() => ShareToWhatsApp(job)"
                                     title="@(job.SharedToWhatsApp ? "Shared to WhatsApp - Click to share again" : "Share to WhatsApp")">
@@ -746,7 +772,7 @@ else
                             </button>
                             @if (!string.IsNullOrEmpty(job.Url))
                             {
-                                <a href="@job.Url" target="_blank" class="btn btn-sm btn-outline-primary" 
+                                <a href="@job.Url" target="_blank" class="btn btn-sm btn-outline-primary"
                                    @onclick="() => SetLastViewedJob(job.Id)">View</a>
                             }
                             <button class="btn btn-sm btn-outline-danger" @onclick="() => ConfirmDelete(job)">Delete</button>
@@ -960,6 +986,19 @@ else
                             {
                                 @if (editingCoverLetter)
                                 {
+                                    @if (string.IsNullOrWhiteSpace(editCoverLetterText) && coverLetterTemplates.Any())
+                                    {
+                                        <div class="mb-2">
+                                            <label class="form-label small">Use a template:</label>
+                                            <select class="form-select form-select-sm" @onchange="OnTemplateSelected">
+                                                <option value="">-- Select template --</option>
+                                                @foreach (var tpl in coverLetterTemplates)
+                                                {
+                                                    <option value="@tpl.Id">@tpl.Name</option>
+                                                }
+                                            </select>
+                                        </div>
+                                    }
                                     <textarea class="form-control mb-2" rows="8" @bind="editCoverLetterText" placeholder="Paste or write your cover letter..."></textarea>
                                     <div class="d-flex gap-2">
                                         <button class="btn btn-sm btn-primary" @onclick="SaveCoverLetter"><i class="bi bi-check-lg"></i> Save</button>
@@ -1067,124 +1106,6 @@ else
                     <button type="button" class="btn btn-secondary" @onclick="CancelDelete">Cancel</button>
                     <button type="button" class="btn btn-danger" @onclick="DeleteJob">
                         <i class="bi bi-trash"></i> Delete Job
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-}
-
-@* Settings Modal *@
-@if (showSettingsModal)
-{
-    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title"><i class="bi bi-gear"></i> Job Site Settings</h5>
-                    <button type="button" class="btn-close" @onclick="CloseSettingsModal"></button>
-                </div>
-                <div class="modal-body">
-                    <p class="text-muted small mb-3">Configure the URLs for job site buttons. Check "Crawl" to include a site in auto-crawl.</p>
-
-                    <div class="mb-3">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <label class="form-label mb-0">
-                                <i class="bi bi-linkedin" style="color: #0a66c2;"></i> LinkedIn URL
-                            </label>
-                            <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="crawlLinkedIn" @bind="editingUrls.CrawlLinkedIn" />
-                                <label class="form-check-label small" for="crawlLinkedIn">Crawl</label>
-                            </div>
-                        </div>
-                        <input type="url" class="form-control" @bind="editingUrls.LinkedIn" placeholder="https://www.linkedin.com/jobs/" />
-                    </div>
-
-                    <div class="mb-3">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <label class="form-label mb-0">
-                                <i class="bi bi-briefcase-fill" style="color: #0072CE;"></i> S1Jobs URL
-                            </label>
-                            <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="crawlS1Jobs" @bind="editingUrls.CrawlS1Jobs" />
-                                <label class="form-check-label small" for="crawlS1Jobs">Crawl</label>
-                            </div>
-                        </div>
-                        <input type="url" class="form-control" @bind="editingUrls.S1Jobs" placeholder="https://www.s1jobs.com/jobs/" />
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label">
-                            <i class="bi bi-search" style="color: #2557a7;"></i> Indeed URL
-                        </label>
-                        <input type="url" class="form-control" @bind="editingUrls.Indeed" placeholder="https://uk.indeed.com/jobs" />
-                        <small class="text-muted">Crawl not supported (Cloudflare protected)</small>
-                    </div>
-
-                    <div class="mb-3">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <label class="form-label mb-0">
-                                <i class="bi bi-tree" style="color: #FFCD00;"></i> Welcome to the Jungle URL
-                            </label>
-                            <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="crawlWTTJ" @bind="editingUrls.CrawlWTTJ" />
-                                <label class="form-check-label small" for="crawlWTTJ">Crawl</label>
-                            </div>
-                        </div>
-                        <input type="url" class="form-control" @bind="editingUrls.WTTJ" placeholder="https://www.welcometothejungle.com/en/jobs" />
-                        <small class="text-muted">Use a search URL with filters, not a saved job link</small>
-                    </div>
-
-                    <div class="mb-3">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <label class="form-label mb-0">
-                                <i class="bi bi-lightning-charge" style="color: #FF6B00;"></i> EnergyJobSearch URL
-                            </label>
-                            <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="crawlEnergyJobSearch" @bind="editingUrls.CrawlEnergyJobSearch" />
-                                <label class="form-check-label small" for="crawlEnergyJobSearch">Crawl</label>
-                            </div>
-                        </div>
-                        <input type="url" class="form-control" @bind="editingUrls.EnergyJobSearch" placeholder="https://energyjobsearch.com/jobs?title=.net" />
-                        <small class="text-muted">React SPA - browser extension recommended for best results</small>
-                    </div>
-                    <hr />
-                    <div class="mb-3">
-                        <label class="form-label">
-                            <i class="bi bi-highlighter"></i> Highlight Keywords
-                        </label>
-                        <input type="text" class="form-control" @bind="editHighlightKeywords"
-                               placeholder="C#, Python, Azure, React (comma-separated)" />
-                        <small class="text-muted">Keywords to highlight in job descriptions. Comma-separated.</small>
-                    </div>
-
-                    <hr />
-                    <h6><i class="bi bi-kanban"></i> Pipeline Thresholds</h6>
-                    <div class="row g-2 mb-2">
-                        <div class="col-4">
-                            <label class="form-label small">No Reply (days)</label>
-                            <input type="number" class="form-control form-control-sm" min="1" @bind="editingPipeline.NoReplyDays" />
-                            <small class="text-muted">Auto-mark as No Reply</small>
-                        </div>
-                        <div class="col-4">
-                            <label class="form-label small">Ghosted (days)</label>
-                            <input type="number" class="form-control form-control-sm" min="1" @bind="editingPipeline.GhostedDays" />
-                            <small class="text-muted">Auto-mark as Ghosted</small>
-                        </div>
-                        <div class="col-4">
-                            <label class="form-label small">Stale (days)</label>
-                            <input type="number" class="form-control form-control-sm" min="1" @bind="editingPipeline.StaleDays" />
-                            <small class="text-muted">Show stale badge</small>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" @onclick="ResetSettingsToDefaults">
-                        <i class="bi bi-arrow-counterclockwise"></i> Reset to Defaults
-                    </button>
-                    <button type="button" class="btn btn-secondary" @onclick="CloseSettingsModal">Cancel</button>
-                    <button type="button" class="btn btn-primary" @onclick="SaveSettings">
-                        <i class="bi bi-check-lg"></i> Save
                     </button>
                 </div>
             </div>
@@ -1383,10 +1304,23 @@ else
     .kanban-card[draggable="true"]:active { cursor: grabbing; }
     .kanban-card-dragging { opacity: 0.4; }
     .kanban-column-drag-over { outline: 2px dashed #0d6efd; outline-offset: -2px; background-color: #e8f0fe !important; }
+
+    /* Dark mode overrides */
+    [data-bs-theme=dark] .kanban-column { background-color: #2b3035; }
+    [data-bs-theme=dark] .kanban-card { background: #343a40; border-color: #495057; }
+    [data-bs-theme=dark] .description-text { background: #2b3035; border-color: #495057; }
+    [data-bs-theme=dark] .stat-breakdown-item { background-color: #2b3035; border-color: #495057; }
+    [data-bs-theme=dark] .stage-history { background-color: #2b3035; border-color: #495057; }
+    [data-bs-theme=dark] .stage-history-item { border-bottom-color: #495057; }
+    [data-bs-theme=dark] .stat-divider { background-color: #495057; }
+    [data-bs-theme=dark] .stat-label { color: #adb5bd; }
+    [data-bs-theme=dark] .clickable-card-area:hover { background-color: rgba(13, 110, 253, 0.1); }
+    [data-bs-theme=dark] .card-header.clickable-card-area:hover { background-color: rgba(13, 110, 253, 0.15); }
+    [data-bs-theme=dark] .bg-light { background-color: #2b3035 !important; }
 </style>
 
 @code {
-    private enum TabType { Browse, Possible, Applied, Pipeline, Unsuitable }
+    private enum TabType { Browse, Possible, Applied, Pipeline, Unsuitable, Archived }
     
     private TabType activeTab = TabType.Browse;
     private JobListingFilter filter = new() { SortBy = SortOption.DateAddedDesc };
@@ -1446,10 +1380,35 @@ else
     private PipelineSettings editingPipeline = new();
     private int followUpsDueCount = 0;
 
-    // Settings
+    // Archived tab count
+    private int archivedJobsCount = 0;
+
+    // Template state
+    private List<CoverLetterTemplate> coverLetterTemplates = new();
+    private bool showTemplateManager = false;
+    private CoverLetterTemplate? editingTemplate = null;
+    private string editTemplateName = "";
+    private string editTemplateContent = "";
+
+    // SMTP settings (editing copies)
+    private string editSmtpHost = "";
+    private int editSmtpPort = 587;
+    private string editSmtpUsername = "";
+    private string editSmtpPassword = "";
+    private string editSmtpFromEmail = "";
+    private string editSmtpFromName = "Job Tracker";
+
+    // Email notification settings (editing copies)
+    private bool editEmailNotificationsEnabled;
+    private bool editEmailOnStaleApplications;
+    private bool editEmailOnFollowUpDue;
+
+    // Auto-archive settings (editing copies)
+    private bool editAutoArchiveEnabled;
+    private int editAutoArchiveDays;
+
+    // Job site URLs for quick links
     private JobSiteUrls jobSiteUrls = new();
-    private bool showSettingsModal = false;
-    private JobSiteUrls editingUrls = new();
 
     protected override void OnInitialized()
     {
@@ -1458,7 +1417,9 @@ else
         jobSiteUrls = SettingsService.GetJobSiteUrls();
         filterPresets = SettingsService.GetFilterPresets();
         highlightKeywords = SettingsService.GetHighlightKeywords();
-        pipelineSettings = SettingsService.GetSettings().Pipeline;
+        var initSettings = SettingsService.GetSettings();
+        pipelineSettings = initSettings.Pipeline;
+        coverLetterTemplates = initSettings.CoverLetterTemplates;
         RefreshData();
         
         // Auto-refresh every 5 seconds to pick up changes from extensions
@@ -1467,6 +1428,31 @@ else
             RefreshData();
             InvokeAsync(StateHasChanged);
         }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+    }
+
+    private DotNetObjectReference<Jobs>? _dotNetRef;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Seed localStorage from server only if localStorage has no value yet
+            // (first visit / new browser). After that, localStorage is the source of truth.
+            var settings = SettingsService.GetSettings();
+            await JSRuntime.InvokeVoidAsync("__seedDarkMode", settings.DarkMode);
+
+            // Register .NET ref so the layout toggle can persist dark mode to server
+            _dotNetRef = DotNetObjectReference.Create(this);
+            await JSRuntime.InvokeVoidAsync("__registerDarkModeCallback", _dotNetRef);
+        }
+    }
+
+    [JSInvokable]
+    public void OnDarkModeToggled(bool dark)
+    {
+        var settings = SettingsService.GetSettings();
+        settings.DarkMode = dark;
+        SettingsService.Save();
     }
 
     private void OnJobServiceChanged()
@@ -1487,11 +1473,13 @@ else
     private void UpdateTabCounts()
     {
         var allJobs = JobService.GetAllJobListings();
-        appliedJobsCount = allJobs.Count(j => j.HasApplied);
-        possibleJobsCount = allJobs.Count(j => !j.HasApplied && j.Suitability == SuitabilityStatus.Possible);
-        unsuitableJobsCount = allJobs.Count(j => !j.HasApplied && j.Suitability == SuitabilityStatus.Unsuitable);
-        browseJobsCount = allJobs.Count(j => !j.HasApplied && j.Suitability == SuitabilityStatus.NotChecked);
-        followUpsDueCount = allJobs.Count(j => j.HasApplied && j.FollowUpDate.HasValue && j.FollowUpDate.Value.Date <= DateTime.Now.Date);
+        archivedJobsCount = allJobs.Count(j => j.IsArchived);
+        var activeJobs = allJobs.Where(j => !j.IsArchived).ToList();
+        appliedJobsCount = activeJobs.Count(j => j.HasApplied);
+        possibleJobsCount = activeJobs.Count(j => !j.HasApplied && j.Suitability == SuitabilityStatus.Possible);
+        unsuitableJobsCount = activeJobs.Count(j => !j.HasApplied && j.Suitability == SuitabilityStatus.Unsuitable);
+        browseJobsCount = activeJobs.Count(j => !j.HasApplied && j.Suitability == SuitabilityStatus.NotChecked);
+        followUpsDueCount = activeJobs.Count(j => j.HasApplied && j.FollowUpDate.HasValue && j.FollowUpDate.Value.Date <= DateTime.Now.Date);
     }
 
     private void SetActiveTab(TabType tab)
@@ -1513,14 +1501,16 @@ else
         filter.PrioritizeJobId = lastViewedJobId;
         
         // Apply tab-specific filtering
+        filter.ShowArchived = activeTab == TabType.Archived;
         var baseJobs = JobService.FilterJobListings(filter);
-        
+
         filteredJobs = activeTab switch
         {
             TabType.Applied => baseJobs.Where(j => j.HasApplied),
             TabType.Pipeline => baseJobs.Where(j => j.HasApplied),
             TabType.Possible => baseJobs.Where(j => !j.HasApplied && j.Suitability == SuitabilityStatus.Possible),
             TabType.Unsuitable => baseJobs.Where(j => !j.HasApplied && j.Suitability == SuitabilityStatus.Unsuitable),
+            TabType.Archived => baseJobs,
             _ => baseJobs.Where(j => !j.HasApplied && j.Suitability == SuitabilityStatus.NotChecked) // Browse - only NotChecked
         };
         
@@ -2034,62 +2024,6 @@ else
         InvokeAsync(StateHasChanged);
     }
 
-    private void OpenSettingsModal()
-    {
-        editingUrls = new JobSiteUrls
-        {
-            LinkedIn = jobSiteUrls.LinkedIn,
-            S1Jobs = jobSiteUrls.S1Jobs,
-            Indeed = jobSiteUrls.Indeed,
-            WTTJ = jobSiteUrls.WTTJ,
-            CrawlLinkedIn = jobSiteUrls.CrawlLinkedIn,
-            CrawlS1Jobs = jobSiteUrls.CrawlS1Jobs,
-            CrawlWTTJ = jobSiteUrls.CrawlWTTJ,
-            EnergyJobSearch = jobSiteUrls.EnergyJobSearch,
-            CrawlEnergyJobSearch = jobSiteUrls.CrawlEnergyJobSearch,
-        };
-        editHighlightKeywords = string.Join(", ", highlightKeywords);
-        editingPipeline = new PipelineSettings
-        {
-            NoReplyDays = pipelineSettings.NoReplyDays,
-            GhostedDays = pipelineSettings.GhostedDays,
-            StaleDays = pipelineSettings.StaleDays
-        };
-        showSettingsModal = true;
-    }
-
-    private void CloseSettingsModal()
-    {
-        showSettingsModal = false;
-    }
-
-    private void SaveSettings()
-    {
-        SettingsService.UpdateJobSiteUrls(editingUrls);
-        jobSiteUrls = SettingsService.GetJobSiteUrls();
-
-        // Save highlight keywords
-        highlightKeywords = editHighlightKeywords
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(k => !string.IsNullOrWhiteSpace(k))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        SettingsService.UpdateHighlightKeywords(highlightKeywords);
-
-        // Save pipeline settings
-        var settings = SettingsService.GetSettings();
-        settings.Pipeline = editingPipeline;
-        pipelineSettings = editingPipeline;
-        SettingsService.Save();
-
-        showSettingsModal = false;
-    }
-
-    private void ResetSettingsToDefaults()
-    {
-        editingUrls = new JobSiteUrls();
-    }
-
     // --- CSV Export ---
     private async Task ExportToCsv()
     {
@@ -2214,6 +2148,78 @@ else
             System.Text.RegularExpressions.RegexOptions.IgnoreCase);
     }
 
+    // --- Pin / Archive ---
+    private void TogglePinned(Guid id)
+    {
+        var job = filteredJobs.FirstOrDefault(j => j.Id == id);
+        if (job != null)
+        {
+            JobService.SetPinned(id, !job.IsPinned);
+            RefreshData();
+        }
+    }
+
+    private void ToggleArchived(Guid id)
+    {
+        var job = JobService.GetJobById(id);
+        if (job != null)
+        {
+            JobService.SetArchived(id, !job.IsArchived);
+            RefreshData();
+        }
+    }
+
+    // --- Template methods ---
+    private void OnTemplateSelected(ChangeEventArgs e)
+    {
+        if (selectedJob == null) return;
+        var templateId = e.Value?.ToString();
+        if (string.IsNullOrEmpty(templateId) || !Guid.TryParse(templateId, out var id)) return;
+
+        var template = coverLetterTemplates.FirstOrDefault(t => t.Id == id);
+        if (template == null) return;
+
+        editCoverLetterText = template.Content
+            .Replace("{Company}", selectedJob.Company ?? "")
+            .Replace("{Title}", selectedJob.Title ?? "")
+            .Replace("{Location}", selectedJob.Location ?? "");
+    }
+
+    private void StartNewTemplate()
+    {
+        editingTemplate = null;
+        editTemplateName = "";
+        editTemplateContent = "";
+        showTemplateManager = true;
+    }
+
+    private void StartEditTemplate(CoverLetterTemplate template)
+    {
+        editingTemplate = template;
+        editTemplateName = template.Name;
+        editTemplateContent = template.Content;
+        showTemplateManager = true;
+    }
+
+    private void SaveTemplate()
+    {
+        if (string.IsNullOrWhiteSpace(editTemplateName)) return;
+
+        var template = editingTemplate ?? new CoverLetterTemplate();
+        template.Name = editTemplateName.Trim();
+        template.Content = editTemplateContent;
+        SettingsService.SaveCoverLetterTemplate(template);
+        coverLetterTemplates = SettingsService.GetCoverLetterTemplates();
+        showTemplateManager = false;
+        editingTemplate = null;
+    }
+
+    private void DeleteTemplate(Guid id)
+    {
+        SettingsService.DeleteCoverLetterTemplate(id);
+        coverLetterTemplates = SettingsService.GetCoverLetterTemplates();
+    }
+
     public void Dispose()
     {
         JobService.OnChange -= OnJobServiceChanged;
@@ -2221,5 +2227,6 @@ else
         refreshTimer?.Dispose();
         scanCts?.Cancel();
         scanCts?.Dispose();
+        _dotNetRef?.Dispose();
     }
 }

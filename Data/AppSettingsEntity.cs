@@ -13,4 +13,17 @@ public class AppSettingsEntity
     public int NoReplyDays { get; set; } = 3;
     public int GhostedDays { get; set; } = 3;
     public int StaleDays { get; set; } = 14;
+    public string CoverLetterTemplatesJson { get; set; } = "[]";
+    public string SmtpHost { get; set; } = "";
+    public int SmtpPort { get; set; } = 587;
+    public string SmtpUsername { get; set; } = "";
+    public string SmtpPassword { get; set; } = "";
+    public string SmtpFromEmail { get; set; } = "";
+    public string SmtpFromName { get; set; } = "Job Tracker";
+    public bool EmailNotificationsEnabled { get; set; }
+    public bool EmailOnStaleApplications { get; set; } = true;
+    public bool EmailOnFollowUpDue { get; set; } = true;
+    public bool AutoArchiveEnabled { get; set; }
+    public int AutoArchiveDays { get; set; } = 30;
+    public bool DarkMode { get; set; }
 }

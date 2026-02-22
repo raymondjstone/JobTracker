@@ -20,14 +20,17 @@ A Blazor application with browser extensions that automatically extract job list
 - **Multi-site Support** - Extract jobs from LinkedIn, Indeed, S1Jobs, Welcome to the Jungle, and EnergyJobSearch
 - **Automatic Extraction** - Jobs are extracted automatically as you browse
 - **Description Capture** - Full job descriptions are captured when you view individual jobs
+- **In-Page Description Fetch** - Automatically clicks through job cards on list/collection pages to capture all descriptions
 - **Auto-Fetch Descriptions** - Automatically navigate through jobs to capture missing descriptions
 - **Duplicate Detection** - Prevents duplicate entries based on URL normalization
 - **Source Tracking** - Each job is tagged with its source site
 
 ### Job Management
 - **Dashboard** - View all jobs with statistics (total, interested, applied, etc.)
-- **Tabbed Interface** - Browse, Possible, Applied, Pipeline (Kanban), and Unsuitable tabs
+- **Tabbed Interface** - Browse, Possible, Applied, Pipeline (Kanban), Archived, and Unsuitable tabs
+- **Pinned Jobs** - Pin important jobs to the top of any tab
 - **Filtering** - Filter by search, location, job type, remote, salary, interest, source, skills, and date
+- **Notes & Cover Letter Search** - Search finds matches in job titles, descriptions, companies, notes, and cover letters
 - **Title-Only Search** - Search specifically in job titles
 - **Salary Range Filter** - Parse salary strings into min/max values and filter by target salary
 - **Skill Filter** - Filter by skill with autocomplete from existing job skills
@@ -43,6 +46,8 @@ A Blazor application with browser extensions that automatically extract job list
 - **Pipeline Kanban Board** - Drag-and-drop kanban board view of all applied jobs grouped by stage
 - **Stale Application Alerts** - Visual badges on pipeline cards when applications have had no stage change beyond a configurable threshold
 - **Follow-up Reminders** - Set per-job follow-up dates with due indicators and a count badge on the Pipeline tab
+- **Cover Letter Templates** - Reusable templates with `{Company}`, `{Title}`, `{Location}` placeholders that auto-fill when applied to a job
+- **Auto-Archive** - Automatically archive rejected/ghosted jobs after a configurable number of days
 
 ### Application Stats Dashboard
 - **Conversion Funnel** - Visual funnel showing progression from Applied through to Offer/Rejected
@@ -61,6 +66,8 @@ A Blazor application with browser extensions that automatically extract job list
 - **Ghosted Detection** - Automatically marks old applications with no reply as Ghosted (configurable threshold)
 - **No Reply Detection** - Automatically marks applied jobs as No Reply after configurable days
 - **Availability Checks** - Background checks for job listing availability
+- **Auto-Archive Job** - Background job to archive rejected/ghosted jobs after configurable days
+- **Email Notification Job** - Daily digest email for follow-ups due and stale applications
 - **Configurable Thresholds** - No Reply, Ghosted, and Stale days are all configurable per-user in Settings
 
 ### Authentication (SQL Server mode)
@@ -68,12 +75,18 @@ A Blazor application with browser extensions that automatically extract job list
 - **Two-Factor Authentication** - Optional 2FA setup and verification
 - **Password Recovery** - Forgot password and reset password flows
 
+### Appearance
+- **Dark Mode** - Toggle dark/light theme with one click; persists across sessions via localStorage
+- **Keyword Highlighting** - Configurable keyword highlighting in job descriptions
+
+### Notifications
+- **Email Notifications** - Daily digest emails for follow-ups due and stale applications (requires SMTP configuration)
+
 ### Sharing & Export
 - **WhatsApp Sharing** - Share job details directly to WhatsApp
 - **CSV Export** - Export applied jobs to CSV from the Jobs page
 - **History Export** - Export full or filtered history to CSV
 - **Direct Links** - Open original job postings with one click
-- **Keyword Highlighting** - Configurable keyword highlighting in job descriptions
 
 ## Prerequisites
 
@@ -195,6 +208,7 @@ Navigate to `https://localhost:7046` to access the dashboard.
 - **Possible** - Jobs marked as potentially suitable
 - **Applied** - Jobs you've applied to (list view)
 - **Pipeline** - Kanban board of applied jobs grouped by stage (drag-and-drop)
+- **Archived** - Jobs that have been archived (manually or auto-archived)
 - **Unsuitable** - Jobs that don't match your criteria
 
 #### Job Cards
@@ -203,6 +217,8 @@ Navigate to `https://localhost:7046` to access the dashboard.
 - Use Possible/Unsuitable buttons to categorize
 - Click "Applied" to track applications
 - Use the stage dropdown to update application progress
+- Pin/unpin jobs to keep them at the top of any tab
+- Archive/unarchive jobs
 - Click WhatsApp icon to share
 - Click "View Full Description" for details
 
@@ -210,7 +226,7 @@ Navigate to `https://localhost:7046` to access the dashboard.
 
 | Filter | Description |
 |--------|-------------|
-| Search | Search in title, description, and company |
+| Search | Search in title, description, company, notes, and cover letter |
 | Title Only | Search only in job titles |
 | Location | Filter by job location |
 | Job Type | Full-time, Part-time, Contract, etc. |
@@ -285,7 +301,7 @@ To switch back to JSON, set `"StorageProvider": "Json"`. The JSON files are neve
 | `JobListings` | All tracked jobs (with parsed salary, follow-up dates) |
 | `HistoryEntries` | Audit log of changes |
 | `JobRules` | Auto-classification rules |
-| `AppSettings` | Per-user config (site URLs, rule settings, pipeline thresholds) |
+| `AppSettings` | Per-user config (site URLs, rule settings, pipeline thresholds, dark mode, email, auto-archive, cover letter templates) |
 
 ## Project Structure
 
@@ -305,7 +321,7 @@ JobTracker/
 │       └── NavMenu.razor           # Navigation menu
 ├── Models/
 │   ├── JobListing.cs               # Job data model (with salary parsing, follow-up dates)
-│   ├── AppSettings.cs              # Settings, site URLs, pipeline thresholds, filter presets
+│   ├── AppSettings.cs              # Settings, site URLs, pipeline thresholds, filter presets, cover letter templates
 │   ├── JobHistory.cs               # History entry model
 │   └── JobRule.cs                  # Rule model
 ├── Services/
@@ -316,6 +332,9 @@ JobTracker/
 │   ├── GhostedCheckJob.cs          # Auto-ghosted detection (configurable threshold)
 │   ├── NoReplyCheckJob.cs          # Auto no-reply detection (configurable threshold)
 │   ├── AvailabilityCheckJob.cs     # Job availability checks
+│   ├── AutoArchiveJob.cs           # Auto-archive rejected/ghosted jobs
+│   ├── EmailNotificationJob.cs     # Daily digest email notifications
+│   ├── EmailService.cs             # SMTP email sending
 │   └── LocalBackgroundService.cs   # Background task runner
 ├── Data/
 │   └── jobs.json                   # Persistent job storage (JSON mode)

@@ -49,34 +49,54 @@ public class EmailService
         return await SendEmailAsync(toEmail, subject, body);
     }
 
+    /// <summary>
+    /// Send email using SMTP settings from appsettings.json (for password reset, etc.)
+    /// </summary>
     public async Task<bool> SendEmailAsync(string toEmail, string subject, string htmlBody)
     {
+        var smtpHost = _configuration["Smtp:Host"];
+        var smtpPortStr = _configuration["Smtp:Port"];
+        var smtpUsername = _configuration["Smtp:Username"];
+        var smtpPassword = _configuration["Smtp:Password"];
+        var fromEmail = _configuration["Smtp:FromEmail"];
+        var fromName = _configuration["Smtp:FromName"] ?? "Job Tracker";
+
+        if (string.IsNullOrEmpty(smtpHost) || string.IsNullOrEmpty(smtpPortStr))
+        {
+            _logger.LogWarning("SMTP not configured. Email not sent to {Email}", toEmail);
+            return true;
+        }
+
+        return await SendEmailAsync(toEmail, subject, htmlBody,
+            smtpHost, int.Parse(smtpPortStr), smtpUsername ?? "", smtpPassword ?? "",
+            fromEmail ?? smtpUsername ?? "noreply@example.com", fromName);
+    }
+
+    /// <summary>
+    /// Send email using explicit SMTP settings (for per-user settings).
+    /// </summary>
+    public async Task<bool> SendEmailAsync(string toEmail, string subject, string htmlBody,
+        string smtpHost, int smtpPort, string smtpUsername, string smtpPassword,
+        string fromEmail, string fromName)
+    {
+        if (string.IsNullOrEmpty(smtpHost))
+        {
+            _logger.LogWarning("SMTP host not configured. Email not sent to {Email}", toEmail);
+            return false;
+        }
+
         try
         {
-            var smtpHost = _configuration["Smtp:Host"];
-            var smtpPortStr = _configuration["Smtp:Port"];
-            var smtpUsername = _configuration["Smtp:Username"];
-            var smtpPassword = _configuration["Smtp:Password"];
-            var fromEmail = _configuration["Smtp:FromEmail"];
-            var fromName = _configuration["Smtp:FromName"] ?? "Job Tracker";
-
-            if (string.IsNullOrEmpty(smtpHost) || string.IsNullOrEmpty(smtpPortStr))
-            {
-                _logger.LogWarning("SMTP not configured. Email not sent to {Email}", toEmail);
-                return true;
-            }
-
-            var smtpPort = int.Parse(smtpPortStr);
-
             var message = new MimeMessage();
-            message.From.Add(new MailboxAddress(fromName, fromEmail ?? smtpUsername ?? "noreply@example.com"));
+            message.From.Add(new MailboxAddress(
+                string.IsNullOrEmpty(fromName) ? "Job Tracker" : fromName,
+                string.IsNullOrEmpty(fromEmail) ? smtpUsername : fromEmail));
             message.To.Add(MailboxAddress.Parse(toEmail));
             message.Subject = subject;
             message.Body = new TextPart("html") { Text = htmlBody };
 
             using var client = new SmtpClient();
 
-            // Port 465 uses implicit SSL, port 587 uses STARTTLS
             var secureSocketOptions = smtpPort == 465
                 ? SecureSocketOptions.SslOnConnect
                 : SecureSocketOptions.StartTls;

@@ -493,6 +493,35 @@ public class JobListingService
         }
     }
 
+    public void SetPinned(Guid id, bool isPinned)
+    {
+        lock (_lock)
+        {
+            var job = _jobListings.FirstOrDefault(j => j.Id == id);
+            if (job != null)
+            {
+                job.IsPinned = isPinned;
+                _storage.SaveJob(job);
+                NotifyStateChanged();
+            }
+        }
+    }
+
+    public void SetArchived(Guid id, bool isArchived)
+    {
+        lock (_lock)
+        {
+            var job = _jobListings.FirstOrDefault(j => j.Id == id);
+            if (job != null)
+            {
+                job.IsArchived = isArchived;
+                job.ArchivedAt = isArchived ? DateTime.Now : null;
+                _storage.SaveJob(job);
+                NotifyStateChanged();
+            }
+        }
+    }
+
     public void SetCoverLetter(Guid id, string coverLetter)
     {
         lock (_lock)
@@ -699,7 +728,17 @@ public class JobListingService
             var normalizedUrl = NormalizeUrl(url);
             var job = _jobListings.FirstOrDefault(j => j.UserId == userId && NormalizeUrl(j.Url) == normalizedUrl);
 
-            if (job == null) return false;
+            if (job == null)
+            {
+                Console.WriteLine($"[DESC-UPDATE] Job NOT FOUND for URL: {url} (normalized: {normalizedUrl}), userId: {userId}");
+                Console.WriteLine($"[DESC-UPDATE] Total jobs for user: {_jobListings.Count(j => j.UserId == userId)}");
+                // Show first few job URLs for this user to debug
+                var sample = _jobListings.Where(j => j.UserId == userId).Take(5).Select(j => NormalizeUrl(j.Url)).ToList();
+                Console.WriteLine($"[DESC-UPDATE] Sample URLs: {string.Join(", ", sample)}");
+                return false;
+            }
+
+            Console.WriteLine($"[DESC-UPDATE] Found job '{job.Title}' - current desc length: {job.Description?.Length ?? 0}, new desc length: {description.Length}");
 
             // Update if: no existing description, OR new description is substantial (>100 chars) and different
             var hasNoDescription = string.IsNullOrWhiteSpace(job.Description) || job.Description.Length < 100;
@@ -949,6 +988,12 @@ public class JobListingService
         {
             var query = _jobListings.Where(j => j.UserId == userId).AsEnumerable();
 
+            // Archive filter: exclude archived jobs unless explicitly showing them
+            if (filter.ShowArchived)
+                query = query.Where(j => j.IsArchived);
+            else
+                query = query.Where(j => !j.IsArchived);
+
             // Title-only search (takes precedence if set)
             if (!string.IsNullOrWhiteSpace(filter.TitleOnlySearchTerm))
             {
@@ -962,7 +1007,9 @@ public class JobListingService
                 query = query.Where(j =>
                     j.Title.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
                     j.Description.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
-                    j.Company.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
+                    j.Company.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                    j.Notes.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                    j.CoverLetter.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
             }
 
             if (!string.IsNullOrWhiteSpace(filter.Location))
@@ -1054,7 +1101,8 @@ public class JobListingService
             // 3. Unsuitable jobs last
             // 4. Then by the selected sort option
             var sorted = query
-                .OrderByDescending(j => filter.PrioritizeJobId.HasValue && j.Id == filter.PrioritizeJobId.Value)
+                .OrderByDescending(j => j.IsPinned)
+                .ThenByDescending(j => filter.PrioritizeJobId.HasValue && j.Id == filter.PrioritizeJobId.Value)
                 .ThenByDescending(j => j.HasApplied)
                 .ThenBy(j => j.Suitability == SuitabilityStatus.Unsuitable);
             
@@ -1665,6 +1713,7 @@ public class JobListingFilter
     public Guid? PrioritizeJobId { get; set; }
     public string? Source { get; set; }
     public string? SkillSearch { get; set; }
+    public bool ShowArchived { get; set; }
 }
 
 public enum SortOption

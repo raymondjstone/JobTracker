@@ -30,6 +30,9 @@ public class JobListing
     public DateTime? FollowUpDate { get; set; }
     public string Notes { get; set; } = string.Empty;
     public string CoverLetter { get; set; } = string.Empty;
+    public bool IsPinned { get; set; }
+    public bool IsArchived { get; set; }
+    public DateTime? ArchivedAt { get; set; }
 }
 
 public class ApplicationStageChange

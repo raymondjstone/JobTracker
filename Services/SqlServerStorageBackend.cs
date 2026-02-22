@@ -1,3 +1,4 @@
+using System.Text.Json;
 using JobTracker.Data;
 using JobTracker.Models;
 using Microsoft.EntityFrameworkCore;
@@ -227,6 +228,24 @@ public class SqlServerStorageBackend : IStorageBackend
                 GhostedDays = entity.GhostedDays,
                 StaleDays = entity.StaleDays
             };
+            settings.SmtpHost = entity.SmtpHost;
+            settings.SmtpPort = entity.SmtpPort;
+            settings.SmtpUsername = entity.SmtpUsername;
+            settings.SmtpPassword = entity.SmtpPassword;
+            settings.SmtpFromEmail = entity.SmtpFromEmail;
+            settings.SmtpFromName = entity.SmtpFromName;
+            settings.EmailNotificationsEnabled = entity.EmailNotificationsEnabled;
+            settings.EmailOnStaleApplications = entity.EmailOnStaleApplications;
+            settings.EmailOnFollowUpDue = entity.EmailOnFollowUpDue;
+            settings.AutoArchiveEnabled = entity.AutoArchiveEnabled;
+            settings.AutoArchiveDays = entity.AutoArchiveDays;
+            settings.DarkMode = entity.DarkMode;
+            try
+            {
+                settings.CoverLetterTemplates = JsonSerializer.Deserialize<List<CoverLetterTemplate>>(
+                    entity.CoverLetterTemplatesJson ?? "[]") ?? new();
+            }
+            catch { settings.CoverLetterTemplates = new(); }
         }
         else
         {
@@ -258,6 +277,19 @@ public class SqlServerStorageBackend : IStorageBackend
         entity.NoReplyDays = settings.Pipeline.NoReplyDays;
         entity.GhostedDays = settings.Pipeline.GhostedDays;
         entity.StaleDays = settings.Pipeline.StaleDays;
+        entity.SmtpHost = settings.SmtpHost;
+        entity.SmtpPort = settings.SmtpPort;
+        entity.SmtpUsername = settings.SmtpUsername;
+        entity.SmtpPassword = settings.SmtpPassword;
+        entity.SmtpFromEmail = settings.SmtpFromEmail;
+        entity.SmtpFromName = settings.SmtpFromName;
+        entity.EmailNotificationsEnabled = settings.EmailNotificationsEnabled;
+        entity.EmailOnStaleApplications = settings.EmailOnStaleApplications;
+        entity.EmailOnFollowUpDue = settings.EmailOnFollowUpDue;
+        entity.AutoArchiveEnabled = settings.AutoArchiveEnabled;
+        entity.AutoArchiveDays = settings.AutoArchiveDays;
+        entity.DarkMode = settings.DarkMode;
+        entity.CoverLetterTemplatesJson = JsonSerializer.Serialize(settings.CoverLetterTemplates ?? new());
 
         // Sync rules for this user: diff-based
         var existingRules = db.JobRules.Where(r => r.UserId == userId).ToList();
@@ -397,7 +429,20 @@ public class SqlServerStorageBackend : IStorageBackend
             StopOnFirstMatch = settings.JobRules.StopOnFirstMatch,
             NoReplyDays = settings.Pipeline.NoReplyDays,
             GhostedDays = settings.Pipeline.GhostedDays,
-            StaleDays = settings.Pipeline.StaleDays
+            StaleDays = settings.Pipeline.StaleDays,
+            SmtpHost = settings.SmtpHost,
+            SmtpPort = settings.SmtpPort,
+            SmtpUsername = settings.SmtpUsername,
+            SmtpPassword = settings.SmtpPassword,
+            SmtpFromEmail = settings.SmtpFromEmail,
+            SmtpFromName = settings.SmtpFromName,
+            EmailNotificationsEnabled = settings.EmailNotificationsEnabled,
+            EmailOnStaleApplications = settings.EmailOnStaleApplications,
+            EmailOnFollowUpDue = settings.EmailOnFollowUpDue,
+            AutoArchiveEnabled = settings.AutoArchiveEnabled,
+            AutoArchiveDays = settings.AutoArchiveDays,
+            DarkMode = settings.DarkMode,
+            CoverLetterTemplatesJson = JsonSerializer.Serialize(settings.CoverLetterTemplates ?? new())
         };
         db.AppSettings.Add(entity);
 

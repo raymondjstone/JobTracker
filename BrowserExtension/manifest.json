@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "LinkedIn Job Extractor",
-  "version": "1.1.9",
+  "version": "1.1.12",
   "description": "Automatically extract job listings from LinkedIn and send them to your Job Tracker app",
   "permissions": [
     "activeTab",
