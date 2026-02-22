@@ -12,6 +12,7 @@ public class JobListing
     public string Url { get; set; } = string.Empty;
     public DateTime DatePosted { get; set; } = DateTime.Now;
     public DateTime DateAdded { get; set; } = DateTime.Now;
+    public DateTime? LastUpdated { get; set; } // Tracks when job details were last changed
     public string Salary { get; set; } = string.Empty;
     public bool IsRemote { get; set; }
     public List<string> Skills { get; set; } = new();

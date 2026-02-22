@@ -696,6 +696,14 @@ else
                             </button>
                         }
 
+                        @if (job.LastUpdated.HasValue && job.LastUpdated > job.DateAdded.AddMinutes(0)) @* TEMP: 0 for testing *@
+                        {
+                            <button class="btn btn-sm btn-outline-warning mb-2 ms-1" @onclick="() => ShowChangeTimeline(job)"
+                                    title="View what changed">
+                                <i class="bi bi-clock-history"></i> View Changes
+                            </button>
+                        }
+
                         @if (!string.IsNullOrEmpty(job.Url))
                         {
                             <button class="btn btn-sm btn-outline-secondary mb-2 @(!string.IsNullOrEmpty(job.Description) && job.Description.Length > 150 ? "ms-1" : "")"
@@ -795,6 +803,12 @@ else
                         <small class="text-muted">
                             Posted: @job.DatePosted.ToString("MMM dd, yyyy")
                             <br/>Added: @job.DateAdded.ToString("MMM dd, yyyy")
+                            @if (job.LastUpdated.HasValue && job.LastUpdated > job.DateAdded.AddMinutes(0)) @* TEMP: 0 for testing *@
+                            {
+                                <span class="badge bg-warning text-dark ms-1" title="Job details were updated">
+                                    <i class="bi bi-clock-history"></i> Updated @job.LastUpdated.Value.ToString("MMM dd")
+                                </span>
+                            }
                             @if (job.LastChecked.HasValue)
                             {
                                 <br/>
@@ -2054,6 +2068,128 @@ else
     </div>
 }
 
+@* Change Timeline Modal *@
+@if (showChangeTimelineModal && currentChangeTimeline != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header bg-warning text-dark">
+                    <h5 class="modal-title">
+                        <i class="bi bi-clock-history"></i> Change Timeline - @currentChangeTimeline.Job.Title
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="() => showChangeTimelineModal = false"></button>
+                </div>
+                <div class="modal-body">
+                    @if (!currentChangeTimeline.Changes.Any())
+                    {
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle"></i> No changes detected yet. Changes are tracked when job details are updated.
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="alert alert-primary">
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <strong>First Seen:</strong><br/>
+                                    @currentChangeTimeline.FirstSeen.ToString("MMM dd, yyyy HH:mm")
+                                </div>
+                                <div class="col-md-4">
+                                    <strong>Last Updated:</strong><br/>
+                                    @currentChangeTimeline.LastUpdated.ToString("MMM dd, yyyy HH:mm")
+                                </div>
+                                <div class="col-md-4">
+                                    <strong>Total Changes:</strong><br/>
+                                    <span class="badge bg-dark fs-6">@currentChangeTimeline.TotalChanges</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="timeline">
+                            @foreach (var change in currentChangeTimeline.Changes)
+                            {
+                                var impactClass = change.Impact switch
+                                {
+                                    ChangeImpact.Major => "border-danger",
+                                    ChangeImpact.Moderate => "border-warning",
+                                    _ => "border-secondary"
+                                };
+
+                                var impactBadge = change.Impact switch
+                                {
+                                    ChangeImpact.Major => "bg-danger",
+                                    ChangeImpact.Moderate => "bg-warning text-dark",
+                                    _ => "bg-secondary"
+                                };
+
+                                var changeIcon = change.ChangeType switch
+                                {
+                                    ChangeType.Added => "bi-plus-circle",
+                                    ChangeType.Removed => "bi-dash-circle",
+                                    _ => "bi-arrow-left-right"
+                                };
+
+                                <div class="card mb-3 @impactClass border-start border-4">
+                                    <div class="card-body">
+                                        <div class="d-flex justify-content-between align-items-start">
+                                            <div>
+                                                <h6 class="mb-1">
+                                                    <i class="bi @changeIcon"></i> @change.Description
+                                                </h6>
+                                                <small class="text-muted">
+                                                    <i class="bi bi-calendar"></i> @change.ChangedAt.ToString("MMM dd, yyyy HH:mm")
+                                                    <span class="ms-2 text-muted">(@GetTimeAgo(change.ChangedAt))</span>
+                                                </small>
+                                            </div>
+                                            <span class="badge @impactBadge">@change.Impact</span>
+                                        </div>
+
+                                        @if (change.ChangeType == ChangeType.Modified && !string.IsNullOrEmpty(change.OldValue))
+                                        {
+                                            <div class="mt-2">
+                                                <div class="row">
+                                                    <div class="col-md-6">
+                                                        <small class="text-muted">Previous:</small>
+                                                        <div class="p-2 bg-light rounded border border-danger">
+                                                            <small class="text-decoration-line-through">@change.OldValue</small>
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-md-6">
+                                                        <small class="text-muted">Current:</small>
+                                                        <div class="p-2 bg-light rounded border border-success">
+                                                            <small class="fw-bold">@change.NewValue</small>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        }
+                                        @if (change.ChangeType == ChangeType.Added)
+                                        {
+                                            <div class="mt-2 p-2 bg-success bg-opacity-10 rounded border border-success">
+                                                <small class="text-success"><strong>Added:</strong> @change.NewValue</small>
+                                            </div>
+                                        }
+                                        @if (change.ChangeType == ChangeType.Removed)
+                                        {
+                                            <div class="mt-2 p-2 bg-danger bg-opacity-10 rounded border border-danger">
+                                                <small class="text-danger"><strong>Removed:</strong> @change.OldValue</small>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="() => showChangeTimelineModal = false">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private enum TabType { Browse, Possible, Applied, Pipeline, Unsuitable, Archived }
     
@@ -2108,6 +2244,10 @@ else
     private ApplicationPrediction? currentApplicationPrediction = null;
     private AIAssistantSettings aiSettings = new();
     private string? aiErrorMessage = null;
+
+    // Change timeline state
+    private bool showChangeTimelineModal = false;
+    private JobChangeTimeline? currentChangeTimeline = null;
 
     // Notes / Cover Letter editing state
     private string notesTab = "notes";
@@ -2649,6 +2789,25 @@ else
         _ => "bg-danger"              // Very poor match (red)
     };
 
+    private string GetTimeAgo(DateTime dateTime)
+    {
+        var timeSpan = DateTime.UtcNow - dateTime;
+
+        if (timeSpan.TotalMinutes < 1)
+            return "just now";
+        if (timeSpan.TotalMinutes < 60)
+            return $"{(int)timeSpan.TotalMinutes} minutes ago";
+        if (timeSpan.TotalHours < 24)
+            return $"{(int)timeSpan.TotalHours} hours ago";
+        if (timeSpan.TotalDays < 7)
+            return $"{(int)timeSpan.TotalDays} days ago";
+        if (timeSpan.TotalDays < 30)
+            return $"{(int)(timeSpan.TotalDays / 7)} weeks ago";
+        if (timeSpan.TotalDays < 365)
+            return $"{(int)(timeSpan.TotalDays / 30)} months ago";
+        return $"{(int)(timeSpan.TotalDays / 365)} years ago";
+    }
+
     private string GetCardBorderClass(InterestStatus interest) => interest switch
     {
         InterestStatus.Interested => "border-success",
@@ -3116,7 +3275,14 @@ else
         showSalaryNegotiationModal = false;
         showResumeOptimizationModal = false;
         showApplicationPredictionModal = false;
+        showChangeTimelineModal = false;
         selectedJobForAI = null;
+    }
+
+    private void ShowChangeTimeline(JobListing job)
+    {
+        currentChangeTimeline = JobService.GetJobChangeTimeline(job.Id);
+        showChangeTimelineModal = true;
     }
 
     private async Task ShowInterviewPrepModal(JobListing job)

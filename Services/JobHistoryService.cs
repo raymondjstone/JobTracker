@@ -255,6 +255,37 @@ public class JobHistoryService
         }, job.UserId);
     }
 
+    public void RecordChange(Guid jobId, Guid userId, string fieldName, string? oldValue, string? newValue, string description, string jobTitle, string company, string? jobUrl)
+    {
+        AddEntry(new JobHistoryEntry
+        {
+            JobId = jobId,
+            JobTitle = jobTitle,
+            Company = company,
+            JobUrl = jobUrl,
+            ActionType = HistoryActionType.Modified,
+            ChangeSource = HistoryChangeSource.System,
+            FieldName = fieldName,
+            OldValue = oldValue,
+            NewValue = newValue,
+            Details = description
+        }, userId);
+    }
+
+    public List<JobHistoryEntry> GetHistoryByJobId(Guid jobId)
+    {
+        EnsureHistoryLoaded();
+        var userId = CurrentUserId;
+
+        lock (_lock)
+        {
+            return _history
+                .Where(e => e.JobId == jobId && e.UserId == userId)
+                .OrderByDescending(e => e.Timestamp)
+                .ToList();
+        }
+    }
+
     private void AddEntry(JobHistoryEntry entry, Guid? forUserId = null)
     {
         var userId = forUserId ?? CurrentUserId;

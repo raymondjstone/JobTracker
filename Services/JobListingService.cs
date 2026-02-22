@@ -647,11 +647,53 @@ public class JobListingService
             if (!string.IsNullOrWhiteSpace(parsed.Description) &&
                 (string.IsNullOrWhiteSpace(job.Description) || parsed.Description.Length > job.Description.Length + 50))
             {
+                var oldDescription = job.Description;
+                var oldLength = oldDescription?.Length ?? 0;
+
                 var cleaned = LinkedInJobExtractor.CleanDescription(parsed.Description);
                 if (cleaned.Length > (job.Description?.Length ?? 0))
                 {
                     job.Description = cleaned;
                     changed = true;
+
+                    // Track description change for timeline
+                    if (!string.IsNullOrEmpty(oldDescription) && oldDescription != cleaned)
+                    {
+                        var lengthChange = cleaned.Length - oldLength;
+                        _historyService.Value.RecordChange(
+                            job.Id,
+                            job.UserId,
+                            "Description",
+                            oldDescription.Substring(0, Math.Min(100, oldDescription.Length)) + "...",
+                            cleaned.Substring(0, Math.Min(100, cleaned.Length)) + "...",
+                            $"Job description updated ({lengthChange:+#;-#;0} characters)",
+                            job.Title,
+                            job.Company,
+                            job.Url
+                        );
+                        job.LastUpdated = DateTime.UtcNow;
+                        _storage.SaveJob(job);
+                    }
+                    else if (string.IsNullOrEmpty(oldDescription) && !string.IsNullOrEmpty(cleaned))
+                    {
+                        // First time description is added
+                        if (job.DateAdded < DateTime.UtcNow.AddMinutes(5))
+                        {
+                            _historyService.Value.RecordChange(
+                                job.Id,
+                                job.UserId,
+                                "Description",
+                                "Empty",
+                                cleaned.Substring(0, Math.Min(100, cleaned.Length)) + "...",
+                                $"Job description added ({cleaned.Length} characters)",
+                                job.Title,
+                                job.Company,
+                                job.Url
+                            );
+                            job.LastUpdated = DateTime.UtcNow;
+                            _storage.SaveJob(job);
+                        }
+                    }
                 }
             }
 
@@ -744,17 +786,7 @@ public class JobListingService
             var normalizedUrl = NormalizeUrl(url);
             var job = _jobListings.FirstOrDefault(j => j.UserId == userId && NormalizeUrl(j.Url) == normalizedUrl);
 
-            if (job == null)
-            {
-                Console.WriteLine($"[DESC-UPDATE] Job NOT FOUND for URL: {url} (normalized: {normalizedUrl}), userId: {userId}");
-                Console.WriteLine($"[DESC-UPDATE] Total jobs for user: {_jobListings.Count(j => j.UserId == userId)}");
-                // Show first few job URLs for this user to debug
-                var sample = _jobListings.Where(j => j.UserId == userId).Take(5).Select(j => NormalizeUrl(j.Url)).ToList();
-                Console.WriteLine($"[DESC-UPDATE] Sample URLs: {string.Join(", ", sample)}");
-                return false;
-            }
-
-            Console.WriteLine($"[DESC-UPDATE] Found job '{job.Title}' - current desc length: {job.Description?.Length ?? 0}, new desc length: {description.Length}");
+            if (job == null) return false;
 
             // Update if: no existing description, OR new description is substantial (>100 chars) and different
             var hasNoDescription = string.IsNullOrWhiteSpace(job.Description) || job.Description.Length < 100;
@@ -764,6 +796,7 @@ public class JobListingService
             if (hasNoDescription || (newIsSubstantial && newIsDifferent))
             {
                 var oldLength = job.Description?.Length ?? 0;
+                var oldDescription = job.Description;
                 var oldInterest = job.Interest;
                 var oldSuitability = job.Suitability;
                 var oldIsRemote = job.IsRemote;
@@ -772,6 +805,37 @@ public class JobListingService
                 var cleanedDescription = LinkedInJobExtractor.CleanDescription(description);
                 job.Description = cleanedDescription;
                 job.LastChecked = DateTime.Now;
+
+                // Track description change for timeline
+                if (!string.IsNullOrEmpty(oldDescription) && oldDescription != cleanedDescription)
+                {
+                    var lengthChange = cleanedDescription.Length - oldLength;
+                    _historyService.Value.RecordChange(
+                        job.Id,
+                        job.UserId,
+                        "Description",
+                        oldDescription.Substring(0, Math.Min(100, oldDescription.Length)) + "...",
+                        cleanedDescription.Substring(0, Math.Min(100, cleanedDescription.Length)) + "...",
+                        $"Job description updated ({lengthChange:+#;-#;0} characters)",
+                        job.Title,
+                        job.Company,
+                        job.Url
+                    );
+                    job.LastUpdated = DateTime.UtcNow;
+                    _logger.LogInformation("Description modified for '{Title}' - LastUpdated set to {LastUpdated}", 
+                        job.Title, job.LastUpdated);
+                }
+                else if (string.IsNullOrEmpty(oldDescription) && !string.IsNullOrEmpty(cleanedDescription))
+                {
+                    // First time description is added - set LastUpdated if job has been in system for >5 minutes
+                    var minutesSinceAdded = (DateTime.UtcNow - job.DateAdded).TotalMinutes;
+
+                    if (job.DateAdded < DateTime.UtcNow.AddMinutes(5))
+                    {
+                        job.LastUpdated = DateTime.UtcNow;
+                        _logger.LogInformation("First description added for '{Title}' - LastUpdated set", job.Title);
+                    }
+                }
 
                 // Update company if missing and provided
                 var oldCompany = job.Company;
@@ -879,6 +943,228 @@ public class JobListingService
         }
     }
 
+    /// <summary>
+    /// Detect what changed between two versions of a job
+    /// </summary>
+    private List<JobChange> DetectJobChanges(JobListing oldJob, JobListing newJob)
+    {
+        var changes = new List<JobChange>();
+
+        // Check each important field for changes
+        if (oldJob.Title != newJob.Title)
+        {
+            changes.Add(new JobChange
+            {
+                JobId = oldJob.Id,
+                FieldName = "Title",
+                OldValue = oldJob.Title,
+                NewValue = newJob.Title,
+                ChangeType = ChangeType.Modified,
+                Description = $"Job title changed from '{oldJob.Title}' to '{newJob.Title}'",
+                Impact = ChangeImpact.Major
+            });
+        }
+
+        if (oldJob.Company != newJob.Company)
+        {
+            changes.Add(new JobChange
+            {
+                JobId = oldJob.Id,
+                FieldName = "Company",
+                OldValue = oldJob.Company,
+                NewValue = newJob.Company,
+                ChangeType = ChangeType.Modified,
+                Description = $"Company changed from '{oldJob.Company}' to '{newJob.Company}'",
+                Impact = ChangeImpact.Major
+            });
+        }
+
+        if (oldJob.Location != newJob.Location)
+        {
+            changes.Add(new JobChange
+            {
+                JobId = oldJob.Id,
+                FieldName = "Location",
+                OldValue = oldJob.Location,
+                NewValue = newJob.Location,
+                ChangeType = ChangeType.Modified,
+                Description = $"Location changed from '{oldJob.Location}' to '{newJob.Location}'",
+                Impact = ChangeImpact.Moderate
+            });
+        }
+
+        if (oldJob.Salary != newJob.Salary)
+        {
+            changes.Add(new JobChange
+            {
+                JobId = oldJob.Id,
+                FieldName = "Salary",
+                OldValue = oldJob.Salary,
+                NewValue = newJob.Salary,
+                ChangeType = ChangeType.Modified,
+                Description = $"Salary changed from '{oldJob.Salary}' to '{newJob.Salary}'",
+                Impact = ChangeImpact.Major
+            });
+        }
+
+        if (oldJob.JobType != newJob.JobType)
+        {
+            changes.Add(new JobChange
+            {
+                JobId = oldJob.Id,
+                FieldName = "JobType",
+                OldValue = oldJob.JobType.ToString(),
+                NewValue = newJob.JobType.ToString(),
+                ChangeType = ChangeType.Modified,
+                Description = $"Job type changed from '{oldJob.JobType}' to '{newJob.JobType}'",
+                Impact = ChangeImpact.Major
+            });
+        }
+
+        if (oldJob.IsRemote != newJob.IsRemote)
+        {
+            changes.Add(new JobChange
+            {
+                JobId = oldJob.Id,
+                FieldName = "IsRemote",
+                OldValue = oldJob.IsRemote.ToString(),
+                NewValue = newJob.IsRemote.ToString(),
+                ChangeType = ChangeType.Modified,
+                Description = $"Remote status changed to {(newJob.IsRemote ? "Remote" : "On-site")}",
+                Impact = ChangeImpact.Moderate
+            });
+        }
+
+        // Check description changes (only if significantly different)
+        if (!string.IsNullOrEmpty(oldJob.Description) && !string.IsNullOrEmpty(newJob.Description))
+        {
+            var oldDesc = oldJob.Description.Trim();
+            var newDesc = newJob.Description.Trim();
+
+            if (oldDesc != newDesc)
+            {
+                var oldLength = oldDesc.Length;
+                var newLength = newDesc.Length;
+                var lengthDiff = Math.Abs(newLength - oldLength);
+
+                // Only record if description changed by more than 5% or 100 characters
+                if (lengthDiff > 100 || (oldLength > 0 && lengthDiff * 100.0 / oldLength > 5))
+                {
+                    changes.Add(new JobChange
+                    {
+                        JobId = oldJob.Id,
+                        FieldName = "Description",
+                        OldValue = oldDesc.Substring(0, Math.Min(100, oldDesc.Length)) + "...",
+                        NewValue = newDesc.Substring(0, Math.Min(100, newDesc.Length)) + "...",
+                        ChangeType = ChangeType.Modified,
+                        Description = $"Job description updated ({newLength - oldLength:+#;-#;0} characters)",
+                        Impact = ChangeImpact.Moderate
+                    });
+                }
+            }
+        }
+
+        // Check skills changes
+        var oldSkills = oldJob.Skills.OrderBy(s => s).ToList();
+        var newSkills = newJob.Skills.OrderBy(s => s).ToList();
+
+        if (!oldSkills.SequenceEqual(newSkills))
+        {
+            var addedSkills = newSkills.Except(oldSkills).ToList();
+            var removedSkills = oldSkills.Except(newSkills).ToList();
+
+            if (addedSkills.Any())
+            {
+                changes.Add(new JobChange
+                {
+                    JobId = oldJob.Id,
+                    FieldName = "Skills",
+                    OldValue = null,
+                    NewValue = string.Join(", ", addedSkills),
+                    ChangeType = ChangeType.Added,
+                    Description = $"Added skills: {string.Join(", ", addedSkills)}",
+                    Impact = ChangeImpact.Moderate
+                });
+            }
+
+            if (removedSkills.Any())
+            {
+                changes.Add(new JobChange
+                {
+                    JobId = oldJob.Id,
+                    FieldName = "Skills",
+                    OldValue = string.Join(", ", removedSkills),
+                    NewValue = null,
+                    ChangeType = ChangeType.Removed,
+                    Description = $"Removed skills: {string.Join(", ", removedSkills)}",
+                    Impact = ChangeImpact.Moderate
+                });
+            }
+        }
+
+        return changes;
+    }
+
+    /// <summary>
+    /// Get timeline of changes for a job
+    /// </summary>
+    public JobChangeTimeline GetJobChangeTimeline(Guid jobId)
+    {
+        var job = GetJobListingById(jobId);
+        if (job == null)
+        {
+            return new JobChangeTimeline();
+        }
+
+        var history = _historyService.Value.GetHistoryByJobId(jobId)
+            .OrderByDescending(h => h.Timestamp)
+            .ToList();
+
+        var changes = history
+            .Where(h => h.ActionType == HistoryActionType.Modified && !string.IsNullOrEmpty(h.FieldName))
+            .Select(h => new JobChange
+            {
+                JobId = jobId,
+                ChangedAt = h.Timestamp,
+                FieldName = h.FieldName ?? "",
+                OldValue = h.OldValue,
+                NewValue = h.NewValue,
+                ChangeType = ChangeType.Modified,
+                Description = h.Details ?? "",
+                Impact = DetermineImpact(h.FieldName ?? "")
+            })
+            .ToList();
+
+        var firstSeen = history.LastOrDefault()?.Timestamp ?? job.DateAdded;
+        var hasRecent = changes.Any(c => c.ChangedAt > DateTime.UtcNow.AddDays(-7));
+
+        return new JobChangeTimeline
+        {
+            Job = job,
+            Changes = changes,
+            FirstSeen = firstSeen,
+            LastUpdated = job.LastUpdated ?? job.DateAdded,
+            TotalChanges = changes.Count,
+            HasRecentChanges = hasRecent
+        };
+    }
+
+    private ChangeImpact DetermineImpact(string fieldName)
+    {
+        return fieldName.ToLower() switch
+        {
+            "title" => ChangeImpact.Major,
+            "company" => ChangeImpact.Major,
+            "salary" => ChangeImpact.Major,
+            "jobtype" => ChangeImpact.Major,
+            "location" => ChangeImpact.Moderate,
+            "isremote" => ChangeImpact.Moderate,
+            "description" => ChangeImpact.Moderate,
+            "skills" => ChangeImpact.Moderate,
+            _ => ChangeImpact.Minor
+        };
+    }
+
     public void UpdateJobListing(JobListing jobListing)
     {
         lock (_lock)
@@ -891,6 +1177,30 @@ public class JobListingService
             var existingJob = _jobListings.FirstOrDefault(j => j.Id == jobListing.Id);
             if (existingJob != null)
             {
+                // Detect changes before updating
+                var changes = DetectJobChanges(existingJob, jobListing);
+                if (changes.Any())
+                {
+                    // Record changes in history
+                    foreach (var change in changes)
+                    {
+                        _historyService.Value.RecordChange(
+                            jobListing.Id,
+                            jobListing.UserId,
+                            change.FieldName,
+                            change.OldValue,
+                            change.NewValue,
+                            change.Description,
+                            jobListing.Title,
+                            jobListing.Company,
+                            jobListing.Url
+                        );
+                    }
+
+                    // Update LastUpdated timestamp
+                    jobListing.LastUpdated = DateTime.UtcNow;
+                }
+
                 var index = _jobListings.IndexOf(existingJob);
                 _jobListings[index] = jobListing;
                 _storage.SaveJob(jobListing);
@@ -1452,36 +1762,20 @@ public class JobListingService
     {
         EnsureJobsLoaded(forUserId);
         var userId = forUserId ?? CurrentUserId;
-        
-        _logger.LogInformation("GetJobsNeedingDescriptions called - User: {UserId}, ForUserId: {ForUserId}, CurrentUserId: {CurrentUserId}",
-            userId, forUserId, CurrentUserId);
-        
+
         lock (_lock)
         {
-            var allUserJobs = _jobListings.Where(j => j.UserId == userId).ToList();
-            _logger.LogInformation("Total jobs for user {UserId}: {Count}", userId, allUserJobs.Count);
-            
-            var jobsNeedingDesc = allUserJobs
-                .Where(j => string.IsNullOrWhiteSpace(j.Description) || j.Description.Length < 100)
-                .ToList();
-            _logger.LogInformation("Jobs with missing/short descriptions: {Count}", jobsNeedingDesc.Count);
-            
-            var unsuitable = jobsNeedingDesc.Where(j => j.Suitability == SuitabilityStatus.Unsuitable).Count();
-            _logger.LogInformation("Unsuitable jobs (will be excluded): {Count}", unsuitable);
-            
             var result = _jobListings
                 .Where(j => j.UserId == userId)
                 .Where(j => string.IsNullOrWhiteSpace(j.Description) || j.Description.Length < 100)
-                .Where(j => j.Suitability != SuitabilityStatus.Unsuitable) // Skip unsuitable jobs
-                .OrderByDescending(j => j.DateAdded) // Newest jobs first
-                .ThenByDescending(j => j.Interest == InterestStatus.Interested) // Then interested jobs
-                .ThenByDescending(j => j.Suitability == SuitabilityStatus.Possible) // Then possible jobs
+                .Where(j => j.Suitability != SuitabilityStatus.Unsuitable)
+                .OrderByDescending(j => j.DateAdded)
+                .ThenByDescending(j => j.Interest == InterestStatus.Interested)
+                .ThenByDescending(j => j.Suitability == SuitabilityStatus.Possible)
                 .Take(limit)
                 .ToList()
                 .AsReadOnly();
-            
-            _logger.LogInformation("Returning {Count} jobs needing descriptions for user {UserId}", result.Count, userId);
-            
+
             return result;
         }
     }

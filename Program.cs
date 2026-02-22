@@ -521,7 +521,6 @@ app.MapPut("/api/jobs/description", async (HttpContext context, JobListingServic
     var userId = GetUserIdFromRequest(context, authService);
     if (!userId.HasValue)
     {
-        Console.WriteLine("[API] Unauthorized - no valid user ID for description update");
         return Results.Unauthorized();
     }
 
@@ -534,16 +533,7 @@ app.MapPut("/api/jobs/description", async (HttpContext context, JobListingServic
         }
 
         var updated = jobService.UpdateJobDescription(body.Url, body.Description ?? "", userId.Value, body.Company);
-        if (updated)
-        {
-            Console.WriteLine($"[API] Updated description for URL: {body.Url.Substring(0, Math.Min(50, body.Url.Length))}");
-            return Results.Ok(new { updated = true });
-        }
-        else
-        {
-            Console.WriteLine($"[API] Description not updated for URL: {body.Url.Substring(0, Math.Min(50, body.Url.Length))} (job not found or description unchanged)");
-            return Results.Ok(new { updated = false, message = "Job not found or description unchanged" });
-        }
+        return updated ? Results.Ok(new { updated = true }) : Results.Ok(new { updated = false, message = "Job not found or description unchanged" });
     }
     catch (Exception ex)
     {
@@ -558,23 +548,11 @@ app.MapGet("/api/jobs/needing-descriptions", (int? limit, HttpContext context, J
     var userId = GetUserIdFromRequest(context, authService);
     if (!userId.HasValue)
     {
-        Console.WriteLine("[API] Unauthorized - no valid user ID for needing-descriptions");
         return Results.Unauthorized();
     }
 
-    Console.WriteLine($"[API] GET /api/jobs/needing-descriptions - User ID: {userId}");
-    
-    // Pass the userId explicitly to ensure we get jobs for the API-authenticated user
     var jobs = jobService.GetJobsNeedingDescriptions(limit ?? int.MaxValue, userId.Value);
-    
-    Console.WriteLine($"[API] Found {jobs.Count} jobs needing descriptions:");
-    foreach (var job in jobs.Take(5))
-    {
-        Console.WriteLine($"  - {job.Title} ({job.Source}) - Desc length: {job.Description?.Length ?? 0}");
-    }
-    
     var urls = jobs.Select(j => new { j.Url, j.Title, j.Company, j.Source }).ToList();
-    Console.WriteLine($"[API] Returning {urls.Count} jobs needing descriptions for user {userId}");
     return Results.Ok(new { count = urls.Count, jobs = urls });
 });
 

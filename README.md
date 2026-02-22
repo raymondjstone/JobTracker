@@ -66,6 +66,12 @@ A **comprehensive AI-powered** Blazor application with browser extensions that a
 - **Skill Filter** - Filter by skill with autocomplete from existing job skills
 - **Saved Filter Presets** - Save and load named filter configurations
 - **Bulk Actions** - Mark all filtered jobs as Possible or Unsuitable
+- **Change Tracking** - Track job listing changes over time with visual indicators:
+  - **"Updated" Badge** - Orange badge appears when job details change (description, salary, location, etc.)
+  - **Change Timeline** - View detailed change history with "View Changes" button
+  - **Auto-Tracking** - Changes are automatically detected when descriptions are fetched or updated
+  - **Change Impact Levels** - Major (title, company, salary), Moderate (location, description), and Minor changes
+  - **First Description Tracking** - Tracks when a job description is first added after initial import
 
 ### Application Tracking
 - **Interest Status** - Mark jobs as Interested, Not Interested, or Not Rated
@@ -276,11 +282,11 @@ Navigate to `https://localhost:7046` to access the dashboard.
 
 | Page | Path | Description |
 |------|------|-------------|
-| Jobs Dashboard | `/` or `/jobs` | Main job listing and management |
+| Jobs Dashboard | `/` or `/jobs` | Main job listing and management with AI analysis |
 | Add Job | `/jobs/add` | Manually add a job |
 | Dashboard | `/dashboard` | Application stats, conversion funnel, and weekly activity |
-| Rules | `/rules` | Manage auto-classification rules |
-| Settings | `/settings` | Configure user profile, 2FA, browser extension API key, job site URLs, ML scoring preferences, highlight keywords, pipeline thresholds, auto-archive/delete settings, SMTP/email settings, and cover letter templates |
+| Rules | `/rules` | Manage auto-classification rules (including ML score-based rules) |
+| Settings | `/settings` | Configure user profile, 2FA, browser extension API key, job site URLs, **AI Assistant**, ML scoring preferences, highlight keywords, pipeline thresholds, auto-archive/delete settings, SMTP/email settings, and cover letter templates |
 | History | `/history` | View audit log of changes with CSV export |
 | Background Jobs | `/background-jobs` | Monitor background crawl jobs (LocalMode only) |
 | Extension Install | `/extension-install` | Extension installation guide |
@@ -410,7 +416,8 @@ JobTracker/
 ├── Services/
 │   ├── JobListingService.cs        # Job storage, filtering, pipeline stats
 │   ├── SalaryParser.cs             # Salary string parser (min/max extraction)
-│   ├── JobScoringService.cs         # ML-based job scoring engine (0-100 scoring)
+│   ├── JobScoringService.cs        # ML-based job scoring engine (0-100 scoring)
+│   ├── AIJobAssistantService.cs    # 🤖 AI-powered job analysis (OpenAI & Claude)
 │   ├── JobCrawlService.cs          # Server-side site crawling
 │   ├── JobCrawlJob.cs              # Scheduled crawl job
 │   ├── GhostedCheckJob.cs          # Auto-ghosted detection (configurable threshold)
@@ -452,6 +459,199 @@ JobTracker/
 ```
 
 ## Configuration
+
+### 🤖 AI Job Assistant Setup
+
+#### 1. Get an API Key
+
+**Option A: OpenAI**
+- Visit [OpenAI API Keys](https://platform.openai.com/api-keys)
+- Create a new API key (starts with `sk-`)
+- Cost: ~$0.01-0.05 per job analysis depending on model
+
+**Option B: Anthropic Claude**
+- Visit [Anthropic Console](https://console.anthropic.com/settings/keys)
+- Create a new API key (starts with `sk-ant-`)
+- Cost: ~$0.008-0.08 per job analysis depending on model
+
+#### 2. Configure in Settings
+
+1. Navigate to **Settings** → **AI Job Assistant** section
+2. **Enable AI Assistant** (check the box)
+3. **Select AI Provider**: OpenAI or Claude
+4. **Enter your API Key**
+5. **Choose Model**:
+   - **OpenAI**: GPT-3.5 Turbo (fast/cheap), GPT-4 (accurate), GPT-4o (latest)
+   - **Claude**: Claude 3 Haiku (fast/cheap), Claude 3.5 Sonnet (recommended), Claude 3 Opus (most capable)
+6. **Configure Your Profile**:
+   - **Your Skills** - Comma-separated (e.g., "C#, .NET, Azure, React, TypeScript")
+   - **Experience Summary** - Brief description of your experience
+7. **Enable AI Features**:
+   - ✅ Auto-analyze new jobs
+   - ✅ Auto-generate cover letter suggestions
+   - ✅ Show skill gap analysis
+   - ✅ Show similar job recommendations
+8. **Save AI Settings**
+
+#### 3. Using AI Features
+
+**On Job Cards:**
+- Click **🤖 Analyze with AI** button to analyze any job
+- Results appear in a beautiful modal with tabbed sections
+- All insights are automatically saved to the job
+
+**AI Analysis Modal:**
+- 📊 **Summary** - 2-3 sentence job overview
+- ✅ **Responsibilities** - Key duties extracted
+- ⚙️ **Required Skills** - Color-coded (green = you have it)
+- 🎓 **Qualifications** - Education and experience needs
+- ⭐ **Nice-to-Have Skills** - Optional bonus skills
+- 📈 **Skill Match** - Percentage with progress bar
+
+**Advanced Features (from modal):**
+- **📋 Interview Prep** - Get likely interview questions
+- **💰 Salary Tips** - Negotiation strategies and scripts
+- **📄 Resume Tips** - ATS keywords and optimization
+- **📊 Success Prediction** - AI-powered success probability
+- **🔍 Similar Jobs** - Find related opportunities
+- **✉️ Cover Letter** - Personalized writing suggestions
+
+#### AI Provider Comparison
+
+| Feature | OpenAI | Claude |
+|---------|--------|--------|
+| **Best For** | Code, structured output | Analysis, writing, reasoning |
+| **Context Window** | 8K-128K tokens | 200K tokens |
+| **Pricing** | Moderate | Competitive |
+| **Recommended Model** | GPT-3.5 Turbo or GPT-4o | Claude 3.5 Sonnet |
+| **Cost per Analysis** | $0.01-0.05 | $0.008-0.08 |
+
+**Tip**: Start with GPT-3.5 Turbo or Claude 3.5 Sonnet for best balance of quality and cost!
+
+---
+
+## 🎯 AI Features Showcase
+
+### 📊 Job Analysis
+Extract structured information from any job posting:
+```
+✅ Summary: "Senior .NET Developer role focusing on cloud architecture..."
+✅ Responsibilities: ["Design scalable APIs", "Lead technical reviews"...]
+✅ Required Skills: ["C#", ".NET Core", "Azure", "SQL Server"...]
+✅ Qualifications: ["Bachelor's in CS", "5+ years .NET experience"...]
+✅ Nice-to-Have: ["Docker", "Kubernetes", "React"...]
+```
+
+### 🎯 Skill Gap Analysis
+Visual comparison with percentage match:
+```
+Match: 85% ✅
+
+Skills You Have (7):
+✅ C#  ✅ .NET  ✅ Azure  ✅ SQL Server  ✅ REST APIs  ✅ Git  ✅ Agile
+
+Missing Required Skills (2):
+❌ Kubernetes  ❌ Terraform
+
+Bonus Skills You Have (2):
+⭐ Docker  ⭐ React
+```
+
+### 📝 Cover Letter Assistant
+AI generates personalized suggestions:
+```
+Opening: "As a passionate .NET architect with 8 years of cloud experience..."
+
+Selling Points:
+• Extensive Azure expertise aligns with your cloud-first approach
+• Proven track record leading teams of 5+ developers
+• Strong background in microservices and container orchestration
+
+Closing: "I'm excited to bring my technical leadership to [Company]..."
+```
+
+### 💼 Interview Preparation
+Get likely questions before the interview:
+```
+Technical Questions:
+1. How would you design a microservices architecture on Azure?
+2. Explain your approach to optimizing database queries in SQL Server
+3. Describe a complex technical challenge you solved recently
+
+Behavioral Questions:
+1. Tell me about a time you had to mentor junior developers
+2. How do you handle conflicting priorities in agile sprints?
+
+Questions to Ask Them:
+1. What's the team's approach to DevOps and CI/CD?
+2. How does the company support professional development?
+```
+
+### 💰 Salary Negotiation
+Market data and professional scripts:
+```
+Market Rate: £60,000-£75,000 for Senior .NET Developer in London
+
+Strategies:
+• Research shows market rate 15% above initial offer
+• Emphasize your Azure certifications and leadership experience
+• Focus on total compensation including benefits
+
+Opening Statement:
+"I'm very excited about this opportunity. Based on my research and 
+the value I bring, I was hoping we could discuss £70,000..."
+```
+
+### 📄 Resume Optimization
+ATS keywords and tailored content:
+```
+Keywords to Include:
+"microservices", "Azure DevOps", "CI/CD", "Agile", "Scrum Master"
+
+Skills to Highlight:
+1. Azure Architecture (Solution Architect certified)
+2. .NET Core 6/7 (8+ years)
+3. Team Leadership (Led teams of 5+)
+
+Tailored Summary:
+"Senior .NET Developer with 8 years of cloud-native development, 
+specializing in Azure microservices and team leadership..."
+```
+
+### 🔮 Success Prediction
+AI-powered probability estimate:
+```
+Success Probability: 78% 📈
+
+Strength Factors:
+✅ Strong Azure experience matches requirements
+✅ Leadership background aligns with senior role
+✅ Technical skills cover 85% of requirements
+
+Risk Factors:
+⚠️ No Kubernetes experience (required skill)
+⚠️ Company prefers finance sector background
+
+Recommendation: Apply Now ✅
+Tip: Highlight transferable skills to address Kubernetes gap
+```
+
+### 🔍 Similar Jobs
+AI finds related opportunities:
+```
+Similar Jobs Found: 5
+
+1. Cloud Solutions Architect @ TechCorp (92% match)
+   Why: 8 shared skills, similar role, remote
+
+2. Senior .NET Developer @ DataSys (87% match)
+   Why: Same stack, both emphasize Azure, London-based
+
+3. Technical Lead @ CloudFirst (82% match)
+   Why: Leadership focus, cloud-native, remote
+```
+
+---
 
 ### ML Job Scoring Setup
 
@@ -581,6 +781,86 @@ When tracking applications, jobs progress through these stages:
 | Offer | Received job offer |
 
 Click the stage badge on a job card to cycle through stages, or use the dropdown to select a specific stage.
+
+---
+
+## 🛠️ Tech Stack
+
+### Backend
+- **.NET 10** - Latest .NET framework
+- **Blazor Server** - Interactive server-side rendering
+- **C# 14** - Modern C# language features
+- **SQL Server** - Optional enterprise database support
+- **Hangfire** - Background job processing (SQL Server mode)
+- **Entity Framework Core** - ORM for SQL Server
+
+### AI & ML
+- **OpenAI GPT** - GPT-3.5 Turbo, GPT-4, GPT-4o support
+- **Anthropic Claude** - Claude 3 Haiku, Sonnet, Opus support
+- **Custom ML Scoring** - Multi-factor job scoring algorithm
+- **JSON Deserialization** - Structured AI response parsing
+
+### Frontend
+- **Blazor Components** - Reusable UI components
+- **Bootstrap 5** - Responsive design system
+- **Bootstrap Icons** - Icon library
+- **Dark Mode** - Theme switching with localStorage
+- **Drag & Drop** - Kanban board (SortableJS integration)
+
+### Browser Extensions
+- **Chrome Extension API** - Manifest V3
+- **JavaScript** - Content scripts and background workers
+- **DOM Manipulation** - Job extraction from various sites
+- **Cross-Origin Messaging** - Extension to app communication
+
+### Data Storage
+- **JSON Files** - Default lightweight storage
+- **SQL Server** - Enterprise-grade option
+- **Entity Framework Migrations** - Schema management
+- **Dual Backend Architecture** - Seamless switching
+
+### Authentication & Security
+- **Cookie Authentication** - Session management
+- **API Key Support** - Extension authentication
+- **TOTP 2FA** - Time-based one-time passwords
+- **Password Hashing** - Secure credential storage
+- **SMTP Email** - Password reset and notifications
+
+### Background Jobs
+- **LocalBackgroundService** - JSON mode background tasks
+- **Hangfire** - SQL Server mode job scheduling
+- **Recurring Jobs** - Crawling, email, cleanup
+- **CRON Scheduling** - Flexible job timing
+
+---
+
+## 📊 Stats & Metrics
+
+- **9 AI Features** - Comprehensive job search assistance
+- **2 AI Providers** - OpenAI and Anthropic Claude
+- **8 Model Options** - From fast/cheap to most capable
+- **5 Job Sites** - LinkedIn, Indeed, S1Jobs, WTTJ, EnergyJobSearch
+- **7 Application Stages** - Full pipeline tracking
+- **ML Scoring** - 7-factor intelligent job matching
+- **Kanban Pipeline** - Visual drag-and-drop board
+- **Background Jobs** - 7 automated tasks
+- **Dual Storage** - JSON or SQL Server
+- **Browser Extensions** - 5 dedicated extractors
+
+---
+
+## 🎉 Why JobTracker?
+
+✅ **AI-Powered** - Leverage GPT-4 or Claude to work smarter  
+✅ **Comprehensive** - Track every aspect of your job search  
+✅ **Intelligent** - ML scoring learns from your preferences  
+✅ **Automated** - Rules engine and background jobs do the work  
+✅ **Visual** - Kanban boards, charts, and color-coded indicators  
+✅ **Flexible** - Choose your AI provider, storage, and workflows  
+✅ **Private** - Your data stays on your server  
+✅ **Extensible** - Open architecture for customization  
+
+---
 
 ## License
 

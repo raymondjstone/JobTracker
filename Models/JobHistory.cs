@@ -17,7 +17,8 @@ public class JobHistoryEntry
     public HistoryChangeSource ChangeSource { get; set; }
 
     // Details
-    public string? OldValue { get; set; }
+    public string? FieldName { get; set; } // Which field changed
+    public string? OldValue { get; set; }  
     public string? NewValue { get; set; }
     public string? Details { get; set; }
     public string? RuleName { get; set; } // If changed by a rule
@@ -40,7 +41,8 @@ public enum HistoryActionType
     SkillsUpdated,
     BulkImport,
     DuplicateRemoved,
-    RemoteStatusChanged
+    RemoteStatusChanged,
+    Modified              // Generic field modification (for change timeline)
 }
 
 public enum HistoryChangeSource
