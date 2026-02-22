@@ -236,6 +236,27 @@ public class JobRulesService
             };
         }
 
+        if (field == RuleField.SuitabilityScore)
+        {
+            // Special case for numeric score comparison
+            if (!int.TryParse(value, out var threshold))
+            {
+                _logger.LogWarning("Invalid score threshold value: {Value}", value);
+                return false;
+            }
+
+            return op switch
+            {
+                RuleOperator.GreaterThan => job.SuitabilityScore > threshold,
+                RuleOperator.GreaterThanOrEqual => job.SuitabilityScore >= threshold,
+                RuleOperator.LessThan => job.SuitabilityScore < threshold,
+                RuleOperator.LessThanOrEqual => job.SuitabilityScore <= threshold,
+                RuleOperator.Equals => job.SuitabilityScore == threshold,
+                RuleOperator.NotEquals => job.SuitabilityScore != threshold,
+                _ => false
+            };
+        }
+
         if (field == RuleField.Any)
         {
             // Search across all text fields
@@ -265,6 +286,7 @@ public class JobRulesService
             RuleField.Salary => job.Salary ?? string.Empty,
             RuleField.Source => job.Source ?? string.Empty,
             RuleField.Skills => string.Join(" ", job.Skills ?? new List<string>()),
+            RuleField.SuitabilityScore => job.SuitabilityScore.ToString(),
             _ => string.Empty
         };
     }

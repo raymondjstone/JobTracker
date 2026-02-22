@@ -1,17 +1,18 @@
 using MailKit.Net.Smtp;
 using MailKit.Security;
 using MimeKit;
+using JobTracker.Models;
 
 namespace JobTracker.Services;
 
 public class EmailService
 {
-    private readonly IConfiguration _configuration;
+    private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<EmailService> _logger;
 
-    public EmailService(IConfiguration configuration, ILogger<EmailService> logger)
+    public EmailService(IServiceProvider serviceProvider, ILogger<EmailService> logger)
     {
-        _configuration = configuration;
+        _serviceProvider = serviceProvider;
         _logger = logger;
     }
 
@@ -50,26 +51,35 @@ public class EmailService
     }
 
     /// <summary>
-    /// Send email using SMTP settings from appsettings.json (for password reset, etc.)
+    /// Send email using SMTP settings from the recipient user's account
     /// </summary>
     public async Task<bool> SendEmailAsync(string toEmail, string subject, string htmlBody)
     {
-        var smtpHost = _configuration["Smtp:Host"];
-        var smtpPortStr = _configuration["Smtp:Port"];
-        var smtpUsername = _configuration["Smtp:Username"];
-        var smtpPassword = _configuration["Smtp:Password"];
-        var fromEmail = _configuration["Smtp:FromEmail"];
-        var fromName = _configuration["Smtp:FromName"] ?? "Job Tracker";
+        // Create a scope to resolve scoped services
+        using var scope = _serviceProvider.CreateScope();
+        var authService = scope.ServiceProvider.GetRequiredService<AuthService>();
+        var settingsService = scope.ServiceProvider.GetRequiredService<AppSettingsService>();
 
-        if (string.IsNullOrEmpty(smtpHost) || string.IsNullOrEmpty(smtpPortStr))
+        // Find the user by their email address
+        var user = authService.GetUserByEmail(toEmail);
+        if (user == null)
         {
-            _logger.LogWarning("SMTP not configured. Email not sent to {Email}", toEmail);
-            return true;
+            _logger.LogWarning("User not found for email {Email}. Cannot send email.", toEmail);
+            return false;
+        }
+
+        // Get the user's SMTP settings
+        var settings = settingsService.GetSettings(user.Id);
+
+        if (string.IsNullOrEmpty(settings.SmtpHost))
+        {
+            _logger.LogWarning("SMTP not configured for user {Email}. Email not sent. User should configure SMTP in Settings page.", toEmail);
+            return false;
         }
 
         return await SendEmailAsync(toEmail, subject, htmlBody,
-            smtpHost, int.Parse(smtpPortStr), smtpUsername ?? "", smtpPassword ?? "",
-            fromEmail ?? smtpUsername ?? "noreply@example.com", fromName);
+            settings.SmtpHost, settings.SmtpPort, settings.SmtpUsername, settings.SmtpPassword,
+            settings.SmtpFromEmail, settings.SmtpFromName);
     }
 
     /// <summary>

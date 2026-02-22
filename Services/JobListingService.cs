@@ -12,6 +12,7 @@ public class JobListingService
     private readonly CurrentUserService _currentUser;
     private readonly Lazy<JobRulesService> _rulesService;
     private readonly Lazy<JobHistoryService> _historyService;
+    private readonly Lazy<JobScoringService> _scoringService;
 
     public event Action? OnChange;
 
@@ -20,13 +21,15 @@ public class JobListingService
         ILogger<JobListingService> logger,
         CurrentUserService currentUser,
         Lazy<JobRulesService> rulesService,
-        Lazy<JobHistoryService> historyService)
+        Lazy<JobHistoryService> historyService,
+        Lazy<JobScoringService> scoringService)
     {
         _logger = logger;
         _storage = storage;
         _currentUser = currentUser;
         _rulesService = rulesService;
         _historyService = historyService;
+        _scoringService = scoringService;
 
         // Note: We can't load jobs here as we don't have user context yet
         // Jobs are loaded lazily when GetAllJobListings is called
@@ -222,6 +225,19 @@ public class JobListingService
                     jobListing.IsRemote = ruleResult.IsRemote.Value;
                     _logger.LogInformation("Rule '{Rule}' applied: Set IsRemote to {IsRemote} for {Title}", ruleResult.IsRemoteRuleName, ruleResult.IsRemote, jobListing.Title);
                 }
+            }
+
+            // Calculate ML-based suitability score
+            try
+            {
+                var allUserJobs = _jobListings.Where(j => j.UserId == userId).ToList();
+                jobListing.SuitabilityScore = _scoringService.Value.CalculateScore(jobListing, userId, allUserJobs);
+                _logger.LogDebug("Calculated suitability score for {Title}: {Score}/100", jobListing.Title, jobListing.SuitabilityScore);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to calculate suitability score for {Title}", jobListing.Title);
+                jobListing.SuitabilityScore = 0;
             }
 
             _jobListings.Add(jobListing);
@@ -905,6 +921,63 @@ public class JobListingService
             _jobListings.RemoveAll(j => j.UserId == userId);
             _storage.DeleteAllJobs(userId);
             NotifyStateChanged();
+        }
+    }
+
+    public void RecalculateAllScores(Guid? forUserId = null, Action<int, int>? onProgress = null)
+    {
+        var userId = forUserId ?? CurrentUserId;
+        if (userId == Guid.Empty)
+        {
+            _logger.LogWarning("Cannot recalculate scores without user context");
+            return;
+        }
+
+        EnsureJobsLoaded(userId);
+
+        lock (_lock)
+        {
+            var userJobs = _jobListings.Where(j => j.UserId == userId).ToList();
+
+            // Skip unsuitable jobs - only recalculate for jobs that might be interesting
+            var jobsToScore = userJobs
+                .Where(j => j.Suitability != SuitabilityStatus.Unsuitable)
+                .ToList();
+
+            int total = jobsToScore.Count;
+            int processed = 0;
+            int updated = 0;
+
+            foreach (var job in jobsToScore)
+            {
+                try
+                {
+                    var oldScore = job.SuitabilityScore;
+                    job.SuitabilityScore = _scoringService.Value.CalculateScore(job, userId, userJobs);
+
+                    if (oldScore != job.SuitabilityScore)
+                    {
+                        _storage.SaveJob(job);
+                        updated++;
+                    }
+
+                    processed++;
+                    onProgress?.Invoke(processed, total);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to recalculate score for job {Id}", job.Id);
+                    processed++;
+                    onProgress?.Invoke(processed, total);
+                }
+            }
+
+            if (updated > 0)
+            {
+                NotifyStateChanged();
+                _logger.LogInformation("Recalculated scores for {Updated} of {Total} jobs (skipped {Skipped} unsuitable)", 
+                    updated, total, userJobs.Count - total);
+            }
         }
     }
 

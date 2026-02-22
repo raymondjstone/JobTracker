@@ -50,6 +50,7 @@ public enum RuleField
     Source,
     Skills,
     IsRemote,
+    SuitabilityScore,  // ML-based score (0-100)
     Any
 }
 
@@ -63,7 +64,11 @@ public enum RuleOperator
     EndsWith,
     Regex,
     IsTrue,
-    IsFalse
+    IsFalse,
+    GreaterThan,        // For numeric comparisons (score, salary)
+    GreaterThanOrEqual, // For numeric comparisons
+    LessThan,           // For numeric comparisons
+    LessThanOrEqual     // For numeric comparisons
 }
 
 public enum ConditionLogic

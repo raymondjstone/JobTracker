@@ -22,6 +22,7 @@ public class AppSettings
     public int DeleteUnsuitableAfterDays { get; set; } = 90;
     public int DeleteRejectedAfterDays { get; set; } = 60;
     public int DeleteGhostedAfterDays { get; set; } = 60;
+    public ScoringPreferences ScoringPreferences { get; set; } = new();
     public bool DarkMode { get; set; }
 }
 
@@ -76,4 +77,32 @@ public class JobRulesSettings
     public bool EnableAutoRules { get; set; } = true;
     public bool StopOnFirstMatch { get; set; } = false;
     public List<JobRule> Rules { get; set; } = new();
+}
+
+public class ScoringPreferences
+{
+    public bool EnableScoring { get; set; } = true;
+
+    // Weights (0-1, where 1 = full weight, 0 = disabled)
+    public double SkillsWeight { get; set; } = 1.0;
+    public double SalaryWeight { get; set; } = 1.0;
+    public double RemoteWeight { get; set; } = 1.0;
+    public double LocationWeight { get; set; } = 0.8;
+    public double KeywordWeight { get; set; } = 0.9;
+    public double CompanyWeight { get; set; } = 0.7;
+    public double LearningWeight { get; set; } = 1.0;
+
+    // Preferences
+    public List<string> PreferredSkills { get; set; } = new();
+    public decimal MinDesiredSalary { get; set; } = 0;
+    public decimal MaxDesiredSalary { get; set; } = 0;
+    public bool PreferRemote { get; set; } = true;
+    public List<string> PreferredLocations { get; set; } = new();
+    public List<string> MustHaveKeywords { get; set; } = new();
+    public List<string> AvoidKeywords { get; set; } = new();
+    public List<string> PreferredCompanies { get; set; } = new();
+    public List<string> AvoidCompanies { get; set; } = new();
+
+    // Auto-score threshold
+    public int MinScoreToShow { get; set; } = 0; // Hide jobs below this score
 }

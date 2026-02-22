@@ -6,6 +6,8 @@
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject AuthService AuthService
 @inject AppSettingsService SettingsService
+@inject JobListingService JobService
+@inject ILogger<Settings> _logger
 @inject IJSRuntime JS
 @inject IConfiguration Configuration
 @inject NavigationManager Navigation
@@ -373,6 +375,153 @@
 
         <div class="card mb-4">
             <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-graph-up-arrow"></i> Job Scoring / ML Preferences</h5>
+            </div>
+            <div class="card-body">
+                <div class="form-check form-switch mb-3">
+                    <input class="form-check-input" type="checkbox" id="enableScoring" @bind="editScoringEnabled" />
+                    <label class="form-check-label" for="enableScoring"><strong>Enable ML-based Job Scoring</strong></label>
+                    <small class="form-text text-muted d-block">Automatically score jobs 0-100 based on your preferences and past behavior</small>
+                </div>
+
+                @if (editScoringEnabled)
+                {
+                    <h6 class="mb-3"><i class="bi bi-sliders"></i> Scoring Weights</h6>
+                    <p class="text-muted small mb-3">Adjust importance of each factor (0 = disabled, 1 = full weight)</p>
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-6">
+                            <label class="form-label">Skills Match Weight</label>
+                            <input type="number" class="form-control" min="0" max="1" step="0.1" @bind="editSkillsWeight" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Salary Match Weight</label>
+                            <input type="number" class="form-control" min="0" max="1" step="0.1" @bind="editSalaryWeight" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Remote Preference Weight</label>
+                            <input type="number" class="form-control" min="0" max="1" step="0.1" @bind="editRemoteWeight" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Location Weight</label>
+                            <input type="number" class="form-control" min="0" max="1" step="0.1" @bind="editLocationWeight" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Keywords Weight</label>
+                            <input type="number" class="form-control" min="0" max="1" step="0.1" @bind="editKeywordWeight" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Company Preference Weight</label>
+                            <input type="number" class="form-control" min="0" max="1" step="0.1" @bind="editCompanyWeight" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Learning from Behavior Weight</label>
+                            <input type="number" class="form-control" min="0" max="1" step="0.1" @bind="editLearningWeight" />
+                        </div>
+                    </div>
+
+                    <hr />
+                    <h6 class="mb-3"><i class="bi bi-star"></i> Your Preferences</h6>
+
+                    <div class="mb-3">
+                        <label class="form-label">Preferred Skills (comma-separated)</label>
+                        <input type="text" class="form-control" @bind="editPreferredSkills" placeholder="C#, .NET, Azure, React" />
+                        <small class="text-muted">Jobs matching these skills get higher scores</small>
+                    </div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Minimum Desired Salary (£)</label>
+                            <input type="number" class="form-control" min="0" @bind="editMinDesiredSalary" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Maximum Desired Salary (£)</label>
+                            <input type="number" class="form-control" min="0" @bind="editMaxDesiredSalary" />
+                        </div>
+                    </div>
+
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="preferRemote" @bind="editPreferRemote" />
+                        <label class="form-check-label" for="preferRemote">Prefer Remote Jobs</label>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Preferred Locations (comma-separated)</label>
+                        <input type="text" class="form-control" @bind="editPreferredLocations" placeholder="London, Manchester, Remote" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Must-Have Keywords (comma-separated)</label>
+                        <input type="text" class="form-control" @bind="editMustHaveKeywords" placeholder="senior, lead, architect" />
+                        <small class="text-muted">Jobs must contain these keywords for high scores</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Avoid Keywords (comma-separated)</label>
+                        <input type="text" class="form-control" @bind="editAvoidKeywords" placeholder="junior, graduate, internship" />
+                        <small class="text-muted">Jobs with these keywords get lower scores</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Preferred Companies (comma-separated)</label>
+                        <input type="text" class="form-control" @bind="editPreferredCompanies" placeholder="Microsoft, Google, Amazon" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Avoid Companies (comma-separated)</label>
+                        <input type="text" class="form-control" @bind="editAvoidCompanies" placeholder="Company1, Company2" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Minimum Score to Show</label>
+                        <input type="number" class="form-control" min="0" max="100" style="width: 150px" @bind="editMinScoreToShow" />
+                        <small class="text-muted">Hide jobs with scores below this threshold (0 = show all)</small>
+                    </div>
+                }
+
+                <button type="button" class="btn btn-primary" @onclick="SaveScoringSettings">
+                    <i class="bi bi-check-lg"></i> Save Scoring Preferences
+                </button>
+                @if (editScoringEnabled)
+                {
+                    <button type="button" class="btn btn-outline-info ms-2" @onclick="RecalculateAllScores" disabled="@isRecalculating">
+                        @if (isRecalculating)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                            <span>Recalculating... @(recalculateTotal > 0 ? $"{recalculateProgress}/{recalculateTotal}" : "")</span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-arrow-repeat"></i>
+                            <span>Recalculate All Scores</span>
+                        }
+                    </button>
+                }
+                @if (isRecalculating && recalculateTotal > 0)
+                {
+                    <div class="mt-2">
+                        <div class="progress" style="height: 25px;">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                                 role="progressbar" 
+                                 style="width: @(recalculateTotal > 0 ? (recalculateProgress * 100.0 / recalculateTotal) : 0)%"
+                                 aria-valuenow="@recalculateProgress" 
+                                 aria-valuemin="0" 
+                                 aria-valuemax="@recalculateTotal">
+                                @recalculateProgress / @recalculateTotal (@((int)(recalculateProgress * 100.0 / recalculateTotal))%)
+                            </div>
+                        </div>
+                    </div>
+                }
+                @if (!string.IsNullOrEmpty(recalculateMessage))
+                {
+                    <div class="alert @(recalculateMessage.StartsWith("✓") ? "alert-success" : "alert-danger") mt-2">
+                        @recalculateMessage
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">
                 <h5 class="mb-0"><i class="bi bi-file-earmark-text"></i> Cover Letter Templates</h5>
             </div>
             <div class="card-body">
@@ -441,6 +590,31 @@
     private int editDeleteUnsuitableAfterDays = 90;
     private int editDeleteRejectedAfterDays = 60;
     private int editDeleteGhostedAfterDays = 60;
+
+    // Scoring preferences state
+    private bool editScoringEnabled = true;
+    private double editSkillsWeight = 1.0;
+    private double editSalaryWeight = 1.0;
+    private double editRemoteWeight = 1.0;
+    private double editLocationWeight = 0.8;
+    private double editKeywordWeight = 0.9;
+    private double editCompanyWeight = 0.7;
+    private double editLearningWeight = 1.0;
+    private string editPreferredSkills = "";
+    private decimal editMinDesiredSalary = 0;
+    private decimal editMaxDesiredSalary = 0;
+    private bool editPreferRemote = true;
+    private string editPreferredLocations = "";
+    private string editMustHaveKeywords = "";
+    private string editAvoidKeywords = "";
+    private string editPreferredCompanies = "";
+    private string editAvoidCompanies = "";
+    private int editMinScoreToShow = 0;
+    private bool isRecalculating = false;
+    private string? recalculateMessage = null;
+    private int recalculateProgress = 0;
+    private int recalculateTotal = 0;
+
     private string editSmtpHost = "";
     private int editSmtpPort = 587;
     private string editSmtpUsername = "";
@@ -520,6 +694,27 @@
         editEmailOnStaleApplications = settings.EmailOnStaleApplications;
         editEmailOnFollowUpDue = settings.EmailOnFollowUpDue;
         coverLetterTemplates = settings.CoverLetterTemplates;
+
+        // Load scoring preferences
+        var scoring = settings.ScoringPreferences;
+        editScoringEnabled = scoring.EnableScoring;
+        editSkillsWeight = scoring.SkillsWeight;
+        editSalaryWeight = scoring.SalaryWeight;
+        editRemoteWeight = scoring.RemoteWeight;
+        editLocationWeight = scoring.LocationWeight;
+        editKeywordWeight = scoring.KeywordWeight;
+        editCompanyWeight = scoring.CompanyWeight;
+        editLearningWeight = scoring.LearningWeight;
+        editPreferredSkills = string.Join(", ", scoring.PreferredSkills);
+        editMinDesiredSalary = scoring.MinDesiredSalary;
+        editMaxDesiredSalary = scoring.MaxDesiredSalary;
+        editPreferRemote = scoring.PreferRemote;
+        editPreferredLocations = string.Join(", ", scoring.PreferredLocations);
+        editMustHaveKeywords = string.Join(", ", scoring.MustHaveKeywords);
+        editAvoidKeywords = string.Join(", ", scoring.AvoidKeywords);
+        editPreferredCompanies = string.Join(", ", scoring.PreferredCompanies);
+        editAvoidCompanies = string.Join(", ", scoring.AvoidCompanies);
+        editMinScoreToShow = scoring.MinScoreToShow;
     }
 
     private void SaveJobSiteUrls()
@@ -638,6 +833,96 @@
         settings.CoverLetterTemplates.RemoveAll(t => t.Id == id);
         SettingsService.Save();
         coverLetterTemplates = settings.CoverLetterTemplates;
+    }
+
+    private void SaveScoringSettings()
+    {
+        var settings = SettingsService.GetSettings();
+
+        settings.ScoringPreferences.EnableScoring = editScoringEnabled;
+        settings.ScoringPreferences.SkillsWeight = editSkillsWeight;
+        settings.ScoringPreferences.SalaryWeight = editSalaryWeight;
+        settings.ScoringPreferences.RemoteWeight = editRemoteWeight;
+        settings.ScoringPreferences.LocationWeight = editLocationWeight;
+        settings.ScoringPreferences.KeywordWeight = editKeywordWeight;
+        settings.ScoringPreferences.CompanyWeight = editCompanyWeight;
+        settings.ScoringPreferences.LearningWeight = editLearningWeight;
+
+        settings.ScoringPreferences.PreferredSkills = editPreferredSkills
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .ToList();
+
+        settings.ScoringPreferences.MinDesiredSalary = editMinDesiredSalary;
+        settings.ScoringPreferences.MaxDesiredSalary = editMaxDesiredSalary;
+        settings.ScoringPreferences.PreferRemote = editPreferRemote;
+
+        settings.ScoringPreferences.PreferredLocations = editPreferredLocations
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .ToList();
+
+        settings.ScoringPreferences.MustHaveKeywords = editMustHaveKeywords
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .ToList();
+
+        settings.ScoringPreferences.AvoidKeywords = editAvoidKeywords
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .ToList();
+
+        settings.ScoringPreferences.PreferredCompanies = editPreferredCompanies
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .ToList();
+
+        settings.ScoringPreferences.AvoidCompanies = editAvoidCompanies
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .ToList();
+
+        settings.ScoringPreferences.MinScoreToShow = editMinScoreToShow;
+
+        SettingsService.Save();
+    }
+
+    private async Task RecalculateAllScores()
+    {
+        if (currentUser == null) return;
+
+        isRecalculating = true;
+        recalculateMessage = null;
+        recalculateProgress = 0;
+        recalculateTotal = 0;
+        StateHasChanged();
+
+        try
+        {
+            // Run on background thread to avoid blocking UI
+            await Task.Run(() =>
+            {
+                JobService.RecalculateAllScores(currentUser.Id, (processed, total) =>
+                {
+                    recalculateProgress = processed;
+                    recalculateTotal = total;
+                    InvokeAsync(StateHasChanged);
+                });
+            });
+
+            recalculateMessage = $"✓ Successfully recalculated scores for {recalculateProgress} jobs!";
+            _logger.LogInformation("Recalculated all scores for user {UserId}", currentUser.Id);
+        }
+        catch (Exception ex)
+        {
+            recalculateMessage = $"✗ Error recalculating scores: {ex.Message}";
+            _logger.LogError(ex, "Failed to recalculate scores for user {UserId}", currentUser.Id);
+        }
+        finally
+        {
+            isRecalculating = false;
+            StateHasChanged();
+        }
     }
 
     private async Task CopyUserId()

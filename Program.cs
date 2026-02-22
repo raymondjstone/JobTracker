@@ -78,10 +78,12 @@ builder.Services.AddScoped<JobListingService>();
 builder.Services.AddScoped<AppSettingsService>();
 builder.Services.AddScoped<JobRulesService>();
 builder.Services.AddScoped<JobHistoryService>();
+builder.Services.AddScoped<JobScoringService>();
 
 // Register Lazy<T> for services that have circular dependencies
 builder.Services.AddScoped(sp => new Lazy<JobRulesService>(() => sp.GetRequiredService<JobRulesService>()));
 builder.Services.AddScoped(sp => new Lazy<JobHistoryService>(() => sp.GetRequiredService<JobHistoryService>()));
+builder.Services.AddScoped(sp => new Lazy<JobScoringService>(() => sp.GetRequiredService<JobScoringService>()));
 
 // Configure HttpClient for LinkedIn job extraction
 builder.Services.AddHttpClient<LinkedInJobExtractor>(client =>
@@ -228,6 +230,24 @@ if (!authService.GetAllUsers().Any())
         startupLogger.LogInformation("Created initial user: {Email}", initialUser.Email);
         storage.MigrateExistingDataToUser(initialUser.Id);
         startupLogger.LogInformation("Migrated existing data to user: {Email}", initialUser.Email);
+    }
+}
+
+// Migrate existing users with invalid localhost emails to the configured email
+if (!localMode)
+{
+    var configuredEmail = builder.Configuration["InitialUser:Email"] ?? "admin@example.com";
+    var allUsers = authService.GetAllUsers();
+
+    foreach (var user in allUsers)
+    {
+        // Fix localhost or local@ emails
+        if (user.Email.EndsWith("@localhost", StringComparison.OrdinalIgnoreCase) || 
+            user.Email.StartsWith("local@", StringComparison.OrdinalIgnoreCase))
+        {
+            startupLogger.LogInformation("Migrating user email from {OldEmail} to {NewEmail}", user.Email, configuredEmail);
+            authService.UpdateUserEmail(user.Id, configuredEmail);
+        }
     }
 }
 

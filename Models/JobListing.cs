@@ -21,6 +21,7 @@ public class JobListing
     public ApplicationStage ApplicationStage { get; set; } = ApplicationStage.None;
     public List<ApplicationStageChange> StageHistory { get; set; } = new();
     public SuitabilityStatus Suitability { get; set; } = SuitabilityStatus.NotChecked;
+    public int SuitabilityScore { get; set; } = 0; // ML-based score 0-100
     public bool SharedToWhatsApp { get; set; } = false;
     public DateTime? DateSharedToWhatsApp { get; set; }
     public string Source { get; set; } = string.Empty;

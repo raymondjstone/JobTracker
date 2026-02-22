@@ -587,7 +587,15 @@ else
                             </h5>
                             <h6 class="card-subtitle text-muted">@job.Company</h6>
                         </div>
-                        <span class="badge @GetJobTypeBadgeClass(job.JobType)">@job.JobType</span>
+                        <div class="d-flex flex-column align-items-end gap-1">
+                            <span class="badge @GetJobTypeBadgeClass(job.JobType)">@job.JobType</span>
+                            @if (job.SuitabilityScore > 0)
+                            {
+                                <span class="badge @GetScoreBadgeClass(job.SuitabilityScore)" title="ML Suitability Score">
+                                    <i class="bi bi-stars"></i> @job.SuitabilityScore
+                                </span>
+                            }
+                        </div>
                     </div>
                     <div class="card-body">
                         <div class="clickable-card-area" @onclick="() => OpenJobInLinkedIn(job)" title="Click to open job">
@@ -1373,11 +1381,9 @@ else
 
     // Highlight keywords
     private List<string> highlightKeywords = new();
-    private string editHighlightKeywords = "";
 
     // Pipeline settings
     private PipelineSettings pipelineSettings = new();
-    private PipelineSettings editingPipeline = new();
     private int followUpsDueCount = 0;
 
     // Archived tab count
@@ -1385,27 +1391,6 @@ else
 
     // Template state
     private List<CoverLetterTemplate> coverLetterTemplates = new();
-    private bool showTemplateManager = false;
-    private CoverLetterTemplate? editingTemplate = null;
-    private string editTemplateName = "";
-    private string editTemplateContent = "";
-
-    // SMTP settings (editing copies)
-    private string editSmtpHost = "";
-    private int editSmtpPort = 587;
-    private string editSmtpUsername = "";
-    private string editSmtpPassword = "";
-    private string editSmtpFromEmail = "";
-    private string editSmtpFromName = "Job Tracker";
-
-    // Email notification settings (editing copies)
-    private bool editEmailNotificationsEnabled;
-    private bool editEmailOnStaleApplications;
-    private bool editEmailOnFollowUpDue;
-
-    // Auto-archive settings (editing copies)
-    private bool editAutoArchiveEnabled;
-    private int editAutoArchiveDays;
 
     // Job site URLs for quick links
     private JobSiteUrls jobSiteUrls = new();
@@ -1889,6 +1874,15 @@ else
         _ => "bg-dark"
     };
 
+    private string GetScoreBadgeClass(int score) => score switch
+    {
+        >= 80 => "bg-success",        // Excellent match (green)
+        >= 60 => "bg-primary",        // Good match (blue)
+        >= 40 => "bg-warning text-dark", // Fair match (yellow)
+        >= 20 => "bg-secondary",      // Poor match (grey)
+        _ => "bg-danger"              // Very poor match (red)
+    };
+
     private string GetCardBorderClass(InterestStatus interest) => interest switch
     {
         InterestStatus.Interested => "border-success",
@@ -2183,41 +2177,6 @@ else
             .Replace("{Company}", selectedJob.Company ?? "")
             .Replace("{Title}", selectedJob.Title ?? "")
             .Replace("{Location}", selectedJob.Location ?? "");
-    }
-
-    private void StartNewTemplate()
-    {
-        editingTemplate = null;
-        editTemplateName = "";
-        editTemplateContent = "";
-        showTemplateManager = true;
-    }
-
-    private void StartEditTemplate(CoverLetterTemplate template)
-    {
-        editingTemplate = template;
-        editTemplateName = template.Name;
-        editTemplateContent = template.Content;
-        showTemplateManager = true;
-    }
-
-    private void SaveTemplate()
-    {
-        if (string.IsNullOrWhiteSpace(editTemplateName)) return;
-
-        var template = editingTemplate ?? new CoverLetterTemplate();
-        template.Name = editTemplateName.Trim();
-        template.Content = editTemplateContent;
-        SettingsService.SaveCoverLetterTemplate(template);
-        coverLetterTemplates = SettingsService.GetCoverLetterTemplates();
-        showTemplateManager = false;
-        editingTemplate = null;
-    }
-
-    private void DeleteTemplate(Guid id)
-    {
-        SettingsService.DeleteCoverLetterTemplate(id);
-        coverLetterTemplates = SettingsService.GetCoverLetterTemplates();
     }
 
     public void Dispose()

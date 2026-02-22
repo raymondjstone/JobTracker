@@ -29,6 +29,34 @@ public class AuthService
     public List<User> GetAllUsers() => _storage.GetAllUsers();
 
     /// <summary>
+    /// Update a user's email address
+    /// </summary>
+    public bool UpdateUserEmail(Guid userId, string newEmail)
+    {
+        var user = _storage.GetUserById(userId);
+        if (user == null)
+        {
+            _logger.LogWarning("Cannot update email - user not found: {UserId}", userId);
+            return false;
+        }
+
+        var normalizedEmail = newEmail.ToLowerInvariant();
+
+        // Check if email is already taken by another user
+        var existingUser = _storage.GetUserByEmail(normalizedEmail);
+        if (existingUser != null && existingUser.Id != userId)
+        {
+            _logger.LogWarning("Cannot update email - already taken: {Email}", newEmail);
+            return false;
+        }
+
+        user.Email = normalizedEmail;
+        _storage.SaveUser(user);
+        _logger.LogInformation("Updated user email: {UserId} -> {Email}", userId, normalizedEmail);
+        return true;
+    }
+
+    /// <summary>
     /// Creates a new user with the given credentials
     /// </summary>
     public User CreateUser(string email, string name, string password)

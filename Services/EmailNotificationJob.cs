@@ -93,7 +93,7 @@ public class EmailNotificationJob
 </body>
 </html>";
 
-            var sent = await emailService.SendEmailAsync(user.Email, "Job Tracker — Daily Digest", body,
+            var sent = await emailService.SendEmailAsync(settings.SmtpFromEmail, "Job Tracker — Daily Digest", body,
                 settings.SmtpHost, settings.SmtpPort, settings.SmtpUsername, settings.SmtpPassword,
                 settings.SmtpFromEmail, settings.SmtpFromName);
             if (sent)

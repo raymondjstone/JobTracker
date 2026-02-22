@@ -40,6 +40,19 @@ A Blazor application with browser extensions that automatically extract job list
 ### Application Tracking
 - **Interest Status** - Mark jobs as Interested, Not Interested, or Not Rated
 - **Suitability Status** - Mark jobs as Possible, Unsuitable, or Not Checked
+- **ML-Based Job Scoring** - Automatic 0-100 scoring based on your preferences and past behavior (similar to JobSync)
+  - Skills match weighting
+  - Salary range matching
+  - Remote preference
+  - Location preferences
+  - Keyword matching (must-have and avoid)
+  - Company preferences
+  - Learning from your past application patterns
+  - Configurable weights for each factor
+  - Visual score badges on job cards (color-coded by score)
+  - Progress indicator during recalculation
+  - Skips unsuitable jobs during recalculation
+- **Score-Based Rules** - Create rules using ML scores (e.g., "Auto-mark jobs with score ≥80 as Interested")
 - **Applied Tracking** - Track which jobs you've applied to
 - **Application Stages** - Track progress: Applied → No Reply → Pending → Tech Test → Interview → Offer (or Ghosted/Rejected)
 - **Stage History** - View timeline of stage changes for each application
@@ -48,6 +61,11 @@ A Blazor application with browser extensions that automatically extract job list
 - **Follow-up Reminders** - Set per-job follow-up dates with due indicators and a count badge on the Pipeline tab
 - **Cover Letter Templates** - Reusable templates with `{Company}`, `{Title}`, `{Location}` placeholders that auto-fill when applied to a job
 - **Auto-Archive** - Automatically archive rejected/ghosted jobs after a configurable number of days
+- **Auto-Delete** - Automatically delete old jobs after configurable days:
+  - Delete unsuitable jobs after X days (default: 90)
+  - Delete rejected jobs after X days (default: 60)
+  - Delete ghosted jobs after X days (default: 60)
+  - Set to 0 to disable auto-deletion for that type
 
 ### Application Stats Dashboard
 - **Conversion Funnel** - Visual funnel showing progression from Applied through to Offer/Rejected
@@ -58,6 +76,37 @@ A Blazor application with browser extensions that automatically extract job list
 ### Rules Engine
 - **Auto-classification Rules** - Automatically set interest, suitability, and remote status based on configurable rules
 - **Rule Management** - Create and manage rules from the Rules page (`/rules`)
+- **Score-Based Rules** - Use ML suitability scores in rules with numeric comparisons (>, >=, <, <=, =)
+  - Example: Auto-mark jobs with score ≥80 as "Interested"
+  - Example: Auto-reject jobs with score <30 as "Unsuitable"
+  - Combine score conditions with other criteria (AND/OR logic)
+- **Compound Conditions** - Create complex rules with multiple conditions
+- **Priority System** - Rules execute in priority order (higher priority first)
+- **Rule Statistics** - Track how many times each rule has triggered
+
+### ML Job Scoring (Similar to JobSync)
+- **Automatic Scoring** - Jobs are automatically scored 0-100 based on your preferences and behavior
+- **Multi-Factor Analysis**:
+  - **Skills Match** (25 points) - Matches against your preferred skills
+  - **Salary Match** (20 points) - Scores based on your desired salary range
+  - **Remote Preference** (15 points) - Preference for remote vs on-site
+  - **Location Match** (10 points) - Matches against preferred locations
+  - **Keyword Matching** (15 points) - Must-have and avoid keywords
+  - **Company Preferences** (10 points) - Preferred and avoided companies
+  - **Behavioral Learning** (15 points) - Learns from jobs you marked as interesting or applied to
+- **Configurable Weights** - Adjust the importance of each factor (0-1 scale)
+- **Visual Score Badges** - Color-coded badges on job cards:
+  - 🟢 Green (80-100): Excellent match
+  - 🔵 Blue (60-79): Good match
+  - 🟡 Yellow (40-59): Fair match
+  - ⚫ Grey (20-39): Poor match
+  - 🔴 Red (0-19): Very poor match
+- **Smart Recalculation** - Recalculate all scores with live progress indicator
+  - Automatically skips unsuitable jobs
+  - Shows progress bar and percentage
+  - Runs in background without blocking UI
+- **Min Score Filter** - Hide jobs below a certain score threshold
+- **Integration with Rules** - Use scores in automation rules for smart job triage
 
 ### Background Crawling
 - **Server-side Crawling** - Crawl job sites directly from the server without browser extensions
@@ -67,8 +116,9 @@ A Blazor application with browser extensions that automatically extract job list
 - **No Reply Detection** - Automatically marks applied jobs as No Reply after configurable days
 - **Availability Checks** - Background checks for job listing availability
 - **Auto-Archive Job** - Background job to archive rejected/ghosted jobs after configurable days
+- **Job Cleanup Job** - Automatically deletes old unsuitable, rejected, and ghosted jobs based on configurable thresholds
 - **Email Notification Job** - Daily digest email for follow-ups due and stale applications
-- **Configurable Thresholds** - No Reply, Ghosted, and Stale days are all configurable per-user in Settings
+- **Configurable Thresholds** - No Reply, Ghosted, Stale, and Auto-Delete days are all configurable per-user in Settings
 
 ### Authentication (SQL Server mode)
 - **User Accounts** - Login with cookie-based authentication and API key support
@@ -80,7 +130,10 @@ A Blazor application with browser extensions that automatically extract job list
 - **Keyword Highlighting** - Configurable keyword highlighting in job descriptions
 
 ### Notifications
-- **Email Notifications** - Daily digest emails for follow-ups due and stale applications (requires SMTP configuration)
+- **Email Notifications** - Daily digest emails for follow-ups due and stale applications
+- **Per-User SMTP Configuration** - Each user configures their own SMTP settings in Settings page
+- **No Configuration File Needed** - SMTP settings are managed entirely through the UI (no appsettings.json required)
+- **Password Reset Emails** - Uses recipient's SMTP settings for password reset notifications
 
 ### Sharing & Export
 - **WhatsApp Sharing** - Share job details directly to WhatsApp
@@ -197,9 +250,9 @@ Navigate to `https://localhost:7046` to access the dashboard.
 | Add Job | `/jobs/add` | Manually add a job |
 | Dashboard | `/dashboard` | Application stats, conversion funnel, and weekly activity |
 | Rules | `/rules` | Manage auto-classification rules |
-| Settings | `/settings` | Configure site URLs and preferences |
+| Settings | `/settings` | Configure user profile, 2FA, browser extension API key, job site URLs, ML scoring preferences, highlight keywords, pipeline thresholds, auto-archive/delete settings, SMTP/email settings, and cover letter templates |
 | History | `/history` | View audit log of changes with CSV export |
-| Background Jobs | `/background-jobs` | Monitor background crawl jobs |
+| Background Jobs | `/background-jobs` | Monitor background crawl jobs (LocalMode only) |
 | Extension Install | `/extension-install` | Extension installation guide |
 | About | `/about` | Application information |
 
@@ -327,12 +380,14 @@ JobTracker/
 ├── Services/
 │   ├── JobListingService.cs        # Job storage, filtering, pipeline stats
 │   ├── SalaryParser.cs             # Salary string parser (min/max extraction)
+│   ├── JobScoringService.cs         # ML-based job scoring engine (0-100 scoring)
 │   ├── JobCrawlService.cs          # Server-side site crawling
 │   ├── JobCrawlJob.cs              # Scheduled crawl job
 │   ├── GhostedCheckJob.cs          # Auto-ghosted detection (configurable threshold)
 │   ├── NoReplyCheckJob.cs          # Auto no-reply detection (configurable threshold)
 │   ├── AvailabilityCheckJob.cs     # Job availability checks
 │   ├── AutoArchiveJob.cs           # Auto-archive rejected/ghosted jobs
+│   ├── JobCleanupJob.cs            # Auto-delete old unsuitable/rejected/ghosted jobs
 │   ├── EmailNotificationJob.cs     # Daily digest email notifications
 │   ├── EmailService.cs             # SMTP email sending
 │   └── LocalBackgroundService.cs   # Background task runner
@@ -365,6 +420,76 @@ JobTracker/
 │   └── popup.js
 └── Program.cs                      # App configuration and API endpoints
 ```
+
+## Configuration
+
+### ML Job Scoring Setup
+
+1. **Navigate to Settings** - Go to `/settings` or click Settings in the sidebar
+2. **Scroll to "Job Scoring / ML Preferences"** section
+3. **Enable ML-based Job Scoring** - Check the checkbox
+4. **Configure Scoring Weights** (0 = disabled, 1 = full weight):
+   - Skills Match Weight
+   - Salary Match Weight
+   - Remote Preference Weight
+   - Location Weight
+   - Keywords Weight
+   - Company Preference Weight
+   - Learning from Behavior Weight
+5. **Set Your Preferences**:
+   - **Preferred Skills** - Comma-separated (e.g., "C#, .NET, Azure, React")
+   - **Salary Range** - Minimum and maximum desired salary
+   - **Remote Preference** - Check if you prefer remote jobs
+   - **Preferred Locations** - Comma-separated locations
+   - **Must-Have Keywords** - Keywords that should be in job descriptions
+   - **Avoid Keywords** - Keywords that indicate jobs you want to skip
+   - **Preferred Companies** - Companies you'd like to work for
+   - **Avoid Companies** - Companies to skip
+   - **Minimum Score to Show** - Hide jobs below this threshold (0 = show all)
+6. **Save Scoring Preferences**
+7. **Recalculate All Scores** - Click to score all existing jobs (with live progress)
+8. **View Scores** - Go to Jobs page to see score badges on each job
+
+### Score-Based Rules
+
+Create automation rules using ML scores:
+
+1. Go to **Rules** page
+2. Click **Add New Rule**
+3. Select **Field**: `Suitability Score`
+4. Select **Operator**: `>=`, `>`, `<=`, `<`, or `=`
+5. Enter **Value**: Score threshold (0-100)
+6. Set **Action**: Set Interest, Suitability, or IsRemote
+7. **Example Rules**:
+   - Score >= 80 → Set Interest = Interested
+   - Score < 30 → Set Suitability = Unsuitable
+   - Score >= 70 AND Location Contains "Remote" → Set Interest = Interested
+
+### Email Configuration
+
+1. **Navigate to Settings** → **Email / SMTP** section
+2. **Configure SMTP Settings**:
+   - SMTP Host (e.g., smtp.gmail.com)
+   - Port (e.g., 587)
+   - Username and Password
+   - From Email and From Name
+3. **Enable Email Notifications** (optional)
+4. **Configure Notification Preferences**:
+   - Enable daily email digest
+   - Follow-ups due notifications
+   - Stale applications notifications
+
+**Note**: Each user manages their own SMTP settings. There is no shared SMTP configuration.
+
+### Auto-Delete Configuration
+
+1. **Navigate to Settings** → **Auto-Archive & Auto-Delete** section
+2. **Configure Delete Thresholds**:
+   - **Delete Unsuitable** - Days to keep unsuitable jobs (0 = don't delete)
+   - **Delete Rejected** - Days to keep rejected applications (0 = don't delete)
+   - **Delete Ghosted** - Days to keep ghosted applications (0 = don't delete)
+3. **Save Settings**
+4. Background job will automatically delete old jobs based on these thresholds
 
 ## Troubleshooting
 
