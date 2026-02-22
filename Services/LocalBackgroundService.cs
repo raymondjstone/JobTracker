@@ -32,6 +32,7 @@ public class LocalBackgroundService : BackgroundService
         ["NoReplyCheck"] = ("No Reply Check", TimeSpan.FromHours(24)),
         ["JobCrawl"] = ("Job Crawl", TimeSpan.FromHours(48)),
         ["AutoArchive"] = ("Auto Archive", TimeSpan.FromHours(24)),
+        ["JobCleanup"] = ("Job Cleanup", TimeSpan.FromHours(24)),
         ["EmailNotifications"] = ("Email Notifications", TimeSpan.FromHours(24)),
     };
 
@@ -121,6 +122,7 @@ public class LocalBackgroundService : BackgroundService
             RunLoop("NoReplyCheck", RunNoReplyCheck, stoppingToken),
             RunLoop("JobCrawl", RunJobCrawl, stoppingToken),
             RunLoop("AutoArchive", RunAutoArchive, stoppingToken),
+            RunLoop("JobCleanup", RunJobCleanup, stoppingToken),
             RunLoop("EmailNotifications", RunEmailNotifications, stoppingToken),
         };
 
@@ -308,6 +310,14 @@ public class LocalBackgroundService : BackgroundService
     {
         using var scope = _scopeFactory.CreateScope();
         var job = scope.ServiceProvider.GetRequiredService<AutoArchiveJob>();
+        job.Run();
+        return Task.CompletedTask;
+    }
+
+    private Task RunJobCleanup()
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var job = scope.ServiceProvider.GetRequiredService<JobCleanupJob>();
         job.Run();
         return Task.CompletedTask;
     }

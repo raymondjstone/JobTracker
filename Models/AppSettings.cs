@@ -19,6 +19,9 @@ public class AppSettings
     public bool EmailOnFollowUpDue { get; set; } = true;
     public bool AutoArchiveEnabled { get; set; }
     public int AutoArchiveDays { get; set; } = 30;
+    public int DeleteUnsuitableAfterDays { get; set; } = 90;
+    public int DeleteRejectedAfterDays { get; set; } = 60;
+    public int DeleteGhostedAfterDays { get; set; } = 60;
     public bool DarkMode { get; set; }
 }
 

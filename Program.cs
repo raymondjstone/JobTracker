@@ -128,6 +128,7 @@ builder.Services.AddTransient<JobCrawlJob>();
 builder.Services.AddTransient<GhostedCheckJob>();
 builder.Services.AddTransient<NoReplyCheckJob>();
 builder.Services.AddTransient<AutoArchiveJob>();
+builder.Services.AddTransient<JobCleanupJob>();
 builder.Services.AddTransient<EmailNotificationJob>();
 
 // In LocalMode, use a BackgroundService for recurring jobs
@@ -799,6 +800,11 @@ if (!localMode && string.Equals(storageProvider, "SqlServer", StringComparison.O
         "job-crawl",
         job => job.RunAsync(),
         "0 7 * * *"); // 7:00 AM daily
+
+    RecurringJob.AddOrUpdate<JobCleanupJob>(
+        "job-cleanup",
+        job => job.Run(),
+        "0 6 * * *"); // 6:00 AM daily
 }
 
 app.Run();
