@@ -236,9 +236,9 @@ public partial class LinkedInJobExtractor
                     job.Salary = ExtractSalaryFromJson(salary);
                 }
 
-                job.Skills = ExtractSkills(job.Description);
+                job.Skills = ExtractSkills(job.Description ?? "");
                 job.IsRemote = job.Location.Contains("Remote", StringComparison.OrdinalIgnoreCase) ||
-                              job.Description.Contains("remote", StringComparison.OrdinalIgnoreCase);
+                              (job.Description?.Contains("remote", StringComparison.OrdinalIgnoreCase) ?? false);
 
                 return job;
             }

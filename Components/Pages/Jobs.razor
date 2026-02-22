@@ -6,7 +6,8 @@
 @attribute [Authorize]
 @inject JobListingService JobService
 @inject AppSettingsService SettingsService
-@inject NavigationManager NavigationManager
+@inject AIJobAssistantService AIAssistant
+@inject NavigationManager Navigation
 @inject IJSRuntime JSRuntime
 @inject JobAvailabilityService AvailabilityService
 @inject JobCrawlService CrawlService
@@ -18,6 +19,14 @@
 <PageTitle>Job Listings</PageTitle>
 
 <ExtensionCheck />
+
+@if (!string.IsNullOrEmpty(aiErrorMessage))
+{
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        <i class="bi bi-exclamation-triangle-fill"></i> <strong>AI Error:</strong> @aiErrorMessage
+        <button type="button" class="btn-close" @onclick="() => aiErrorMessage = null"></button>
+    </div>
+}
 
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h1 class="mb-0">Job Listings</h1>
@@ -705,6 +714,25 @@ else
                             </button>
                         }
 
+                        @* AI Analyze Button *@
+                        @if (aiSettings.Enabled && !string.IsNullOrEmpty(job.Description))
+                        {
+                            <button class="btn btn-sm btn-outline-primary mb-2 ms-1"
+                                    @onclick="() => AnalyzeJobWithAI(job)"
+                                    disabled="@(analyzingJobId == job.Id)"
+                                    title="Analyze job with AI">
+                                @if (analyzingJobId == job.Id)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                                    <text>Analyzing...</text>
+                                }
+                                else
+                                {
+                                    <i class="bi bi-robot"></i> <text>Analyze with AI</text>
+                                }
+                            </button>
+                        }
+
                         <div class="interest-buttons mt-3 d-flex gap-1 flex-wrap">
                             <button class="btn btn-sm @(job.Interest == InterestStatus.Interested ? "btn-success" : "btn-outline-success")" 
                                     @onclick="() => SetInterest(job.Id, InterestStatus.Interested)" 
@@ -1338,6 +1366,694 @@ else
     [data-bs-theme=dark] .bg-light { background-color: #2b3035 !important; }
 </style>
 
+@* AI Job Analysis Modal *@
+@if (showAIAnalysis && selectedJobForAI != null && currentJobAnalysis != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title"><i class="bi bi-robot"></i> AI Job Analysis - @selectedJobForAI.Title</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="CloseAIModals"></button>
+                </div>
+                <div class="modal-body">
+                    @if (!string.IsNullOrEmpty(currentJobAnalysis.Summary))
+                    {
+                        <div class="alert alert-info">
+                            <h6><i class="bi bi-lightbulb"></i> Summary</h6>
+                            <p class="mb-0">@currentJobAnalysis.Summary</p>
+                        </div>
+                    }
+
+                    @if (currentJobAnalysis.Responsibilities.Any())
+                    {
+                        <div class="mb-3">
+                            <h6><i class="bi bi-list-check"></i> Key Responsibilities</h6>
+                            <ul class="list-group">
+                                @foreach (var resp in currentJobAnalysis.Responsibilities)
+                                {
+                                    <li class="list-group-item">@resp</li>
+                                }
+                            </ul>
+                        </div>
+                    }
+
+                    @if (currentJobAnalysis.RequiredSkills.Any())
+                    {
+                        <div class="mb-3">
+                            <h6><i class="bi bi-gear"></i> Required Skills</h6>
+                            <div class="d-flex flex-wrap gap-2">
+                                @foreach (var skill in currentJobAnalysis.RequiredSkills)
+                                {
+                                    var hasSkill = aiSettings.UserSkills.Any(s => s.Contains(skill, StringComparison.OrdinalIgnoreCase));
+                                    <span class="badge @(hasSkill ? "bg-success" : "bg-secondary") fs-6">
+                                        @if (hasSkill) { <i class="bi bi-check-circle"></i> } @skill
+                                    </span>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    @if (currentJobAnalysis.Qualifications.Any())
+                    {
+                        <div class="mb-3">
+                            <h6><i class="bi bi-mortarboard"></i> Qualifications</h6>
+                            <ul class="list-group">
+                                @foreach (var qual in currentJobAnalysis.Qualifications)
+                                {
+                                    <li class="list-group-item">@qual</li>
+                                }
+                            </ul>
+                        </div>
+                    }
+
+                    @if (currentJobAnalysis.NiceToHaveSkills.Any())
+                    {
+                        <div class="mb-3">
+                            <h6><i class="bi bi-star"></i> Nice-to-Have Skills</h6>
+                            <div class="d-flex flex-wrap gap-2">
+                                @foreach (var skill in currentJobAnalysis.NiceToHaveSkills)
+                                {
+                                    var hasSkill = aiSettings.UserSkills.Any(s => s.Contains(skill, StringComparison.OrdinalIgnoreCase));
+                                    <span class="badge @(hasSkill ? "bg-info" : "bg-light text-dark") fs-6">
+                                        @if (hasSkill) { <i class="bi bi-check-circle"></i> } @skill
+                                    </span>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    @if (currentSkillGap != null && aiSettings.ShowSkillGaps)
+                    {
+                        <div class="alert alert-warning">
+                            <h6><i class="bi bi-graph-up-arrow"></i> Skill Match: @currentSkillGap.MatchPercentage%</h6>
+                            <div class="progress" style="height: 25px;">
+                                <div class="progress-bar @(currentSkillGap.MatchPercentage >= 80 ? "bg-success" : currentSkillGap.MatchPercentage >= 50 ? "bg-warning" : "bg-danger")"
+                                     style="width: @currentSkillGap.MatchPercentage%">
+                                    @currentSkillGap.MatchPercentage%
+                                </div>
+                            </div>
+                            @if (currentSkillGap.MissingRequiredSkills.Any())
+                            {
+                                <div class="mt-2">
+                                    <small><strong>Missing Skills:</strong> @string.Join(", ", currentSkillGap.MissingRequiredSkills)</small>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    @if (aiSettings.ShowSkillGaps)
+                    {
+                        <button class="btn btn-outline-warning" @onclick="() => ShowSkillGapModal(selectedJobForAI)">
+                            <i class="bi bi-graph-up-arrow"></i> Detailed Skill Gap
+                        </button>
+                    }
+                    @if (currentCoverLetter != null || aiSettings.Enabled)
+                    {
+                        <button class="btn btn-outline-primary" @onclick="() => ShowCoverLetterAssistant(selectedJobForAI)">
+                            <i class="bi bi-file-earmark-text"></i> Cover Letter Assistant
+                        </button>
+                    }
+                    @if (aiSettings.ShowSimilarJobs && similarJobs.Any())
+                    {
+                        <button class="btn btn-outline-info" @onclick="() => ShowSimilarJobsModal(selectedJobForAI)">
+                            <i class="bi bi-collection"></i> Similar Jobs (@similarJobs.Count)
+                        </button>
+                    }
+                    <button class="btn btn-outline-success" @onclick="() => ShowInterviewPrepModal(selectedJobForAI)">
+                        <i class="bi bi-clipboard-check"></i> Interview Prep
+                    </button>
+                    <button class="btn btn-outline-warning" @onclick="() => ShowSalaryNegotiationModal(selectedJobForAI)">
+                        <i class="bi bi-currency-dollar"></i> Salary Tips
+                    </button>
+                    <button class="btn btn-outline-primary" @onclick="() => ShowResumeOptimizationModal(selectedJobForAI)">
+                        <i class="bi bi-file-person"></i> Resume Tips
+                    </button>
+                    <button class="btn btn-outline-dark" @onclick="() => ShowApplicationPredictionModal(selectedJobForAI)">
+                        <i class="bi bi-graph-up"></i> Success Prediction
+                    </button>
+                    <button class="btn btn-secondary" @onclick="CloseAIModals">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Skill Gap Analysis Modal *@
+@if (showSkillGapModal && selectedJobForAI != null && currentSkillGap != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header bg-warning text-dark">
+                    <h5 class="modal-title"><i class="bi bi-graph-up-arrow"></i> Skill Gap Analysis</h5>
+                    <button type="button" class="btn-close" @onclick="() => showSkillGapModal = false"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="text-center mb-4">
+                        <h2>@currentSkillGap.MatchPercentage%</h2>
+                        <p class="text-muted">Skill Match Score</p>
+                        <div class="progress" style="height: 30px;">
+                            <div class="progress-bar progress-bar-striped @(currentSkillGap.MatchPercentage >= 80 ? "bg-success" : currentSkillGap.MatchPercentage >= 50 ? "bg-warning" : "bg-danger")"
+                                 style="width: @currentSkillGap.MatchPercentage%">
+                                @currentSkillGap.MatchPercentage%
+                            </div>
+                        </div>
+                    </div>
+
+                    @if (currentSkillGap.MatchedSkills.Any())
+                    {
+                        <div class="mb-3">
+                            <h6 class="text-success"><i class="bi bi-check-circle"></i> Skills You Have (@currentSkillGap.MatchedSkills.Count)</h6>
+                            <div class="d-flex flex-wrap gap-2">
+                                @foreach (var skill in currentSkillGap.MatchedSkills)
+                                {
+                                    <span class="badge bg-success fs-6"><i class="bi bi-check-circle"></i> @skill</span>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    @if (currentSkillGap.MissingRequiredSkills.Any())
+                    {
+                        <div class="mb-3">
+                            <h6 class="text-danger"><i class="bi bi-x-circle"></i> Missing Required Skills (@currentSkillGap.MissingRequiredSkills.Count)</h6>
+                            <div class="d-flex flex-wrap gap-2">
+                                @foreach (var skill in currentSkillGap.MissingRequiredSkills)
+                                {
+                                    <span class="badge bg-danger fs-6"><i class="bi bi-exclamation-circle"></i> @skill</span>
+                                }
+                            </div>
+                            <div class="alert alert-warning mt-2">
+                                <small><i class="bi bi-lightbulb"></i> Consider highlighting these skills in your cover letter if you have related experience.</small>
+                            </div>
+                        </div>
+                    }
+
+                    @if (currentSkillGap.MatchedNiceToHaveSkills.Any())
+                    {
+                        <div class="mb-3">
+                            <h6 class="text-info"><i class="bi bi-star"></i> Bonus Skills You Have (@currentSkillGap.MatchedNiceToHaveSkills.Count)</h6>
+                            <div class="d-flex flex-wrap gap-2">
+                                @foreach (var skill in currentSkillGap.MatchedNiceToHaveSkills)
+                                {
+                                    <span class="badge bg-info fs-6"><i class="bi bi-star"></i> @skill</span>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    @if (currentSkillGap.MissingNiceToHaveSkills.Any())
+                    {
+                        <div class="mb-3">
+                            <h6 class="text-muted"><i class="bi bi-star"></i> Optional Skills to Learn (@currentSkillGap.MissingNiceToHaveSkills.Count)</h6>
+                            <div class="d-flex flex-wrap gap-2">
+                                @foreach (var skill in currentSkillGap.MissingNiceToHaveSkills)
+                                {
+                                    <span class="badge bg-secondary fs-6">@skill</span>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="() => showSkillGapModal = false">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Cover Letter Assistant Modal *@
+@if (showCoverLetterModal && selectedJobForAI != null && currentCoverLetter != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title"><i class="bi bi-file-earmark-text"></i> AI Cover Letter Assistant</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="() => showCoverLetterModal = false"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info">
+                        <i class="bi bi-lightbulb"></i> AI-generated suggestions based on your profile and the job requirements. Customize as needed!
+                    </div>
+
+                    <div class="mb-3">
+                        <h6><i class="bi bi-1-circle"></i> Opening Paragraph</h6>
+                        <div class="p-3 bg-light rounded">
+                            <p>@currentCoverLetter.OpeningParagraph</p>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <h6><i class="bi bi-2-circle"></i> Key Selling Points</h6>
+                        @foreach (var point in currentCoverLetter.SellingPoints)
+                        {
+                            <div class="p-2 mb-2 bg-light rounded">
+                                <p class="mb-0">• @point</p>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="mb-3">
+                        <h6><i class="bi bi-3-circle"></i> Closing Paragraph</h6>
+                        <div class="p-3 bg-light rounded">
+                            <p>@currentCoverLetter.ClosingParagraph</p>
+                        </div>
+                    </div>
+
+                    <hr />
+
+                    <div class="alert alert-success">
+                        <h6><i class="bi bi-file-earmark-check"></i> Complete Cover Letter Preview</h6>
+                        <div class="p-3 bg-white rounded">
+                            <p>@currentCoverLetter.OpeningParagraph</p>
+                            <p>
+                                @foreach (var point in currentCoverLetter.SellingPoints)
+                                {
+                                    <text>• @point<br /></text>
+                                }
+                            </p>
+                            <p>@currentCoverLetter.ClosingParagraph</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-primary" @onclick="UseCoverLetterSuggestion">
+                        <i class="bi bi-check-lg"></i> Use This Cover Letter
+                    </button>
+                    <button class="btn btn-secondary" @onclick="() => showCoverLetterModal = false">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Similar Jobs Modal *@
+@if (showSimilarJobsModal && selectedJobForAI != null && similarJobs.Any())
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header bg-info text-white">
+                    <h5 class="modal-title"><i class="bi bi-collection"></i> Similar Jobs - Based on @selectedJobForAI.Title</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="() => showSimilarJobsModal = false"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        @foreach (var recommendation in similarJobs)
+                        {
+                            var simJob = recommendation.Job;
+                            <div class="col-md-6">
+                                <div class="card h-100">
+                                    <div class="card-header">
+                                        <h6 class="mb-0">@simJob.Title</h6>
+                                        <small class="text-muted">@simJob.Company</small>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="mb-2">
+                                            <div class="progress" style="height: 20px;">
+                                                <div class="progress-bar bg-info" style="width: @recommendation.SimilarityScore%">
+                                                    @((int)recommendation.SimilarityScore)% Match
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="mb-2">
+                                            <small><i class="bi bi-geo-alt"></i> @simJob.Location</small>
+                                            @if (simJob.IsRemote)
+                                            {
+                                                <span class="badge bg-success ms-1"><i class="bi bi-house"></i> Remote</span>
+                                            }
+                                        </div>
+                                        <div class="mb-2">
+                                            <small><strong>Why similar:</strong></small><br />
+                                            @foreach (var reason in recommendation.Reasons)
+                                            {
+                                                <span class="badge bg-light text-dark me-1">@reason</span>
+                                            }
+                                        </div>
+                                        @if (simJob.SuitabilityScore > 0)
+                                        {
+                                            <div class="mt-2">
+                                                <span class="badge @GetScoreBadgeClass(simJob.SuitabilityScore) fs-6">
+                                                    ? @simJob.SuitabilityScore
+                                                </span>
+                                            </div>
+                                        }
+                                    </div>
+                                    <div class="card-footer">
+                                        <button class="btn btn-sm btn-outline-primary" @onclick="() => { ShowJobDetails(simJob); showSimilarJobsModal = false; }">
+                                            <i class="bi bi-eye"></i> View Job
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="() => showSimilarJobsModal = false">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Interview Preparation Modal *@
+@if (showInterviewPrepModal && selectedJobForAI != null && currentInterviewQuestions != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header bg-success text-white">
+                    <h5 class="modal-title"><i class="bi bi-clipboard-check"></i> Interview Preparation - @selectedJobForAI.Title</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="() => showInterviewPrepModal = false"></button>
+                </div>
+                <div class="modal-body">
+                    @if (currentInterviewQuestions.TechnicalQuestions.Any())
+                    {
+                        <div class="mb-4">
+                            <h5 class="text-primary"><i class="bi bi-gear-fill"></i> Technical Questions</h5>
+                            <p class="text-muted small">Be prepared to answer these technical questions:</p>
+                            <div class="list-group">
+                                @foreach (var (question, index) in currentInterviewQuestions.TechnicalQuestions.Select((q, i) => (q, i + 1)))
+                                {
+                                    <div class="list-group-item">
+                                        <div class="d-flex w-100 justify-content-between">
+                                            <span class="badge bg-primary me-2">Q@index</span>
+                                        </div>
+                                        <p class="mb-0 mt-2">@question</p>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    @if (currentInterviewQuestions.BehavioralQuestions.Any())
+                    {
+                        <div class="mb-4">
+                            <h5 class="text-info"><i class="bi bi-people-fill"></i> Behavioral Questions</h5>
+                            <p class="text-muted small">Prepare STAR method answers (Situation, Task, Action, Result):</p>
+                            <div class="list-group">
+                                @foreach (var (question, index) in currentInterviewQuestions.BehavioralQuestions.Select((q, i) => (q, i + 1)))
+                                {
+                                    <div class="list-group-item">
+                                        <div class="d-flex w-100 justify-content-between">
+                                            <span class="badge bg-info me-2">Q@index</span>
+                                        </div>
+                                        <p class="mb-0 mt-2">@question</p>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    @if (currentInterviewQuestions.CompanySpecificQuestions.Any())
+                    {
+                        <div class="mb-4">
+                            <h5 class="text-success"><i class="bi bi-building"></i> Questions to Ask Them</h5>
+                            <p class="text-muted small">Ask these to show your interest and gather important information:</p>
+                            <ul class="list-group">
+                                @foreach (var question in currentInterviewQuestions.CompanySpecificQuestions)
+                                {
+                                    <li class="list-group-item"><i class="bi bi-check-circle text-success"></i> @question</li>
+                                }
+                            </ul>
+                        </div>
+                    }
+
+                    @if (currentInterviewQuestions.PreparationTips.Any())
+                    {
+                        <div class="alert alert-warning">
+                            <h6><i class="bi bi-lightbulb-fill"></i> Preparation Tips</h6>
+                            <ul class="mb-0">
+                                @foreach (var tip in currentInterviewQuestions.PreparationTips)
+                                {
+                                    <li>@tip</li>
+                                }
+                            </ul>
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="() => showInterviewPrepModal = false">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Salary Negotiation Modal *@
+@if (showSalaryNegotiationModal && selectedJobForAI != null && currentSalaryTips != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header bg-warning text-dark">
+                    <h5 class="modal-title"><i class="bi bi-currency-dollar"></i> Salary Negotiation Tips - @selectedJobForAI.Title</h5>
+                    <button type="button" class="btn-close" @onclick="() => showSalaryNegotiationModal = false"></button>
+                </div>
+                <div class="modal-body">
+                    @if (!string.IsNullOrEmpty(currentSalaryTips.MarketRateEstimate))
+                    {
+                        <div class="alert alert-info">
+                            <h6><i class="bi bi-graph-up"></i> Market Rate Estimate</h6>
+                            <p class="mb-0">@currentSalaryTips.MarketRateEstimate</p>
+                        </div>
+                    }
+
+                    @if (currentSalaryTips.NegotiationStrategies.Any())
+                    {
+                        <div class="mb-3">
+                            <h6><i class="bi bi-lightbulb"></i> Negotiation Strategies</h6>
+                            <ul class="list-group">
+                                @foreach (var strategy in currentSalaryTips.NegotiationStrategies)
+                                {
+                                    <li class="list-group-item"><i class="bi bi-check-circle text-success"></i> @strategy</li>
+                                }
+                            </ul>
+                        </div>
+                    }
+
+                    @if (currentSalaryTips.ValuePoints.Any())
+                    {
+                        <div class="mb-3">
+                            <h6><i class="bi bi-star-fill"></i> Your Value Points</h6>
+                            <div class="alert alert-success">
+                                <p class="mb-2"><strong>Emphasize these in your negotiation:</strong></p>
+                                <ul class="mb-0">
+                                    @foreach (var point in currentSalaryTips.ValuePoints)
+                                    {
+                                        <li>@point</li>
+                                    }
+                                </ul>
+                            </div>
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(currentSalaryTips.OpeningStatement))
+                    {
+                        <div class="mb-3">
+                            <h6><i class="bi bi-chat-left-quote"></i> Opening Statement</h6>
+                            <div class="p-3 bg-light rounded">
+                                <p class="mb-0 fst-italic">"@currentSalaryTips.OpeningStatement"</p>
+                            </div>
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(currentSalaryTips.CounterOfferScript))
+                    {
+                        <div class="mb-3">
+                            <h6><i class="bi bi-reply-fill"></i> Counter-Offer Script</h6>
+                            <div class="p-3 bg-light rounded">
+                                <p class="mb-0 fst-italic">"@currentSalaryTips.CounterOfferScript"</p>
+                            </div>
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="() => showSalaryNegotiationModal = false">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Resume Optimization Modal *@
+@if (showResumeOptimizationModal && selectedJobForAI != null && currentResumeOptimization != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title"><i class="bi bi-file-person"></i> Resume Optimization - @selectedJobForAI.Title</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="() => showResumeOptimizationModal = false"></button>
+                </div>
+                <div class="modal-body">
+                    @if (!string.IsNullOrEmpty(currentResumeOptimization.TailoredSummary))
+                    {
+                        <div class="alert alert-primary">
+                            <h6><i class="bi bi-person-badge"></i> Tailored Professional Summary</h6>
+                            <p class="mb-0">@currentResumeOptimization.TailoredSummary</p>
+                        </div>
+                    }
+
+                    @if (currentResumeOptimization.SkillsToHighlight.Any())
+                    {
+                        <div class="mb-3">
+                            <h6><i class="bi bi-stars"></i> Skills to Highlight</h6>
+                            <div class="d-flex flex-wrap gap-2">
+                                @foreach (var skill in currentResumeOptimization.SkillsToHighlight)
+                                {
+                                    <span class="badge bg-success fs-6"><i class="bi bi-star-fill"></i> @skill</span>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    @if (currentResumeOptimization.KeywordsToInclude.Any())
+                    {
+                        <div class="mb-3">
+                            <h6><i class="bi bi-key-fill"></i> ATS Keywords to Include</h6>
+                            <div class="alert alert-info">
+                                <p class="small mb-2"><strong>Include these keywords for Applicant Tracking Systems:</strong></p>
+                                <div class="d-flex flex-wrap gap-2">
+                                    @foreach (var keyword in currentResumeOptimization.KeywordsToInclude)
+                                    {
+                                        <span class="badge bg-info">@keyword</span>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    }
+
+                    @if (currentResumeOptimization.ExperienceToEmphasize.Any())
+                    {
+                        <div class="mb-3">
+                            <h6><i class="bi bi-briefcase-fill"></i> Experience to Emphasize</h6>
+                            <ul class="list-group">
+                                @foreach (var exp in currentResumeOptimization.ExperienceToEmphasize)
+                                {
+                                    <li class="list-group-item"><i class="bi bi-check-circle text-success"></i> @exp</li>
+                                }
+                            </ul>
+                        </div>
+                    }
+
+                    @if (currentResumeOptimization.SuggestedImprovements.Any())
+                    {
+                        <div class="mb-3">
+                            <h6><i class="bi bi-arrow-up-circle-fill"></i> Suggested Improvements</h6>
+                            <div class="alert alert-warning">
+                                <ul class="mb-0">
+                                    @foreach (var improvement in currentResumeOptimization.SuggestedImprovements)
+                                    {
+                                        <li>@improvement</li>
+                                    }
+                                </ul>
+                            </div>
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="() => showResumeOptimizationModal = false">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Application Success Prediction Modal *@
+@if (showApplicationPredictionModal && selectedJobForAI != null && currentApplicationPrediction != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header bg-dark text-white">
+                    <h5 class="modal-title"><i class="bi bi-graph-up"></i> Application Success Prediction - @selectedJobForAI.Title</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="() => showApplicationPredictionModal = false"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="text-center mb-4">
+                        <h1 class="display-3 @(currentApplicationPrediction.SuccessProbability >= 70 ? "text-success" : currentApplicationPrediction.SuccessProbability >= 40 ? "text-warning" : "text-danger")">@currentApplicationPrediction.SuccessProbability%</h1>
+                        <p class="text-muted">Success Probability</p>
+                        <div class="progress" style="height: 30px;">
+                            <div class="progress-bar @(currentApplicationPrediction.SuccessProbability >= 70 ? "bg-success" : currentApplicationPrediction.SuccessProbability >= 40 ? "bg-warning" : "bg-danger")"
+                                 style="width: @currentApplicationPrediction.SuccessProbability%">
+                                @currentApplicationPrediction.SuccessProbability%
+                            </div>
+                        </div>
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(currentApplicationPrediction.PredictionReason))
+                    {
+                        <div class="alert alert-info">
+                            <h6><i class="bi bi-info-circle"></i> Why This Prediction?</h6>
+                            <p class="mb-0">@currentApplicationPrediction.PredictionReason</p>
+                        </div>
+                    }
+
+                    <div class="row">
+                        @if (currentApplicationPrediction.StrengthFactors.Any())
+                        {
+                            <div class="col-md-6 mb-3">
+                                <h6 class="text-success"><i class="bi bi-check-circle-fill"></i> Strength Factors</h6>
+                                <ul class="list-group">
+                                    @foreach (var strength in currentApplicationPrediction.StrengthFactors)
+                                    {
+                                        <li class="list-group-item list-group-item-success"><i class="bi bi-plus-circle"></i> @strength</li>
+                                    }
+                                </ul>
+                            </div>
+                        }
+
+                        @if (currentApplicationPrediction.RiskFactors.Any())
+                        {
+                            <div class="col-md-6 mb-3">
+                                <h6 class="text-danger"><i class="bi bi-exclamation-triangle-fill"></i> Risk Factors</h6>
+                                <ul class="list-group">
+                                    @foreach (var risk in currentApplicationPrediction.RiskFactors)
+                                    {
+                                        <li class="list-group-item list-group-item-danger"><i class="bi bi-dash-circle"></i> @risk</li>
+                                    }
+                                </ul>
+                            </div>
+                        }
+                    </div>
+
+                    @if (currentApplicationPrediction.ImprovementSuggestions.Any())
+                    {
+                        <div class="mb-3">
+                            <h6><i class="bi bi-lightbulb-fill"></i> How to Improve Your Chances</h6>
+                            <div class="alert alert-warning">
+                                <ul class="mb-0">
+                                    @foreach (var suggestion in currentApplicationPrediction.ImprovementSuggestions)
+                                    {
+                                        <li>@suggestion</li>
+                                    }
+                                </ul>
+                            </div>
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(currentApplicationPrediction.RecommendedAction))
+                    {
+                        <div class="alert @(currentApplicationPrediction.SuccessProbability >= 70 ? "alert-success" : currentApplicationPrediction.SuccessProbability >= 40 ? "alert-warning" : "alert-danger")">
+                            <h6><i class="bi bi-signpost-fill"></i> Recommended Action</h6>
+                            <p class="mb-0 fw-bold">@currentApplicationPrediction.RecommendedAction</p>
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="() => showApplicationPredictionModal = false">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private enum TabType { Browse, Possible, Applied, Pipeline, Unsuitable, Archived }
     
@@ -1370,6 +2086,28 @@ else
     private JobAvailabilityProgress? scanProgress = null;
     private CancellationTokenSource? scanCts = null;
     private Guid? fetchingDescriptionJobId = null;
+
+    // AI Analysis state
+    private Guid? analyzingJobId = null;
+    private bool showAIAnalysis = false;
+    private bool showSkillGapModal = false;
+    private bool showCoverLetterModal = false;
+    private bool showSimilarJobsModal = false;
+    private bool showInterviewPrepModal = false;
+    private bool showSalaryNegotiationModal = false;
+    private bool showResumeOptimizationModal = false;
+    private bool showApplicationPredictionModal = false;
+    private JobListing? selectedJobForAI = null;
+    private JobAnalysis? currentJobAnalysis = null;
+    private SkillGapAnalysis? currentSkillGap = null;
+    private CoverLetterSuggestions? currentCoverLetter = null;
+    private List<JobRecommendation> similarJobs = new();
+    private InterviewQuestions? currentInterviewQuestions = null;
+    private SalaryNegotiationTips? currentSalaryTips = null;
+    private ResumeOptimization? currentResumeOptimization = null;
+    private ApplicationPrediction? currentApplicationPrediction = null;
+    private AIAssistantSettings aiSettings = new();
+    private string? aiErrorMessage = null;
 
     // Notes / Cover Letter editing state
     private string notesTab = "notes";
@@ -1417,6 +2155,7 @@ else
         var initSettings = SettingsService.GetSettings();
         pipelineSettings = initSettings.Pipeline;
         coverLetterTemplates = initSettings.CoverLetterTemplates;
+        aiSettings = initSettings.AIAssistant;
         RefreshData();
         
         // Auto-refresh every 5 seconds to pick up changes from extensions
@@ -2206,6 +2945,244 @@ else
             .Replace("{Company}", selectedJob.Company ?? "")
             .Replace("{Title}", selectedJob.Title ?? "")
             .Replace("{Location}", selectedJob.Location ?? "");
+    }
+
+    // AI Assistant Methods
+    private async Task AnalyzeJobWithAI(JobListing job)
+    {
+        if (!aiSettings.Enabled)
+        {
+            aiErrorMessage = "AI Assistant is not enabled. Please enable it in Settings.";
+            Console.WriteLine("[AI] AI Assistant is not enabled");
+            return;
+        }
+
+        if (string.IsNullOrEmpty(aiSettings.ApiKey))
+        {
+            aiErrorMessage = "OpenAI API Key is not configured. Please add your API key in Settings.";
+            Console.WriteLine("[AI] No API key configured");
+            return;
+        }
+
+        analyzingJobId = job.Id;
+        selectedJobForAI = job;
+        aiErrorMessage = null;
+        StateHasChanged();
+
+        Console.WriteLine($"[AI] Starting analysis for job: {job.Title}");
+
+        try
+        {
+            var userId = CurrentUser.GetCurrentUserId();
+            Console.WriteLine($"[AI] User ID: {userId}");
+
+            // Analyze job
+            Console.WriteLine($"[AI] Calling AnalyzeJobAsync...");
+            currentJobAnalysis = await AIAssistant.AnalyzeJobAsync(job, userId);
+
+            if (currentJobAnalysis == null)
+            {
+                aiErrorMessage = "AI analysis failed. Please check your API key and try again.";
+                Console.WriteLine("[AI] AnalyzeJobAsync returned null");
+                return;
+            }
+
+            Console.WriteLine($"[AI] Analysis successful. Summary: {currentJobAnalysis.Summary?.Substring(0, Math.Min(50, currentJobAnalysis.Summary?.Length ?? 0))}");
+
+            // Save AI analysis to job
+            job.AISummary = currentJobAnalysis.Summary;
+            job.AIResponsibilities = currentJobAnalysis.Responsibilities;
+            job.AIRequiredSkills = currentJobAnalysis.RequiredSkills;
+            job.AIQualifications = currentJobAnalysis.Qualifications;
+            job.AINiceToHaveSkills = currentJobAnalysis.NiceToHaveSkills;
+            JobService.UpdateJobListing(job);
+            Console.WriteLine($"[AI] Saved analysis to job");
+
+            // Calculate skill gap if enabled
+            if (aiSettings.ShowSkillGaps)
+            {
+                Console.WriteLine($"[AI] Calculating skill gaps...");
+                currentSkillGap = AIAssistant.AnalyzeSkillGaps(
+                    currentJobAnalysis.RequiredSkills,
+                    currentJobAnalysis.NiceToHaveSkills,
+                    aiSettings.UserSkills
+                );
+                Console.WriteLine($"[AI] Skill match: {currentSkillGap.MatchPercentage}%");
+            }
+
+            // Generate cover letter if enabled
+            if (aiSettings.ShowSimilarJobs)
+            {
+                Console.WriteLine($"[AI] Finding similar jobs...");
+                var allJobs = JobService.GetAllJobListings(userId).ToList();
+                similarJobs = AIAssistant.GetSimilarJobs(job, allJobs, 5);
+                Console.WriteLine($"[AI] Found {similarJobs.Count} similar jobs");
+            }
+
+            // Auto-generate cover letter if enabled
+            if (aiSettings.AutoGenerateCoverLetter)
+            {
+                Console.WriteLine($"[AI] Generating cover letter...");
+                currentCoverLetter = await AIAssistant.GenerateCoverLetterSuggestionsAsync(
+                    job, userId, aiSettings.UserSkills, aiSettings.UserExperience
+                );
+
+                if (currentCoverLetter != null)
+                {
+                    job.AICoverLetterOpening = currentCoverLetter.OpeningParagraph;
+                    job.AICoverLetterPoints = currentCoverLetter.SellingPoints;
+                    job.AICoverLetterClosing = currentCoverLetter.ClosingParagraph;
+                    JobService.UpdateJobListing(job);
+                    Console.WriteLine($"[AI] Cover letter generated");
+                }
+            }
+
+            showAIAnalysis = true;
+            Console.WriteLine($"[AI] Showing AI analysis modal");
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            aiErrorMessage = $"Error analyzing job: {ex.Message}";
+            Console.WriteLine($"[AI] Error analyzing job: {ex.Message}");
+            Console.WriteLine($"[AI] Stack trace: {ex.StackTrace}");
+        }
+        finally
+        {
+            analyzingJobId = null;
+            StateHasChanged();
+        }
+    }
+
+    private void ShowSkillGapModal(JobListing job)
+    {
+        selectedJobForAI = job;
+        if (!string.IsNullOrEmpty(job.AISummary) && job.AIRequiredSkills.Any())
+        {
+            currentSkillGap = AIAssistant.AnalyzeSkillGaps(
+                job.AIRequiredSkills,
+                job.AINiceToHaveSkills,
+                aiSettings.UserSkills
+            );
+            showSkillGapModal = true;
+        }
+    }
+
+    private async Task ShowCoverLetterAssistant(JobListing job)
+    {
+        selectedJobForAI = job;
+
+        if (!string.IsNullOrEmpty(job.AICoverLetterOpening))
+        {
+            // Use existing AI cover letter
+            currentCoverLetter = new CoverLetterSuggestions
+            {
+                OpeningParagraph = job.AICoverLetterOpening,
+                SellingPoints = job.AICoverLetterPoints,
+                ClosingParagraph = job.AICoverLetterClosing ?? ""
+            };
+        }
+        else if (aiSettings.Enabled && !string.IsNullOrEmpty(aiSettings.ApiKey))
+        {
+            // Generate new cover letter
+            var userId = CurrentUser.GetCurrentUserId();
+            currentCoverLetter = await AIAssistant.GenerateCoverLetterSuggestionsAsync(
+                job, userId, aiSettings.UserSkills, aiSettings.UserExperience
+            );
+        }
+
+        if (currentCoverLetter != null)
+        {
+            showCoverLetterModal = true;
+        }
+    }
+
+    private void ShowSimilarJobsModal(JobListing job)
+    {
+        selectedJobForAI = job;
+        var userId = CurrentUser.GetCurrentUserId();
+        var allJobs = JobService.GetAllJobListings(userId).ToList();
+        similarJobs = AIAssistant.GetSimilarJobs(job, allJobs, 10);
+        showSimilarJobsModal = true;
+    }
+
+    private void CloseAIModals()
+    {
+        showAIAnalysis = false;
+        showSkillGapModal = false;
+        showCoverLetterModal = false;
+        showSimilarJobsModal = false;
+        showInterviewPrepModal = false;
+        showSalaryNegotiationModal = false;
+        showResumeOptimizationModal = false;
+        showApplicationPredictionModal = false;
+        selectedJobForAI = null;
+    }
+
+    private async Task ShowInterviewPrepModal(JobListing job)
+    {
+        selectedJobForAI = job;
+        var userId = CurrentUser.GetCurrentUserId();
+        currentInterviewQuestions = await AIAssistant.GenerateInterviewQuestionsAsync(job, userId);
+
+        if (currentInterviewQuestions != null)
+        {
+            showInterviewPrepModal = true;
+        }
+    }
+
+    private async Task ShowSalaryNegotiationModal(JobListing job)
+    {
+        selectedJobForAI = job;
+        var userId = CurrentUser.GetCurrentUserId();
+        currentSalaryTips = await AIAssistant.GenerateSalaryNegotiationTipsAsync(job, userId);
+
+        if (currentSalaryTips != null)
+        {
+            showSalaryNegotiationModal = true;
+        }
+    }
+
+    private async Task ShowResumeOptimizationModal(JobListing job)
+    {
+        selectedJobForAI = job;
+        var userId = CurrentUser.GetCurrentUserId();
+        currentResumeOptimization = await AIAssistant.GenerateResumeOptimizationAsync(job, userId);
+
+        if (currentResumeOptimization != null)
+        {
+            showResumeOptimizationModal = true;
+        }
+    }
+
+    private async Task ShowApplicationPredictionModal(JobListing job)
+    {
+        selectedJobForAI = job;
+        var userId = CurrentUser.GetCurrentUserId();
+        var allJobs = JobService.GetAllJobListings(userId);
+        var applicationHistory = allJobs.Where(j => j.HasApplied).ToList();
+
+        currentApplicationPrediction = await AIAssistant.PredictApplicationSuccessAsync(job, userId, applicationHistory);
+
+        if (currentApplicationPrediction != null)
+        {
+            showApplicationPredictionModal = true;
+        }
+    }
+
+    private void UseCoverLetterSuggestion()
+    {
+        if (selectedJobForAI != null && currentCoverLetter != null)
+        {
+            var fullLetter = $"{currentCoverLetter.OpeningParagraph}\n\n" +
+                           $"{string.Join("\n\n", currentCoverLetter.SellingPoints.Select(p => $"• {p}"))}\n\n" +
+                           $"{currentCoverLetter.ClosingParagraph}";
+
+            selectedJobForAI.CoverLetter = fullLetter;
+            JobService.UpdateJobListing(selectedJobForAI);
+            showCoverLetterModal = false;
+            StateHasChanged();
+        }
     }
 
     public void Dispose()

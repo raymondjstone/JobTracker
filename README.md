@@ -1,8 +1,23 @@
-# Job Tracker
+# Job Tracker 🚀
 
-A Blazor application with browser extensions that automatically extract job listings from multiple job sites and save them to a local database for tracking and management.
+A **comprehensive AI-powered** Blazor application with browser extensions that automatically extract job listings from multiple job sites, analyze them with AI, and help you land your dream job faster.
 
 ![Job Tracker Dashboard](images/dashboard.png)
+
+## 🌟 What's New - AI Job Assistant
+
+**JobTracker now includes a complete AI-powered job search assistant!** Leverage OpenAI GPT or Anthropic Claude to:
+
+- 📊 **Auto-analyze job descriptions** - Extract key requirements, responsibilities, and skills
+- 📝 **Generate cover letters** - Personalized suggestions based on your profile
+- 🎯 **Identify skill gaps** - See what you have vs what's needed (with match %)
+- 💼 **Prep for interviews** - Get likely technical and behavioral questions
+- 💰 **Negotiate salaries** - Market rates, strategies, and scripts
+- 📄 **Optimize resumes** - ATS keywords and tailored summaries
+- 🔮 **Predict success** - AI estimates your application success probability
+- 🔍 **Find similar jobs** - Discover related opportunities automatically
+
+**Choose your AI provider**: OpenAI (GPT-3.5, GPT-4) or Anthropic Claude (3.5 Sonnet, Opus, etc.)
 
 ## Supported Job Sites
 
@@ -15,6 +30,21 @@ A Blazor application with browser extensions that automatically extract job list
 | EnergyJobSearch | `EnergyJobSearchExtension/` | `EJS` | Full support |
 
 ## Features
+
+### 🤖 AI Job Assistant (NEW!)
+- **Dual Provider Support** - Choose between OpenAI or Anthropic Claude
+- **Job Analysis** - AI extracts summary, responsibilities, required skills, qualifications, and nice-to-have skills
+- **Cover Letter Generation** - Personalized opening, selling points, and closing based on your profile
+- **Skill Gap Analysis** - Visual comparison of your skills vs job requirements with match percentage
+- **Similar Jobs** - AI-powered recommendations based on skills, company, job type, and more
+- **Interview Preparation** - Generate 5 technical questions, 5 behavioral questions, and questions to ask them
+- **Salary Negotiation** - Market rate estimates, negotiation strategies, value points, and scripts
+- **Resume Optimization** - ATS keywords, skills to highlight, and tailored professional summary
+- **Success Prediction** - AI predicts application success probability with strength/risk factors
+- **One-Click Analysis** - "Analyze with AI" button on every job card
+- **Persistent Results** - All AI insights saved to job records for instant access
+- **Model Selection** - Choose from GPT-3.5 Turbo, GPT-4, GPT-4o, Claude 3.5 Sonnet, Claude 3 Opus, etc.
+- **Cost Optimization** - Switch models based on your budget and quality needs
 
 ### Job Extraction
 - **Multi-site Support** - Extract jobs from LinkedIn, Indeed, S1Jobs, Welcome to the Jungle, and EnergyJobSearch

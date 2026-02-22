@@ -23,6 +23,7 @@ public class AppSettings
     public int DeleteRejectedAfterDays { get; set; } = 60;
     public int DeleteGhostedAfterDays { get; set; } = 60;
     public ScoringPreferences ScoringPreferences { get; set; } = new();
+    public AIAssistantSettings AIAssistant { get; set; } = new();
     public bool DarkMode { get; set; }
 }
 
@@ -106,4 +107,18 @@ public class ScoringPreferences
 
     // Auto-score threshold
     public int MinScoreToShow { get; set; } = 0; // Hide jobs below this score
+}
+
+public class AIAssistantSettings
+{
+    public bool Enabled { get; set; } = false;
+    public string Provider { get; set; } = "OpenAI"; // "OpenAI" or "Claude"
+    public string ApiKey { get; set; } = string.Empty;
+    public string Model { get; set; } = "gpt-3.5-turbo"; // OpenAI: gpt-3.5-turbo, gpt-4 | Claude: claude-3-5-sonnet-20241022, claude-3-opus-20240229
+    public bool AutoAnalyzeNewJobs { get; set; } = false;
+    public bool AutoGenerateCoverLetter { get; set; } = false;
+    public bool ShowSkillGaps { get; set; } = true;
+    public bool ShowSimilarJobs { get; set; } = true;
+    public List<string> UserSkills { get; set; } = new(); // User's skill profile
+    public string UserExperience { get; set; } = string.Empty; // Brief experience summary
 }

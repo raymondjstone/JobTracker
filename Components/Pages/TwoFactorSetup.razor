@@ -43,7 +43,7 @@
                         <div class="text-center my-4">
                             <div class="qr-code-container p-3 bg-white d-inline-block rounded border">
                                 @* QR code would go here - using a URL that generates QR code *@
-                                <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=@Uri.EscapeDataString(setupUri)"
+                                <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=@Uri.EscapeDataString(setupUri ?? "")"
                                      alt="QR Code" style="width: 200px; height: 200px;" />
                             </div>
                         </div>
@@ -123,10 +123,12 @@
     private bool isLoading;
 
     [SupplyParameterFromForm]
-    private VerifyModel verifyModel { get; set; } = new();
+    private VerifyModel verifyModel { get; set; } = null!;
 
     protected override void OnInitialized()
     {
+        verifyModel ??= new();
+
         var userId = AuthService.GetUserId(HttpContextAccessor.HttpContext?.User);
         if (userId.HasValue)
         {

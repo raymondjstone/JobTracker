@@ -48,7 +48,7 @@
 
 @code {
     [SupplyParameterFromForm]
-    private VerifyModel model { get; set; } = new();
+    private VerifyModel model { get; set; } = null!;
 
     [SupplyParameterFromQuery]
     private string? ReturnUrl { get; set; }
@@ -58,6 +58,8 @@
 
     protected override void OnInitialized()
     {
+        model ??= new();
+
         var context = HttpContextAccessor.HttpContext;
         if (context?.User?.Identity?.IsAuthenticated != true)
         {

@@ -80,6 +80,12 @@ builder.Services.AddScoped<JobRulesService>();
 builder.Services.AddScoped<JobHistoryService>();
 builder.Services.AddScoped<JobScoringService>();
 
+// AI Assistant service with HttpClient
+builder.Services.AddHttpClient<AIJobAssistantService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+
 // Register Lazy<T> for services that have circular dependencies
 builder.Services.AddScoped(sp => new Lazy<JobRulesService>(() => sp.GetRequiredService<JobRulesService>()));
 builder.Services.AddScoped(sp => new Lazy<JobHistoryService>(() => sp.GetRequiredService<JobHistoryService>()));

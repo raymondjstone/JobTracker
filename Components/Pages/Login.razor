@@ -51,13 +51,18 @@
 
 @code {
     [SupplyParameterFromForm]
-    private LoginModel loginModel { get; set; } = new();
+    private LoginModel loginModel { get; set; } = null!;
 
     [SupplyParameterFromQuery]
     private string? ReturnUrl { get; set; }
 
     private string? errorMessage;
     private bool isLoading;
+
+    protected override void OnInitialized()
+    {
+        loginModel ??= new();
+    }
 
     private async Task HandleLogin()
     {

@@ -22,6 +22,17 @@ public class JobListing
     public List<ApplicationStageChange> StageHistory { get; set; } = new();
     public SuitabilityStatus Suitability { get; set; } = SuitabilityStatus.NotChecked;
     public int SuitabilityScore { get; set; } = 0; // ML-based score 0-100
+
+    // AI-generated analysis
+    public string? AISummary { get; set; }
+    public List<string> AIResponsibilities { get; set; } = new();
+    public List<string> AIRequiredSkills { get; set; } = new();
+    public List<string> AIQualifications { get; set; } = new();
+    public List<string> AINiceToHaveSkills { get; set; } = new();
+    public string? AICoverLetterOpening { get; set; }
+    public List<string> AICoverLetterPoints { get; set; } = new();
+    public string? AICoverLetterClosing { get; set; }
+
     public bool SharedToWhatsApp { get; set; } = false;
     public DateTime? DateSharedToWhatsApp { get; set; }
     public string Source { get; set; } = string.Empty;

@@ -520,6 +520,116 @@
             </div>
         </div>
 
+        <!-- AI Assistant Section -->
+        <div class="card mb-4">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0"><i class="bi bi-robot"></i> AI Job Assistant</h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted small mb-3">Use AI to analyze job descriptions, generate cover letters, and find skill gaps. Requires OpenAI API key.</p>
+
+                <div class="form-check form-switch mb-3">
+                    <input class="form-check-input" type="checkbox" id="enableAI" @bind="editAIEnabled" />
+                    <label class="form-check-label" for="enableAI">Enable AI Assistant</label>
+                </div>
+
+                @if (editAIEnabled)
+                {
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label">AI Provider</label>
+                            <select class="form-select" @bind="editAIProvider" @bind:after="OnProviderChanged">
+                                <option value="OpenAI">OpenAI (GPT-3.5, GPT-4)</option>
+                                <option value="Claude">Anthropic Claude</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">@(editAIProvider) API Key 
+                                @if (editAIProvider == "OpenAI")
+                                {
+                                    <a href="https://platform.openai.com/api-keys" target="_blank" class="small">(Get Key)</a>
+                                }
+                                else
+                                {
+                                    <a href="https://console.anthropic.com/settings/keys" target="_blank" class="small">(Get Key)</a>
+                                }
+                            </label>
+                            <input type="password" class="form-control" @bind="editAIApiKey" placeholder="@(editAIProvider == "OpenAI" ? "sk-..." : "sk-ant-...")" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Model</label>
+                            <select class="form-select" @bind="editAIModel">
+                                @if (editAIProvider == "OpenAI")
+                                {
+                                    <option value="gpt-3.5-turbo">GPT-3.5 Turbo (Faster, Cheaper)</option>
+                                    <option value="gpt-4">GPT-4 (More Accurate)</option>
+                                    <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                                    <option value="gpt-4o">GPT-4o (Latest)</option>
+                                }
+                                else
+                                {
+                                    <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet (Recommended)</option>
+                                    <option value="claude-3-opus-20240229">Claude 3 Opus (Most Capable)</option>
+                                    <option value="claude-3-sonnet-20240229">Claude 3 Sonnet (Balanced)</option>
+                                    <option value="claude-3-haiku-20240307">Claude 3 Haiku (Fast & Affordable)</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+
+                    <hr class="my-3" />
+
+                    <h6 class="mb-3">Your Profile (for AI personalization)</h6>
+                    <div class="mb-3">
+                        <label class="form-label">Your Skills</label>
+                        <textarea class="form-control" rows="2" @bind="editAIUserSkills" 
+                                  placeholder="C#, .NET, Azure, React, SQL, etc."></textarea>
+                        <small class="text-muted">Comma-separated list of your skills</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Experience Summary</label>
+                        <textarea class="form-control" rows="3" @bind="editAIUserExperience" 
+                                  placeholder="5+ years of .NET development, experience with cloud platforms, led teams of 3-5 developers..."></textarea>
+                        <small class="text-muted">Brief summary of your experience (used for cover letter generation)</small>
+                    </div>
+
+                    <hr class="my-3" />
+
+                    <h6 class="mb-3">AI Features</h6>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" id="autoAnalyze" @bind="editAutoAnalyzeNewJobs" />
+                        <label class="form-check-label" for="autoAnalyze">
+                            Auto-analyze new jobs (extracts key info, skills, responsibilities)
+                        </label>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" id="autoGenerateCoverLetter" @bind="editAutoGenerateCoverLetter" />
+                        <label class="form-check-label" for="autoGenerateCoverLetter">
+                            Auto-generate cover letter suggestions
+                        </label>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" id="showSkillGaps" @bind="editShowSkillGaps" />
+                        <label class="form-check-label" for="showSkillGaps">
+                            Show skill gap analysis
+                        </label>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" id="showSimilarJobs" @bind="editShowSimilarJobs" />
+                        <label class="form-check-label" for="showSimilarJobs">
+                            Show similar job recommendations
+                        </label>
+                    </div>
+
+                    <hr class="my-3" />
+
+                    <button class="btn btn-primary" @onclick="SaveAISettings">
+                        <i class="bi bi-save"></i> Save AI Settings
+                    </button>
+                }
+            </div>
+        </div>
+
         <div class="card mb-4">
             <div class="card-header bg-primary text-white">
                 <h5 class="mb-0"><i class="bi bi-file-earmark-text"></i> Cover Letter Templates</h5>
@@ -626,6 +736,18 @@
     private bool editEmailOnFollowUpDue;
     private List<CoverLetterTemplate> coverLetterTemplates = new();
     private bool showTemplateManager = false;
+
+    // AI Assistant settings
+    private bool editAIEnabled = false;
+    private string editAIProvider = "OpenAI";
+    private string editAIApiKey = "";
+    private string editAIModel = "gpt-3.5-turbo";
+    private string editAIUserSkills = "";
+    private string editAIUserExperience = "";
+    private bool editAutoAnalyzeNewJobs = false;
+    private bool editAutoGenerateCoverLetter = false;
+    private bool editShowSkillGaps = true;
+    private bool editShowSimilarJobs = true;
     private CoverLetterTemplate? editingTemplate;
     private string editTemplateName = "";
     private string editTemplateContent = "";
@@ -715,6 +837,19 @@
         editPreferredCompanies = string.Join(", ", scoring.PreferredCompanies);
         editAvoidCompanies = string.Join(", ", scoring.AvoidCompanies);
         editMinScoreToShow = scoring.MinScoreToShow;
+
+        // Load AI Assistant settings
+        var ai = settings.AIAssistant;
+        editAIEnabled = ai.Enabled;
+        editAIProvider = ai.Provider;
+        editAIApiKey = ai.ApiKey;
+        editAIModel = ai.Model;
+        editAIUserSkills = string.Join(", ", ai.UserSkills);
+        editAIUserExperience = ai.UserExperience;
+        editAutoAnalyzeNewJobs = ai.AutoAnalyzeNewJobs;
+        editAutoGenerateCoverLetter = ai.AutoGenerateCoverLetter;
+        editShowSkillGaps = ai.ShowSkillGaps;
+        editShowSimilarJobs = ai.ShowSimilarJobs;
     }
 
     private void SaveJobSiteUrls()
@@ -885,6 +1020,41 @@
         settings.ScoringPreferences.MinScoreToShow = editMinScoreToShow;
 
         SettingsService.Save();
+    }
+
+    private void SaveAISettings()
+    {
+        var settings = SettingsService.GetSettings();
+
+        settings.AIAssistant.Enabled = editAIEnabled;
+        settings.AIAssistant.Provider = editAIProvider;
+        settings.AIAssistant.ApiKey = editAIApiKey;
+        settings.AIAssistant.Model = editAIModel;
+        settings.AIAssistant.UserSkills = editAIUserSkills
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .ToList();
+        settings.AIAssistant.UserExperience = editAIUserExperience;
+        settings.AIAssistant.AutoAnalyzeNewJobs = editAutoAnalyzeNewJobs;
+        settings.AIAssistant.AutoGenerateCoverLetter = editAutoGenerateCoverLetter;
+        settings.AIAssistant.ShowSkillGaps = editShowSkillGaps;
+        settings.AIAssistant.ShowSimilarJobs = editShowSimilarJobs;
+
+        SettingsService.Save();
+        _logger.LogInformation("AI Assistant settings saved");
+    }
+
+    private void OnProviderChanged()
+    {
+        // Reset model to default for selected provider
+        if (editAIProvider == "OpenAI")
+        {
+            editAIModel = "gpt-3.5-turbo";
+        }
+        else if (editAIProvider == "Claude")
+        {
+            editAIModel = "claude-3-5-sonnet-20241022";
+        }
     }
 
     private async Task RecalculateAllScores()
