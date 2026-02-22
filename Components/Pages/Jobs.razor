@@ -299,6 +299,17 @@
                         </select>
                     </div>
                     <div class="col-md-2">
+                        <label class="form-label">ML Score</label>
+                        <select class="form-select" @bind="selectedScoreBand" @bind:after="ApplyFilter">
+                            <option value="">All Scores</option>
+                            <option value="excellent">&#x1F7E2; Excellent (80-100)</option>
+                            <option value="good">&#x1F535; Good (60-79)</option>
+                            <option value="fair">&#x1F7E1; Fair (40-59)</option>
+                            <option value="poor">&#x26AB; Poor (20-39)</option>
+                            <option value="verypoor">&#x1F534; Very Poor (0-19)</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
                         <label class="form-label">Salary Contains</label>
                         <input type="text" class="form-control" placeholder="e.g. 100K"
                                @bind="filter.SalarySearch" @bind:event="oninput" @onkeyup="ApplyFilter" />
@@ -1342,6 +1353,7 @@ else
     private string selectedJobType = "";
     private string selectedRemote = "";
     private string selectedInterest = "";
+    private string selectedScoreBand = "";
     private string selectedHasSalary = "";
     private string selectedApplicationStage = "";
     private string selectedSource = "";
@@ -1498,7 +1510,21 @@ else
             TabType.Archived => baseJobs,
             _ => baseJobs.Where(j => !j.HasApplied && j.Suitability == SuitabilityStatus.NotChecked) // Browse - only NotChecked
         };
-        
+
+        // Apply score band filter
+        if (!string.IsNullOrEmpty(selectedScoreBand))
+        {
+            filteredJobs = selectedScoreBand switch
+            {
+                "excellent" => filteredJobs.Where(j => j.SuitabilityScore >= 80 && j.SuitabilityScore <= 100),
+                "good" => filteredJobs.Where(j => j.SuitabilityScore >= 60 && j.SuitabilityScore < 80),
+                "fair" => filteredJobs.Where(j => j.SuitabilityScore >= 40 && j.SuitabilityScore < 60),
+                "poor" => filteredJobs.Where(j => j.SuitabilityScore >= 20 && j.SuitabilityScore < 40),
+                "verypoor" => filteredJobs.Where(j => j.SuitabilityScore >= 0 && j.SuitabilityScore < 20),
+                _ => filteredJobs
+            };
+        }
+
         filteredCount = filteredJobs.Count();
     }
 
@@ -1508,6 +1534,7 @@ else
         selectedJobType = "";
         selectedRemote = "";
         selectedInterest = "";
+        selectedScoreBand = "";
         selectedHasSalary = "";
         selectedApplicationStage = "";
         selectedSource = "";
@@ -2067,6 +2094,7 @@ else
             JobType = selectedJobType,
             IsRemote = selectedRemote,
             Interest = selectedInterest,
+            ScoreBand = selectedScoreBand,
             HasSalary = selectedHasSalary,
             SalarySearch = filter.SalarySearch,
             SalaryTarget = selectedSalaryTarget,
@@ -2101,6 +2129,7 @@ else
         selectedJobType = preset.JobType ?? "";
         selectedRemote = preset.IsRemote ?? "";
         selectedInterest = preset.Interest ?? "";
+        selectedScoreBand = preset.ScoreBand ?? "";
         selectedHasSalary = preset.HasSalary ?? "";
         selectedSalaryTarget = preset.SalaryTarget ?? "";
         selectedSource = preset.Source ?? "";
