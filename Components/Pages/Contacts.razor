@@ -1,0 +1,658 @@
+@page "/contacts"
+@using JobTracker.Models
+@using JobTracker.Services
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject JobListingService JobService
+@inject NavigationManager Navigation
+@implements IDisposable
+@rendermode InteractiveServer
+
+<PageTitle>Contacts - Job Tracker</PageTitle>
+
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1><i class="bi bi-people"></i> Contacts</h1>
+        <div class="d-flex gap-2">
+            <button class="btn btn-primary" @onclick="StartAddContact">
+                <i class="bi bi-person-plus"></i> Add Contact
+            </button>
+        </div>
+    </div>
+
+    <!-- Summary Stats -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card bg-light">
+                <div class="card-body text-center">
+                    <h3 class="mb-0">@allContacts.Count</h3>
+                    <small class="text-muted">Total Contacts</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-light">
+                <div class="card-body text-center">
+                    <h3 class="mb-0">@allContacts.Count(c => !string.IsNullOrWhiteSpace(c.Role) && c.Role == "Recruiter")</h3>
+                    <small class="text-muted">Recruiters</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-light">
+                <div class="card-body text-center">
+                    <h3 class="mb-0">@allContacts.Count(c => c.Interactions.Any())</h3>
+                    <small class="text-muted">With Interactions</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-light">
+                <div class="card-body text-center">
+                    <h3 class="mb-0">@filteredContacts.Count</h3>
+                    <small class="text-muted">Showing</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Search & Filters -->
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="bi bi-funnel"></i> Search & Filter</h5>
+            @if (HasActiveFilters)
+            {
+                <button class="btn btn-sm btn-outline-secondary" @onclick="ClearFilters">
+                    <i class="bi bi-x-lg"></i> Clear Filters
+                </button>
+            }
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">Search</label>
+                    <input type="text" class="form-control" placeholder="Name, email, phone..." @bind="searchText" @bind:event="oninput" @bind:after="ApplyFilters" />
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Role</label>
+                    <select class="form-select" @bind="filterRole" @bind:after="ApplyFilters">
+                        <option value="">All Roles</option>
+                        <option value="Recruiter">Recruiter</option>
+                        <option value="Hiring Manager">Hiring Manager</option>
+                        <option value="HR">HR</option>
+                        <option value="Team Lead">Team Lead</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Has Interactions</label>
+                    <select class="form-select" @bind="filterInteractions" @bind:after="ApplyFilters">
+                        <option value="">Any</option>
+                        <option value="yes">Yes</option>
+                        <option value="no">No</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Has Profile URL</label>
+                    <select class="form-select" @bind="filterHasProfile" @bind:after="ApplyFilters">
+                        <option value="">Any</option>
+                        <option value="yes">Yes</option>
+                        <option value="no">No</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Sort By</label>
+                    <select class="form-select" @bind="sortBy" @bind:after="ApplyFilters">
+                        <option value="name">Name</option>
+                        <option value="recent">Most Recent</option>
+                        <option value="interactions">Most Interactions</option>
+                        <option value="jobs">Most Jobs</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add/Edit Contact Form -->
+    @if (showForm)
+    {
+        <div class="card mb-4 border-primary">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">@(editingContactId.HasValue ? "Edit Contact" : "New Contact")</h5>
+            </div>
+            <div class="card-body">
+                <div class="row g-3 mb-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Name *</label>
+                        <input type="text" class="form-control" @bind="formName" placeholder="Full name" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Role</label>
+                        <select class="form-select" @bind="formRole">
+                            <option value="">-- Role --</option>
+                            <option>Recruiter</option>
+                            <option>Hiring Manager</option>
+                            <option>HR</option>
+                            <option>Team Lead</option>
+                            <option>Other</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Email</label>
+                        <input type="email" class="form-control" @bind="formEmail" placeholder="email@example.com" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Phone</label>
+                        <input type="tel" class="form-control" @bind="formPhone" placeholder="+44..." />
+                    </div>
+                </div>
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Profile URL</label>
+                        <input type="url" class="form-control" @bind="formProfileUrl" placeholder="https://linkedin.com/in/..." />
+                    </div>
+                    <div class="col-md-6">
+                        @if (editingContactId.HasValue)
+                        {
+                            <label class="form-label">Link to Job</label>
+                            <select class="form-select" @bind="linkJobId">
+                                <option value="">-- Select job to link --</option>
+                                @foreach (var job in availableJobs)
+                                {
+                                    <option value="@job.Id">@job.Title - @job.Company</option>
+                                }
+                            </select>
+                        }
+                    </div>
+                </div>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-primary" @onclick="SaveContact" disabled="@string.IsNullOrWhiteSpace(formName)">
+                        <i class="bi bi-check-lg"></i> Save
+                    </button>
+                    @if (editingContactId.HasValue && !string.IsNullOrWhiteSpace(linkJobId))
+                    {
+                        <button class="btn btn-outline-success" @onclick="LinkJob">
+                            <i class="bi bi-link-45deg"></i> Link Job
+                        </button>
+                    }
+                    <button class="btn btn-outline-secondary" @onclick="CancelForm">Cancel</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Contacts List -->
+    @if (filteredContacts.Count == 0)
+    {
+        <div class="text-center text-muted py-5">
+            @if (allContacts.Count == 0)
+            {
+                <i class="bi bi-people" style="font-size: 3rem;"></i>
+                <p class="mt-2">No contacts yet. Contacts are automatically created when browser extensions extract recruiter info, or you can add them manually.</p>
+            }
+            else
+            {
+                <i class="bi bi-funnel" style="font-size: 3rem;"></i>
+                <p class="mt-2">No contacts match your current filters.</p>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="row">
+            @foreach (var contact in filteredContacts)
+            {
+                <div class="col-md-6 col-lg-4 mb-3">
+                    <div class="card h-100 @(selectedContactId == contact.Id ? "border-primary" : "")">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <div>
+                                    <h5 class="card-title mb-1">
+                                        <i class="bi bi-person-circle me-1"></i>@contact.Name
+                                    </h5>
+                                    @if (!string.IsNullOrWhiteSpace(contact.Role))
+                                    {
+                                        <span class="badge bg-info">@contact.Role</span>
+                                    }
+                                </div>
+                                <div class="d-flex gap-1">
+                                    <button class="btn btn-sm btn-outline-secondary" @onclick="() => StartEditContact(contact)" title="Edit">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => ConfirmDeleteContact(contact)" title="Delete">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="small mb-2">
+                                @if (!string.IsNullOrWhiteSpace(contact.Email))
+                                {
+                                    <div><a href="mailto:@contact.Email"><i class="bi bi-envelope me-1"></i>@contact.Email</a></div>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(contact.Phone))
+                                {
+                                    <div><a href="tel:@contact.Phone"><i class="bi bi-telephone me-1"></i>@contact.Phone</a></div>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(contact.ProfileUrl))
+                                {
+                                    <div><a href="@contact.ProfileUrl" target="_blank"><i class="bi bi-link-45deg me-1"></i>Profile</a></div>
+                                }
+                            </div>
+
+                            <!-- Linked Jobs (count only — details load on expand) -->
+                            @{ var linkCount = GetJobLinkCount(contact.Id); }
+                            @if (linkCount > 0)
+                            {
+                                <div class="mb-2">
+                                    <small class="text-muted"><i class="bi bi-briefcase me-1"></i>@linkCount job@(linkCount != 1 ? "s" : "") linked</small>
+                                </div>
+                            }
+
+                            <!-- Interactions Summary -->
+                            @if (contact.Interactions.Any())
+                            {
+                                <div class="mb-2">
+                                    <small class="text-muted d-block mb-1"><i class="bi bi-chat-dots me-1"></i>@contact.Interactions.Count interaction@(contact.Interactions.Count != 1 ? "s" : "")</small>
+                                    <div class="small">
+                                        @{ var latest = contact.Interactions.OrderByDescending(i => i.Date).First(); }
+                                        <span class="badge bg-secondary me-1">@latest.Channel</span>
+                                        <span class="text-muted">@latest.Date.ToString("MMM dd, yyyy")</span>
+                                        @if (!string.IsNullOrWhiteSpace(latest.Notes))
+                                        {
+                                            <span class="ms-1">- @Truncate(latest.Notes, 40)</span>
+                                        }
+                                    </div>
+                                </div>
+                            }
+
+                            <!-- Expand/Collapse Detail -->
+                            <div class="mt-2">
+                                @if (selectedContactId == contact.Id)
+                                {
+                                    <button class="btn btn-sm btn-outline-secondary w-100" @onclick="() => selectedContactId = null">
+                                        <i class="bi bi-chevron-up"></i> Collapse
+                                    </button>
+                                }
+                                else
+                                {
+                                    <button class="btn btn-sm btn-outline-secondary w-100" @onclick="() => selectedContactId = contact.Id">
+                                        <i class="bi bi-chevron-down"></i> Details
+                                    </button>
+                                }
+                            </div>
+                        </div>
+
+                        <!-- Expanded Detail Panel -->
+                        @if (selectedContactId == contact.Id)
+                        {
+                            <div class="card-footer bg-light">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <strong>Interactions</strong>
+                                    <button class="btn btn-sm btn-outline-primary" @onclick="() => StartAddInteraction(contact.Id)">
+                                        <i class="bi bi-plus"></i> Add
+                                    </button>
+                                </div>
+
+                                @if (addingInteractionForContactId == contact.Id)
+                                {
+                                    <div class="card card-body py-2 px-3 mb-2">
+                                        <div class="row g-2 mb-2">
+                                            <div class="col-5">
+                                                <select class="form-select form-select-sm" @bind="interactionChannel">
+                                                    <option value="">-- Channel --</option>
+                                                    <option>Email</option>
+                                                    <option>Phone</option>
+                                                    <option>LinkedIn</option>
+                                                    <option>Video Call</option>
+                                                    <option>In-Person</option>
+                                                </select>
+                                            </div>
+                                            <div class="col-4">
+                                                <input type="date" class="form-control form-control-sm" @bind="interactionDate" />
+                                            </div>
+                                            <div class="col-3 d-flex gap-1">
+                                                <button class="btn btn-sm btn-primary" @onclick="() => SaveInteraction(contact.Id)" disabled="@string.IsNullOrWhiteSpace(interactionChannel)">
+                                                    <i class="bi bi-check-lg"></i>
+                                                </button>
+                                                <button class="btn btn-sm btn-outline-secondary" @onclick="CancelInteraction">
+                                                    <i class="bi bi-x"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <textarea class="form-control form-control-sm" rows="2" placeholder="Notes..." @bind="interactionNotes"></textarea>
+                                    </div>
+                                }
+
+                                @if (contact.Interactions.Any())
+                                {
+                                    @foreach (var interaction in contact.Interactions.OrderByDescending(i => i.Date))
+                                    {
+                                        <div class="d-flex align-items-start mb-2 small">
+                                            <span class="badge bg-secondary me-2" style="min-width: 70px;">@interaction.Channel</span>
+                                            <span class="text-muted me-2">@interaction.Date.ToString("MMM dd, yyyy")</span>
+                                            <span>@interaction.Notes</span>
+                                        </div>
+                                    }
+                                }
+                                else if (addingInteractionForContactId != contact.Id)
+                                {
+                                    <p class="text-muted small mb-0">No interactions recorded yet.</p>
+                                }
+
+                                <!-- Linked Jobs Detail (lazy-loaded) -->
+                                @{ var linkedJobs = GetCachedLinkedJobs(contact.Id); }
+                                @if (linkedJobs.Count > 0)
+                                {
+                                    <hr class="my-2" />
+                                    <strong class="small">Linked Jobs</strong>
+                                    <div class="mt-1">
+                                        @foreach (var job in linkedJobs)
+                                        {
+                                            <div class="d-flex justify-content-between align-items-center small mb-1">
+                                                <span style="cursor: pointer; text-decoration: underline;" @onclick="() => NavigateToJob(job.Id)">
+                                                    @job.Title <span class="text-muted">- @job.Company</span>
+                                                </span>
+                                                <button class="btn btn-sm btn-outline-danger py-0 px-1" @onclick="() => UnlinkJob(contact.Id, job.Id)" title="Unlink">
+                                                    <i class="bi bi-x-lg" style="font-size: 0.7rem;"></i>
+                                                </button>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+
+                                <hr class="my-2" />
+                                <small class="text-muted">Added: @contact.DateAdded.ToString("MMM dd, yyyy")</small>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
+    <!-- Delete Confirmation Modal -->
+    @if (contactToDelete != null)
+    {
+        <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5);">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Delete Contact</h5>
+                    </div>
+                    <div class="modal-body">
+                        <p>Are you sure you want to delete <strong>@contactToDelete.Name</strong>?</p>
+                        <p class="text-muted small">This will remove the contact and all its job links. Interaction history will be lost.</p>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary" @onclick="() => contactToDelete = null">Cancel</button>
+                        <button class="btn btn-danger" @onclick="DeleteContact"><i class="bi bi-trash"></i> Delete</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<Contact> allContacts = new();
+    private List<Contact> filteredContacts = new();
+    private Dictionary<Guid, int> jobLinkCounts = new();
+    private Dictionary<Guid, List<JobListing>> linkedJobsCache = new();
+    private List<JobListing> availableJobs = new();
+
+    // Filters
+    private string searchText = "";
+    private string filterRole = "";
+    private string filterInteractions = "";
+    private string filterHasProfile = "";
+    private string sortBy = "name";
+
+    // Form state
+    private bool showForm = false;
+    private Guid? editingContactId = null;
+    private string formName = "", formEmail = "", formPhone = "", formProfileUrl = "", formRole = "";
+    private string linkJobId = "";
+
+    // Interaction form
+    private Guid? addingInteractionForContactId = null;
+    private string interactionChannel = "", interactionNotes = "";
+    private DateTime interactionDate = DateTime.Now;
+
+    // Detail panel
+    private Guid? selectedContactId = null;
+
+    // Delete confirm
+    private Contact? contactToDelete = null;
+
+    private bool HasActiveFilters => !string.IsNullOrWhiteSpace(searchText) || !string.IsNullOrWhiteSpace(filterRole)
+        || !string.IsNullOrWhiteSpace(filterInteractions) || !string.IsNullOrWhiteSpace(filterHasProfile);
+
+    protected override void OnInitialized()
+    {
+        LoadData();
+        JobService.OnChange += OnJobServiceChange;
+    }
+
+    public void Dispose()
+    {
+        JobService.OnChange -= OnJobServiceChange;
+    }
+
+    private void OnJobServiceChange() => InvokeAsync(() =>
+    {
+        LoadData();
+        StateHasChanged();
+    });
+
+    private void LoadData()
+    {
+        allContacts = JobService.GetAllContacts();
+        linkedJobsCache.Clear();
+        // Single batch query for all job link counts — no N+1
+        var ids = allContacts.Select(c => c.Id).ToList();
+        jobLinkCounts = ids.Count > 0 ? JobService.GetJobLinkCountsForContacts(ids) : new();
+        ApplyFilters();
+    }
+
+    private int GetJobLinkCount(Guid contactId)
+    {
+        return jobLinkCounts.TryGetValue(contactId, out var count) ? count : 0;
+    }
+
+    private List<JobListing> GetCachedLinkedJobs(Guid contactId)
+    {
+        if (!linkedJobsCache.TryGetValue(contactId, out var jobs))
+        {
+            jobs = JobService.GetLinkedJobsForContact(contactId);
+            linkedJobsCache[contactId] = jobs;
+        }
+        return jobs;
+    }
+
+    private void EnsureAvailableJobsLoaded()
+    {
+        if (availableJobs.Count == 0)
+            availableJobs = JobService.GetAllJobListings().OrderByDescending(j => j.DateAdded).ToList();
+    }
+
+    private void ApplyFilters()
+    {
+        var query = allContacts.AsEnumerable();
+
+        if (!string.IsNullOrWhiteSpace(searchText))
+        {
+            var search = searchText.Trim().ToLower();
+            query = query.Where(c =>
+                c.Name.ToLower().Contains(search) ||
+                (c.Email ?? "").ToLower().Contains(search) ||
+                (c.Phone ?? "").ToLower().Contains(search) ||
+                (c.Role ?? "").ToLower().Contains(search) ||
+                (c.ProfileUrl ?? "").ToLower().Contains(search));
+        }
+
+        if (!string.IsNullOrWhiteSpace(filterRole))
+            query = query.Where(c => c.Role == filterRole);
+
+        if (filterInteractions == "yes")
+            query = query.Where(c => c.Interactions.Any());
+        else if (filterInteractions == "no")
+            query = query.Where(c => !c.Interactions.Any());
+
+        if (filterHasProfile == "yes")
+            query = query.Where(c => !string.IsNullOrWhiteSpace(c.ProfileUrl));
+        else if (filterHasProfile == "no")
+            query = query.Where(c => string.IsNullOrWhiteSpace(c.ProfileUrl));
+
+        query = sortBy switch
+        {
+            "recent" => query.OrderByDescending(c => c.DateAdded),
+            "interactions" => query.OrderByDescending(c => c.Interactions.Count).ThenBy(c => c.Name),
+            "jobs" => query.OrderByDescending(c => GetJobLinkCount(c.Id)).ThenBy(c => c.Name),
+            _ => query.OrderBy(c => c.Name)
+        };
+
+        filteredContacts = query.ToList();
+    }
+
+    private void ClearFilters()
+    {
+        searchText = "";
+        filterRole = "";
+        filterInteractions = "";
+        filterHasProfile = "";
+        sortBy = "name";
+        ApplyFilters();
+    }
+
+    // Form
+    private void StartAddContact()
+    {
+        showForm = true;
+        editingContactId = null;
+        formName = ""; formEmail = ""; formPhone = ""; formProfileUrl = ""; formRole = "";
+        linkJobId = "";
+    }
+
+    private void StartEditContact(Contact contact)
+    {
+        EnsureAvailableJobsLoaded();
+        showForm = true;
+        editingContactId = contact.Id;
+        formName = contact.Name;
+        formEmail = contact.Email ?? "";
+        formPhone = contact.Phone ?? "";
+        formProfileUrl = contact.ProfileUrl ?? "";
+        formRole = contact.Role ?? "";
+        linkJobId = "";
+    }
+
+    private void CancelForm()
+    {
+        showForm = false;
+        editingContactId = null;
+    }
+
+    private void SaveContact()
+    {
+        if (string.IsNullOrWhiteSpace(formName)) return;
+
+        if (editingContactId.HasValue)
+        {
+            var existing = allContacts.FirstOrDefault(c => c.Id == editingContactId.Value);
+            if (existing != null)
+            {
+                existing.Name = formName.Trim();
+                existing.Email = string.IsNullOrWhiteSpace(formEmail) ? null : formEmail.Trim();
+                existing.Phone = string.IsNullOrWhiteSpace(formPhone) ? null : formPhone.Trim();
+                existing.ProfileUrl = string.IsNullOrWhiteSpace(formProfileUrl) ? null : formProfileUrl.Trim();
+                existing.Role = string.IsNullOrWhiteSpace(formRole) ? null : formRole.Trim();
+                JobService.UpdateContact(existing);
+            }
+        }
+        else
+        {
+            var contact = new Contact
+            {
+                Name = formName.Trim(),
+                Email = string.IsNullOrWhiteSpace(formEmail) ? null : formEmail.Trim(),
+                Phone = string.IsNullOrWhiteSpace(formPhone) ? null : formPhone.Trim(),
+                ProfileUrl = string.IsNullOrWhiteSpace(formProfileUrl) ? null : formProfileUrl.Trim(),
+                Role = string.IsNullOrWhiteSpace(formRole) ? null : formRole.Trim()
+            };
+            // If no jobs to link, use AddContact with an empty job link (just save the contact)
+            // We need a standalone add - use the storage directly via service
+            JobService.AddStandaloneContact(contact);
+        }
+
+        showForm = false;
+        editingContactId = null;
+        LoadData();
+    }
+
+    private void LinkJob()
+    {
+        if (editingContactId.HasValue && Guid.TryParse(linkJobId, out var jobId))
+        {
+            JobService.LinkContactToJob(editingContactId.Value, jobId);
+            linkJobId = "";
+            LoadData();
+        }
+    }
+
+    private void UnlinkJob(Guid contactId, Guid jobId)
+    {
+        JobService.UnlinkContactFromJob(contactId, jobId);
+        LoadData();
+    }
+
+    // Delete
+    private void ConfirmDeleteContact(Contact contact) => contactToDelete = contact;
+
+    private void DeleteContact()
+    {
+        if (contactToDelete != null)
+        {
+            JobService.DeleteContact(contactToDelete.Id);
+            contactToDelete = null;
+            LoadData();
+        }
+    }
+
+    // Interactions
+    private void StartAddInteraction(Guid contactId)
+    {
+        addingInteractionForContactId = contactId;
+        interactionChannel = "";
+        interactionNotes = "";
+        interactionDate = DateTime.Now;
+    }
+
+    private void CancelInteraction() => addingInteractionForContactId = null;
+
+    private void SaveInteraction(Guid contactId)
+    {
+        if (string.IsNullOrWhiteSpace(interactionChannel)) return;
+
+        JobService.AddContactInteraction(contactId, new ContactInteraction
+        {
+            Date = interactionDate,
+            Channel = interactionChannel.Trim(),
+            Notes = interactionNotes?.Trim() ?? ""
+        });
+
+        addingInteractionForContactId = null;
+        LoadData();
+    }
+
+    private void NavigateToJob(Guid jobId)
+    {
+        Navigation.NavigateTo($"/?job={jobId}");
+    }
+
+    private static string Truncate(string text, int maxLen)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return "";
+        return text.Length <= maxLen ? text : text.Substring(0, maxLen) + "...";
+    }
+}

@@ -205,13 +205,61 @@
     return url.replace(/\/$/, '').split('?')[0];
   }
 
+  function getRecruiterInfo() {
+    var contact = null;
+    try {
+      // Indeed rarely shows individual recruiter names, but try common patterns
+      var selectors = [
+        '[class*="recruiter"]',
+        '[class*="poster"]',
+        '[data-testid*="recruiter"]',
+        '.jobsearch-CompanyReview--heading'
+      ];
+      for (var i = 0; i < selectors.length; i++) {
+        try {
+          var el = document.querySelector(selectors[i]);
+          if (!el) continue;
+          var name = (el.textContent || '').trim().split('\n')[0].trim();
+          if (name && name.length >= 2 && name.length < 100) {
+            contact = { Name: name };
+            var profileLink = el.querySelector('a[href*="/profile/"]') || el.querySelector('a[href*="/people/"]');
+            if (profileLink) contact.ProfileUrl = profileLink.href.split('?')[0];
+            break;
+          }
+        } catch (e) {}
+      }
+
+      // Fallback: "Posted by" text pattern
+      if (!contact) {
+        var bodyText = document.body.innerText || '';
+        var match = bodyText.match(/(?:Posted by|Hiring manager)\s*[:\-]?\s*\n?\s*([^\n]{2,80})/i);
+        if (match) {
+          contact = { Name: match[1].trim() };
+        }
+      }
+
+      if (contact) {
+        console.log('[IND] Found recruiter: ' + contact.Name);
+      }
+    } catch (e) {
+      console.log('[IND] Error extracting recruiter info: ' + e.message);
+    }
+    return contact;
+  }
+
   function updateDescription(url, description) {
     if (!url || !description || description.length < 50) return Promise.resolve(false);
+
+    var body = { Url: url, Description: description };
+    var recruiter = getRecruiterInfo();
+    if (recruiter) {
+      body.Contacts = [recruiter];
+    }
 
     return fetch(SERVER_URL + '/api/jobs/description', {
       method: 'PUT',
       headers: getHeaders(),
-      body: JSON.stringify({ Url: url, Description: description })
+      body: JSON.stringify(body)
     })
     .then(function(r) {
       if (!r.ok) {
@@ -568,7 +616,7 @@
           var mainContent = document.querySelector('main') || document.querySelector('[role="main"]') || document.body;
           var detailIsRemote = checkIsRemote(mainContent, detailLocation);
 
-          jobs.push({
+          var detailJob = {
             Title: detailTitle,
             Company: compEl ? cleanText(compEl.textContent) : '',
             Location: detailLocation,
@@ -580,7 +628,12 @@
             IsRemote: detailIsRemote,
             Skills: [],
             Source: 'Indeed'
-          });
+          };
+          var recruiter = getRecruiterInfo();
+          if (recruiter) {
+            detailJob.Contacts = [recruiter];
+          }
+          jobs.push(detailJob);
           console.log('[IND] Added detail view job: ' + detailTitle.substring(0, 30) + (detailIsRemote ? ' [REMOTE]' : ''));
         }
       }

@@ -18,6 +18,7 @@ public class JsonStorageBackend : IStorageBackend
     private readonly object _usersLock = new();
     private readonly object _historyLock = new();
     private readonly object _settingsLock = new();
+    private readonly object _contactsLock = new();
 
     private static readonly JsonSerializerOptions ReadOptions = new()
     {
@@ -424,6 +425,247 @@ public class JsonStorageBackend : IStorageBackend
             {
                 _logger.LogError(ex, "Error saving settings to file");
             }
+        }
+    }
+
+    // Contact operations
+    private class ContactStore
+    {
+        public List<Contact> Contacts { get; set; } = new();
+        public List<JobContact> JobLinks { get; set; } = new();
+    }
+
+    private string GetContactsFilePath(Guid userId) => Path.Combine(_dataDirectory, $"contacts_{userId}.json");
+
+    private ContactStore LoadContactStore(Guid userId)
+    {
+        var path = GetContactsFilePath(userId);
+        try
+        {
+            if (File.Exists(path))
+            {
+                var json = File.ReadAllText(path);
+                return JsonSerializer.Deserialize<ContactStore>(json, ReadOptions) ?? new ContactStore();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error loading contacts from file");
+        }
+        return new ContactStore();
+    }
+
+    private void WriteContactStore(Guid userId, ContactStore store)
+    {
+        try
+        {
+            var json = JsonSerializer.Serialize(store, WriteOptions);
+            File.WriteAllText(GetContactsFilePath(userId), json);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error saving contacts to file");
+        }
+    }
+
+    public List<Contact> LoadContacts(Guid userId)
+    {
+        lock (_contactsLock)
+        {
+            return LoadContactStore(userId).Contacts;
+        }
+    }
+
+    public Contact? GetContactById(Guid contactId)
+    {
+        lock (_contactsLock)
+        {
+            // Search all contact files
+            foreach (var file in Directory.GetFiles(_dataDirectory, "contacts_*.json"))
+            {
+                try
+                {
+                    var json = File.ReadAllText(file);
+                    var store = JsonSerializer.Deserialize<ContactStore>(json, ReadOptions);
+                    var contact = store?.Contacts.FirstOrDefault(c => c.Id == contactId);
+                    if (contact != null) return contact;
+                }
+                catch { }
+            }
+            return null;
+        }
+    }
+
+    public void SaveContact(Contact contact)
+    {
+        lock (_contactsLock)
+        {
+            var store = LoadContactStore(contact.UserId);
+            var index = store.Contacts.FindIndex(c => c.Id == contact.Id);
+            if (index >= 0)
+                store.Contacts[index] = contact;
+            WriteContactStore(contact.UserId, store);
+        }
+    }
+
+    public void AddContact(Contact contact)
+    {
+        lock (_contactsLock)
+        {
+            var store = LoadContactStore(contact.UserId);
+            store.Contacts.Add(contact);
+            WriteContactStore(contact.UserId, store);
+        }
+    }
+
+    public void DeleteContact(Guid contactId)
+    {
+        lock (_contactsLock)
+        {
+            foreach (var file in Directory.GetFiles(_dataDirectory, "contacts_*.json"))
+            {
+                try
+                {
+                    var json = File.ReadAllText(file);
+                    var store = JsonSerializer.Deserialize<ContactStore>(json, ReadOptions);
+                    if (store == null) continue;
+                    var removed = store.Contacts.RemoveAll(c => c.Id == contactId);
+                    store.JobLinks.RemoveAll(jl => jl.ContactId == contactId);
+                    if (removed > 0)
+                    {
+                        var storeJson = JsonSerializer.Serialize(store, WriteOptions);
+                        File.WriteAllText(file, storeJson);
+                        return;
+                    }
+                }
+                catch { }
+            }
+        }
+    }
+
+    public List<Contact> GetContactsForJob(Guid jobId)
+    {
+        lock (_contactsLock)
+        {
+            foreach (var file in Directory.GetFiles(_dataDirectory, "contacts_*.json"))
+            {
+                try
+                {
+                    var json = File.ReadAllText(file);
+                    var store = JsonSerializer.Deserialize<ContactStore>(json, ReadOptions);
+                    if (store == null) continue;
+                    var contactIds = store.JobLinks.Where(jl => jl.JobId == jobId).Select(jl => jl.ContactId).ToHashSet();
+                    if (contactIds.Count > 0)
+                        return store.Contacts.Where(c => contactIds.Contains(c.Id)).ToList();
+                }
+                catch { }
+            }
+            return new List<Contact>();
+        }
+    }
+
+    public void LinkContactToJob(Guid contactId, Guid jobId)
+    {
+        lock (_contactsLock)
+        {
+            foreach (var file in Directory.GetFiles(_dataDirectory, "contacts_*.json"))
+            {
+                try
+                {
+                    var json = File.ReadAllText(file);
+                    var store = JsonSerializer.Deserialize<ContactStore>(json, ReadOptions);
+                    if (store == null) continue;
+                    if (store.Contacts.Any(c => c.Id == contactId))
+                    {
+                        if (!store.JobLinks.Any(jl => jl.JobId == jobId && jl.ContactId == contactId))
+                        {
+                            store.JobLinks.Add(new JobContact { JobId = jobId, ContactId = contactId });
+                            var storeJson = JsonSerializer.Serialize(store, WriteOptions);
+                            File.WriteAllText(file, storeJson);
+                        }
+                        return;
+                    }
+                }
+                catch { }
+            }
+        }
+    }
+
+    public void UnlinkContactFromJob(Guid contactId, Guid jobId)
+    {
+        lock (_contactsLock)
+        {
+            foreach (var file in Directory.GetFiles(_dataDirectory, "contacts_*.json"))
+            {
+                try
+                {
+                    var json = File.ReadAllText(file);
+                    var store = JsonSerializer.Deserialize<ContactStore>(json, ReadOptions);
+                    if (store == null) continue;
+                    var removed = store.JobLinks.RemoveAll(jl => jl.JobId == jobId && jl.ContactId == contactId);
+                    if (removed > 0)
+                    {
+                        var storeJson = JsonSerializer.Serialize(store, WriteOptions);
+                        File.WriteAllText(file, storeJson);
+                        return;
+                    }
+                }
+                catch { }
+            }
+        }
+    }
+
+    public Contact? FindContactByName(Guid userId, string name)
+    {
+        lock (_contactsLock)
+        {
+            var store = LoadContactStore(userId);
+            return store.Contacts.FirstOrDefault(c => string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    public Dictionary<Guid, int> GetJobLinkCountsForContacts(List<Guid> contactIds)
+    {
+        lock (_contactsLock)
+        {
+            var result = new Dictionary<Guid, int>();
+            foreach (var file in Directory.GetFiles(_dataDirectory, "contacts_*.json"))
+            {
+                try
+                {
+                    var json = File.ReadAllText(file);
+                    var store = JsonSerializer.Deserialize<ContactStore>(json, ReadOptions);
+                    if (store == null) continue;
+                    foreach (var id in contactIds)
+                    {
+                        var count = store.JobLinks.Count(jl => jl.ContactId == id);
+                        if (count > 0)
+                            result[id] = count;
+                    }
+                }
+                catch { }
+            }
+            return result;
+        }
+    }
+
+    public List<Guid> GetLinkedJobIds(Guid contactId)
+    {
+        lock (_contactsLock)
+        {
+            foreach (var file in Directory.GetFiles(_dataDirectory, "contacts_*.json"))
+            {
+                try
+                {
+                    var json = File.ReadAllText(file);
+                    var store = JsonSerializer.Deserialize<ContactStore>(json, ReadOptions);
+                    if (store == null) continue;
+                    var ids = store.JobLinks.Where(jl => jl.ContactId == contactId).Select(jl => jl.JobId).ToList();
+                    if (ids.Count > 0) return ids;
+                }
+                catch { }
+            }
+            return new List<Guid>();
         }
     }
 

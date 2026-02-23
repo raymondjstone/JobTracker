@@ -237,6 +237,55 @@
     return url.replace(/\/$/, '').split('?')[0].toLowerCase();
   }
 
+  function getRecruiterInfo() {
+    var contact = null;
+    try {
+      // Try JSON-LD applicationContact
+      var jsonLdScripts = document.querySelectorAll('script[type="application/ld+json"]');
+      for (var k = 0; k < jsonLdScripts.length; k++) {
+        try {
+          var data = JSON.parse(jsonLdScripts[k].textContent);
+          if (Array.isArray(data)) data = data[0];
+          if (data && data['@type'] === 'JobPosting' && data.applicationContact) {
+            var ac = data.applicationContact;
+            if (ac.name) {
+              contact = { Name: ac.name };
+              if (ac.email) contact.Email = ac.email;
+              if (ac.telephone) contact.Phone = ac.telephone;
+              if (ac.url) contact.ProfileUrl = ac.url;
+              break;
+            }
+          }
+        } catch (e) {}
+      }
+
+      // DOM fallback
+      if (!contact) {
+        var selectors = ['.recruiter-name', '[class*="recruiter"]', '[class*="contact-person"]', '[class*="posted-by"]'];
+        for (var i = 0; i < selectors.length; i++) {
+          try {
+            var el = document.querySelector(selectors[i]);
+            if (!el) continue;
+            var name = (el.textContent || '').trim().split('\n')[0].trim();
+            if (name && name.length >= 2 && name.length < 100) {
+              contact = { Name: name };
+              var link = el.querySelector('a');
+              if (link && link.href) contact.ProfileUrl = link.href.split('?')[0];
+              break;
+            }
+          } catch (e) {}
+        }
+      }
+
+      if (contact) {
+        console.log('[S1J] Found recruiter: ' + contact.Name);
+      }
+    } catch (e) {
+      console.log('[S1J] Error extracting recruiter info: ' + e.message);
+    }
+    return contact;
+  }
+
   function updateDescription(url, description) {
     if (!url || !description || description.length < 50) {
       return Promise.resolve(false);
@@ -245,10 +294,16 @@
     var normalizedUrl = normalizeJobUrl(url);
     console.log('[S1J] Updating description for URL:', normalizedUrl);
 
+    var body = { Url: normalizedUrl, Description: description };
+    var recruiter = getRecruiterInfo();
+    if (recruiter) {
+      body.Contacts = [recruiter];
+    }
+
     return fetch(SERVER_URL + '/api/jobs/description', {
       method: 'PUT',
       headers: getHeaders(),
-      body: JSON.stringify({ Url: normalizedUrl, Description: description })
+      body: JSON.stringify(body)
     })
     .then(function(r) { return r.json(); })
     .then(function(d) {
@@ -441,7 +496,7 @@
           var locEl = document.querySelector('.location, [class*="location"]');
           var salEl = document.querySelector('.salary, [class*="salary"]');
 
-          jobs.push({
+          var detailJob = {
             Title: detailTitle,
             Company: compEl ? cleanText(compEl.textContent) : '',
             Location: locEl ? cleanText(locEl.textContent) : '',
@@ -453,7 +508,12 @@
             IsRemote: false,
             Skills: [],
             Source: 'S1Jobs'
-          });
+          };
+          var recruiter = getRecruiterInfo();
+          if (recruiter) {
+            detailJob.Contacts = [recruiter];
+          }
+          jobs.push(detailJob);
         }
       }
     }

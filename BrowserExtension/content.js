@@ -346,6 +346,98 @@
     return getCompanyFromPageTitle() || '';
   }
 
+  function getRecruiterInfo() {
+    // Extract recruiter/poster info from LinkedIn job detail pages
+    var contact = null;
+    try {
+      // Method 1: "hiring team" section - LinkedIn shows recruiter cards with name, title, and profile link
+      var hiringTeamSelectors = [
+        '.hirer-card__hirer-information',
+        '[class*="hirer-card"]',
+        '[class*="hiring-team"]',
+        '.jobs-poster__name',
+        '[class*="job-poster"]'
+      ];
+      for (var i = 0; i < hiringTeamSelectors.length; i++) {
+        try {
+          var el = document.querySelector(hiringTeamSelectors[i]);
+          if (!el) continue;
+          var nameEl = el.querySelector('a[class*="name"], strong, [class*="title"], a') || el;
+          var name = cleanText(nameEl.textContent).split('\n')[0].trim();
+          if (!name || name.length < 2 || name.length > 100) continue;
+          // Skip if it looks like a company name or generic text
+          if (name.toLowerCase() === 'linkedin' || name.toLowerCase().includes('hiring team')) continue;
+          contact = { Name: name };
+          // Try to get LinkedIn profile URL
+          var profileLink = el.querySelector('a[href*="/in/"]');
+          if (profileLink) {
+            contact.ProfileUrl = profileLink.href.split('?')[0];
+          }
+          // Try to get role/title from subtitle
+          var subtitleEl = el.querySelector('[class*="subtitle"], [class*="headline"], .artdeco-entity-lockup__subtitle');
+          if (subtitleEl) {
+            var role = cleanText(subtitleEl.textContent).split('\n')[0].trim();
+            if (role && role.length > 1 && role.length < 100 && role !== name) {
+              contact.Role = role;
+            }
+          }
+          break;
+        } catch (e) { }
+      }
+
+      // Method 2: "Direct message the job poster" section
+      if (!contact) {
+        var bodyText = document.body.innerText || '';
+        var posterMatch = bodyText.match(/(?:job poster|message the poster)\s*\n\s*([^\n]+)/i);
+        if (posterMatch) {
+          var posterName = posterMatch[1].trim();
+          if (posterName.length >= 2 && posterName.length < 100) {
+            contact = { Name: posterName };
+            // Look for a nearby profile link
+            var posterSection = document.querySelector('[class*="message-the-poster"], [class*="job-poster"]');
+            if (posterSection) {
+              var link = posterSection.querySelector('a[href*="/in/"]');
+              if (link) contact.ProfileUrl = link.href.split('?')[0];
+            }
+          }
+        }
+      }
+
+      // Method 3: Posted-by section at top of job card
+      if (!contact) {
+        var postedBySelectors = [
+          '.job-details-jobs-unified-top-card__hiring-manager',
+          '[class*="posted-by"]',
+          '[class*="recruiter-info"]'
+        ];
+        for (var j = 0; j < postedBySelectors.length; j++) {
+          try {
+            var section = document.querySelector(postedBySelectors[j]);
+            if (!section) continue;
+            var nameLink = section.querySelector('a[href*="/in/"]');
+            if (nameLink) {
+              var recruiterName = cleanText(nameLink.textContent).split('\n')[0].trim();
+              if (recruiterName && recruiterName.length >= 2 && recruiterName.length < 100) {
+                contact = {
+                  Name: recruiterName,
+                  ProfileUrl: nameLink.href.split('?')[0]
+                };
+                break;
+              }
+            }
+          } catch (e) { }
+        }
+      }
+
+      if (contact) {
+        console.log('[LJE] Found recruiter: ' + contact.Name + (contact.ProfileUrl ? ' (' + contact.ProfileUrl + ')' : ''));
+      }
+    } catch (e) {
+      console.log('[LJE] Error extracting recruiter info: ' + e.message);
+    }
+    return contact;
+  }
+
   function isJobUnavailable() {
     try {
       var bodyText = (document.body.innerText || '').toLowerCase();
@@ -392,6 +484,12 @@
 
     var body = { Url: url, Description: description };
     if (company) body.Company = company;
+
+    // Try to extract recruiter info from the current detail page
+    var recruiter = getRecruiterInfo();
+    if (recruiter) {
+      body.Contacts = [recruiter];
+    }
 
     return fetch(SERVER_URL + '/api/jobs/description', {
       method: 'PUT',
@@ -651,7 +749,7 @@
           var locEl = document.querySelector('[class*="bullet"], [class*="location"]');
           var detailCompany = getPosterCompany() || (compEl ? cleanText(compEl.textContent) : '') || getCompanyFromPageTitle();
 
-          jobs.push({
+          var detailJob = {
             Title: detailTitle,
             Company: detailCompany,
             Location: locEl ? cleanText(locEl.textContent) : '',
@@ -663,7 +761,12 @@
             IsRemote: false,
             Skills: [],
             Source: 'LinkedIn'
-          });
+          };
+          var recruiter = getRecruiterInfo();
+          if (recruiter) {
+            detailJob.Contacts = [recruiter];
+          }
+          jobs.push(detailJob);
           console.log('[LJE] Added detail view job: ' + detailTitle.substring(0, 30));
         }
       }

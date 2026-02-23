@@ -1016,6 +1016,15 @@ else
                                     }
                                 </button>
                             </li>
+                            <li class="nav-item">
+                                <button class="nav-link @(notesTab == "contacts" ? "active" : "") py-1 px-3" @onclick='() => notesTab = "contacts"'>
+                                    <i class="bi bi-people"></i> Contacts
+                                    @if (selectedJob.Contacts?.Any() == true)
+                                    {
+                                        <span class="badge bg-secondary ms-1" style="font-size: 0.65rem;">@selectedJob.Contacts.Count</span>
+                                    }
+                                </button>
+                            </li>
                         </ul>
                         <div class="border border-top-0 rounded-bottom p-3">
                             @if (notesTab == "notes")
@@ -1043,7 +1052,7 @@ else
                                     </button>
                                 }
                             }
-                            else
+                            else if (notesTab == "cover")
                             {
                                 @if (editingCoverLetter)
                                 {
@@ -1079,6 +1088,141 @@ else
                                     <button class="btn btn-sm btn-outline-primary" @onclick="StartEditCoverLetter">
                                         <i class="bi bi-pencil"></i> @(!string.IsNullOrWhiteSpace(selectedJob.CoverLetter) ? "Edit" : "Add Cover Letter")
                                     </button>
+                                }
+                            }
+                            else if (notesTab == "contacts")
+                            {
+                                @if (addingContact || editingContactId.HasValue)
+                                {
+                                    <div class="card card-body mb-3">
+                                        <h6 class="mb-2">@(editingContactId.HasValue ? "Edit Contact" : "New Contact")</h6>
+                                        <div class="row g-2 mb-2">
+                                            <div class="col-6">
+                                                <input class="form-control form-control-sm" placeholder="Name *" @bind="contactFormName" />
+                                            </div>
+                                            <div class="col-6">
+                                                <select class="form-select form-select-sm" @bind="contactFormRole">
+                                                    <option value="">-- Role --</option>
+                                                    <option>Recruiter</option>
+                                                    <option>Hiring Manager</option>
+                                                    <option>HR</option>
+                                                    <option>Team Lead</option>
+                                                    <option>Other</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div class="row g-2 mb-2">
+                                            <div class="col-4">
+                                                <input class="form-control form-control-sm" placeholder="Email" @bind="contactFormEmail" />
+                                            </div>
+                                            <div class="col-4">
+                                                <input class="form-control form-control-sm" placeholder="Phone" @bind="contactFormPhone" />
+                                            </div>
+                                            <div class="col-4">
+                                                <input class="form-control form-control-sm" placeholder="Profile URL" @bind="contactFormProfileUrl" />
+                                            </div>
+                                        </div>
+                                        <div class="d-flex gap-2">
+                                            <button class="btn btn-sm btn-primary" @onclick="SaveContact" disabled="@string.IsNullOrWhiteSpace(contactFormName)"><i class="bi bi-check-lg"></i> Save</button>
+                                            <button class="btn btn-sm btn-outline-secondary" @onclick="CancelContactForm">Cancel</button>
+                                        </div>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <button class="btn btn-sm btn-outline-primary mb-3" @onclick="StartAddContact">
+                                        <i class="bi bi-person-plus"></i> Add Contact
+                                    </button>
+                                }
+
+                                @if (selectedJobContacts?.Any() == true)
+                                {
+                                    @foreach (var contact in selectedJobContacts.OrderByDescending(c => c.DateAdded))
+                                    {
+                                        <div class="card mb-2">
+                                            <div class="card-body py-2 px-3">
+                                                <div class="d-flex justify-content-between align-items-start">
+                                                    <div>
+                                                        <strong>@contact.Name</strong>
+                                                        @if (!string.IsNullOrWhiteSpace(contact.Role))
+                                                        {
+                                                            <span class="badge bg-info ms-1">@contact.Role</span>
+                                                        }
+                                                        <div class="small text-muted mt-1">
+                                                            @if (!string.IsNullOrWhiteSpace(contact.Email))
+                                                            {
+                                                                <a href="mailto:@contact.Email" class="me-2"><i class="bi bi-envelope"></i> @contact.Email</a>
+                                                            }
+                                                            @if (!string.IsNullOrWhiteSpace(contact.Phone))
+                                                            {
+                                                                <a href="tel:@contact.Phone" class="me-2"><i class="bi bi-telephone"></i> @contact.Phone</a>
+                                                            }
+                                                            @if (!string.IsNullOrWhiteSpace(contact.ProfileUrl))
+                                                            {
+                                                                <a href="@contact.ProfileUrl" target="_blank"><i class="bi bi-link-45deg"></i> Profile</a>
+                                                            }
+                                                        </div>
+                                                    </div>
+                                                    <div class="d-flex gap-1">
+                                                        <button class="btn btn-sm btn-outline-secondary" @onclick="() => StartEditContact(contact)" title="Edit"><i class="bi bi-pencil"></i></button>
+                                                        <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveContact(contact.Id)" title="Delete"><i class="bi bi-trash"></i></button>
+                                                    </div>
+                                                </div>
+
+                                                <div class="mt-2">
+                                                    @if (addingInteractionForContactId == contact.Id)
+                                                    {
+                                                        <div class="card card-body py-2 px-3 mb-2 bg-light">
+                                                            <div class="row g-2 mb-2">
+                                                                <div class="col-4">
+                                                                    <select class="form-select form-select-sm" @bind="interactionFormChannel">
+                                                                        <option value="">-- Channel --</option>
+                                                                        <option>Email</option>
+                                                                        <option>Phone</option>
+                                                                        <option>LinkedIn</option>
+                                                                        <option>Video Call</option>
+                                                                        <option>In-Person</option>
+                                                                    </select>
+                                                                </div>
+                                                                <div class="col-4">
+                                                                    <input type="date" class="form-control form-control-sm" @bind="interactionFormDate" />
+                                                                </div>
+                                                            </div>
+                                                            <textarea class="form-control form-control-sm mb-2" rows="2" placeholder="Notes..." @bind="interactionFormNotes"></textarea>
+                                                            <div class="d-flex gap-2">
+                                                                <button class="btn btn-sm btn-primary" @onclick="() => SaveInteraction(contact.Id)" disabled="@string.IsNullOrWhiteSpace(interactionFormChannel)"><i class="bi bi-check-lg"></i> Save</button>
+                                                                <button class="btn btn-sm btn-outline-secondary" @onclick="CancelInteractionForm">Cancel</button>
+                                                            </div>
+                                                        </div>
+                                                    }
+                                                    else
+                                                    {
+                                                        <button class="btn btn-sm btn-outline-secondary" @onclick="() => StartAddInteraction(contact.Id)">
+                                                            <i class="bi bi-chat-dots"></i> Add Interaction
+                                                        </button>
+                                                    }
+
+                                                    @if (contact.Interactions?.Any() == true)
+                                                    {
+                                                        <div class="mt-2">
+                                                            @foreach (var interaction in contact.Interactions.OrderByDescending(i => i.Date))
+                                                            {
+                                                                <div class="d-flex align-items-start mb-1 small">
+                                                                    <span class="badge bg-secondary me-2" style="min-width: 70px;">@interaction.Channel</span>
+                                                                    <span class="text-muted me-2">@interaction.Date.ToString("MMM dd, yyyy")</span>
+                                                                    <span>@interaction.Notes</span>
+                                                                </div>
+                                                            }
+                                                        </div>
+                                                    }
+                                                </div>
+                                            </div>
+                                        </div>
+                                    }
+                                }
+                                else if (!addingContact)
+                                {
+                                    <p class="text-muted small">No contacts yet. Add a recruiter or hiring manager to track your conversations.</p>
                                 }
                             }
                         </div>
@@ -1626,7 +1770,7 @@ else
                         @foreach (var point in currentCoverLetter.SellingPoints)
                         {
                             <div class="p-2 mb-2 bg-light rounded">
-                                <p class="mb-0">• @point</p>
+                                <p class="mb-0">ï¿½ @point</p>
                             </div>
                         }
                     </div>
@@ -1647,7 +1791,7 @@ else
                             <p>
                                 @foreach (var point in currentCoverLetter.SellingPoints)
                                 {
-                                    <text>• @point<br /></text>
+                                    <text>ï¿½ @point<br /></text>
                                 }
                             </p>
                             <p>@currentCoverLetter.ClosingParagraph</p>
@@ -2256,6 +2400,17 @@ else
     private string editNotesText = "";
     private string editCoverLetterText = "";
 
+    // Contact form state
+    private bool addingContact = false;
+    private Guid? editingContactId = null;
+    private string contactFormName = "", contactFormEmail = "", contactFormPhone = "", contactFormProfileUrl = "", contactFormRole = "";
+    private List<Contact> selectedJobContacts = new();
+
+    // Interaction form state
+    private Guid? addingInteractionForContactId = null;
+    private string interactionFormChannel = "", interactionFormNotes = "";
+    private DateTime interactionFormDate = DateTime.Now;
+
     // Crawl state
     private bool isCrawling = false;
     private string? crawlStatusMessage = null;
@@ -2587,9 +2742,13 @@ else
     private void ShowJobDetails(JobListing job)
     {
         selectedJob = job;
+        selectedJobContacts = JobService.GetContactsForJob(job.Id);
         notesTab = "notes";
         editingNotes = false;
         editingCoverLetter = false;
+        addingContact = false;
+        editingContactId = null;
+        addingInteractionForContactId = null;
     }
 
     private void CloseJobDetails()
@@ -2597,7 +2756,105 @@ else
         selectedJob = null;
         editingNotes = false;
         editingCoverLetter = false;
+        addingContact = false;
+        editingContactId = null;
+        addingInteractionForContactId = null;
     }
+    private void StartAddContact()
+    {
+        addingContact = true;
+        editingContactId = null;
+        contactFormName = ""; contactFormEmail = ""; contactFormPhone = ""; contactFormProfileUrl = ""; contactFormRole = "";
+    }
+
+    private void StartEditContact(Contact contact)
+    {
+        editingContactId = contact.Id;
+        addingContact = false;
+        contactFormName = contact.Name;
+        contactFormEmail = contact.Email ?? "";
+        contactFormPhone = contact.Phone ?? "";
+        contactFormProfileUrl = contact.ProfileUrl ?? "";
+        contactFormRole = contact.Role ?? "";
+    }
+
+    private void CancelContactForm()
+    {
+        addingContact = false;
+        editingContactId = null;
+    }
+
+    private void SaveContact()
+    {
+        if (selectedJob == null || string.IsNullOrWhiteSpace(contactFormName)) return;
+
+        if (editingContactId.HasValue)
+        {
+            var existing = selectedJobContacts.FirstOrDefault(c => c.Id == editingContactId.Value);
+            if (existing != null)
+            {
+                existing.Name = contactFormName.Trim();
+                existing.Email = string.IsNullOrWhiteSpace(contactFormEmail) ? null : contactFormEmail.Trim();
+                existing.Phone = string.IsNullOrWhiteSpace(contactFormPhone) ? null : contactFormPhone.Trim();
+                existing.ProfileUrl = string.IsNullOrWhiteSpace(contactFormProfileUrl) ? null : contactFormProfileUrl.Trim();
+                existing.Role = string.IsNullOrWhiteSpace(contactFormRole) ? null : contactFormRole.Trim();
+                JobService.UpdateContact(existing);
+            }
+        }
+        else
+        {
+            JobService.AddContact(selectedJob.Id, new Contact
+            {
+                Name = contactFormName.Trim(),
+                Email = string.IsNullOrWhiteSpace(contactFormEmail) ? null : contactFormEmail.Trim(),
+                Phone = string.IsNullOrWhiteSpace(contactFormPhone) ? null : contactFormPhone.Trim(),
+                ProfileUrl = string.IsNullOrWhiteSpace(contactFormProfileUrl) ? null : contactFormProfileUrl.Trim(),
+                Role = string.IsNullOrWhiteSpace(contactFormRole) ? null : contactFormRole.Trim()
+            });
+        }
+
+        var jobId = selectedJob.Id;
+        selectedJob = JobService.GetJobById(jobId);
+        selectedJobContacts = JobService.GetContactsForJob(jobId);
+        addingContact = false;
+        editingContactId = null;
+    }
+
+    private void RemoveContact(Guid contactId)
+    {
+        if (selectedJob == null) return;
+        var jobId = selectedJob.Id;
+        JobService.RemoveContact(jobId, contactId);
+        selectedJob = JobService.GetJobById(jobId);
+        selectedJobContacts = JobService.GetContactsForJob(jobId);
+    }
+
+    private void StartAddInteraction(Guid contactId)
+    {
+        addingInteractionForContactId = contactId;
+        interactionFormChannel = ""; interactionFormNotes = ""; interactionFormDate = DateTime.Now;
+    }
+
+    private void CancelInteractionForm()
+    {
+        addingInteractionForContactId = null;
+    }
+
+    private void SaveInteraction(Guid contactId)
+    {
+        if (selectedJob == null || string.IsNullOrWhiteSpace(interactionFormChannel)) return;
+
+        JobService.AddContactInteraction(contactId, new ContactInteraction
+        {
+            Date = interactionFormDate,
+            Channel = interactionFormChannel.Trim(),
+            Notes = interactionFormNotes?.Trim() ?? ""
+        });
+
+        selectedJobContacts = JobService.GetContactsForJob(selectedJob.Id);
+        addingInteractionForContactId = null;
+    }
+
     private void ConfirmDelete(JobListing job) => jobToDelete = job;
     private void CancelDelete() => jobToDelete = null;
 
@@ -3341,7 +3598,7 @@ else
         if (selectedJobForAI != null && currentCoverLetter != null)
         {
             var fullLetter = $"{currentCoverLetter.OpeningParagraph}\n\n" +
-                           $"{string.Join("\n\n", currentCoverLetter.SellingPoints.Select(p => $"• {p}"))}\n\n" +
+                           $"{string.Join("\n\n", currentCoverLetter.SellingPoints.Select(p => $"ï¿½ {p}"))}\n\n" +
                            $"{currentCoverLetter.ClosingParagraph}";
 
             selectedJobForAI.CoverLetter = fullLetter;

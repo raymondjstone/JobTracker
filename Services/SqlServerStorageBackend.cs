@@ -334,6 +334,84 @@ public class SqlServerStorageBackend : IStorageBackend
         _logger.LogDebug("Saved settings to SQL Server for user {UserId} ({RuleCount} rules)", userId, settings.JobRules.Rules.Count);
     }
 
+    // Contact operations
+    public List<Contact> LoadContacts(Guid userId)
+    {
+        using var db = _factory.CreateDbContext();
+        return db.Contacts.AsNoTracking().Where(c => c.UserId == userId).ToList();
+    }
+
+    public Contact? GetContactById(Guid contactId)
+    {
+        using var db = _factory.CreateDbContext();
+        return db.Contacts.AsNoTracking().FirstOrDefault(c => c.Id == contactId);
+    }
+
+    public void SaveContact(Contact contact)
+    {
+        using var db = _factory.CreateDbContext();
+        db.Contacts.Update(contact);
+        db.SaveChanges();
+    }
+
+    public void AddContact(Contact contact)
+    {
+        using var db = _factory.CreateDbContext();
+        db.Contacts.Add(contact);
+        db.SaveChanges();
+    }
+
+    public void DeleteContact(Guid contactId)
+    {
+        using var db = _factory.CreateDbContext();
+        db.JobContacts.Where(jc => jc.ContactId == contactId).ExecuteDelete();
+        db.Contacts.Where(c => c.Id == contactId).ExecuteDelete();
+    }
+
+    public List<Contact> GetContactsForJob(Guid jobId)
+    {
+        using var db = _factory.CreateDbContext();
+        var contactIds = db.JobContacts.Where(jc => jc.JobId == jobId).Select(jc => jc.ContactId).ToList();
+        return db.Contacts.AsNoTracking().Where(c => contactIds.Contains(c.Id)).ToList();
+    }
+
+    public void LinkContactToJob(Guid contactId, Guid jobId)
+    {
+        using var db = _factory.CreateDbContext();
+        if (!db.JobContacts.Any(jc => jc.JobId == jobId && jc.ContactId == contactId))
+        {
+            db.JobContacts.Add(new JobContact { JobId = jobId, ContactId = contactId });
+            db.SaveChanges();
+        }
+    }
+
+    public void UnlinkContactFromJob(Guid contactId, Guid jobId)
+    {
+        using var db = _factory.CreateDbContext();
+        db.JobContacts.Where(jc => jc.JobId == jobId && jc.ContactId == contactId).ExecuteDelete();
+    }
+
+    public Contact? FindContactByName(Guid userId, string name)
+    {
+        using var db = _factory.CreateDbContext();
+        return db.Contacts.AsNoTracking().FirstOrDefault(c => c.UserId == userId && c.Name.ToLower() == name.ToLower());
+    }
+
+    public Dictionary<Guid, int> GetJobLinkCountsForContacts(List<Guid> contactIds)
+    {
+        using var db = _factory.CreateDbContext();
+        return db.JobContacts
+            .Where(jc => contactIds.Contains(jc.ContactId))
+            .GroupBy(jc => jc.ContactId)
+            .ToDictionary(g => g.Key, g => g.Count());
+    }
+
+    public List<Guid> GetLinkedJobIds(Guid contactId)
+    {
+        using var db = _factory.CreateDbContext();
+        return db.JobContacts.Where(jc => jc.ContactId == contactId).Select(jc => jc.JobId).ToList();
+    }
+
     /// <summary>
     /// Whether the database has any existing data (used for import detection)
     /// </summary>

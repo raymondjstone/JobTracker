@@ -31,6 +31,19 @@ public interface IStorageBackend
     AppSettings LoadSettings(Guid userId);
     void SaveSettings(AppSettings settings, Guid userId);
 
+    // Contact operations (user-scoped)
+    List<Contact> LoadContacts(Guid userId);
+    Contact? GetContactById(Guid contactId);
+    void SaveContact(Contact contact);
+    void AddContact(Contact contact);
+    void DeleteContact(Guid contactId);
+    List<Contact> GetContactsForJob(Guid jobId);
+    void LinkContactToJob(Guid contactId, Guid jobId);
+    void UnlinkContactFromJob(Guid contactId, Guid jobId);
+    Contact? FindContactByName(Guid userId, string name);
+    Dictionary<Guid, int> GetJobLinkCountsForContacts(List<Guid> contactIds);
+    List<Guid> GetLinkedJobIds(Guid contactId);
+
     // Migration helpers
     void MigrateExistingDataToUser(Guid userId);
 }

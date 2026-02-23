@@ -262,6 +262,18 @@ public class JobCrawlService
         // Extract salary if present
         var salary = ExtractText(content, @"<span[^>]*class=""[^""]*job-search-card__salary-info[^""]*""[^>]*>(.*?)</span>");
 
+        // Extract recruiter/poster name if present in public listing
+        var contacts = new List<ContactEntry>();
+        var posterName = ExtractText(content, @"<a[^>]*class=""[^""]*base-card__full-link[^""]*""[^>]*>.*?Posted by\s+([^<]+)", true);
+        if (!string.IsNullOrWhiteSpace(posterName))
+        {
+            contacts.Add(new ContactEntry
+            {
+                Name = CleanHtmlText(posterName),
+                Role = "Recruiter"
+            });
+        }
+
         return new JobListing
         {
             Title = CleanHtmlText(title),
@@ -272,6 +284,7 @@ public class JobCrawlService
             DateAdded = DateTime.Now,
             Source = "LinkedIn",
             Salary = CleanHtmlText(salary ?? ""),
+            Contacts = contacts,
         };
     }
 
@@ -360,6 +373,22 @@ public class JobCrawlService
             if (string.IsNullOrWhiteSpace(salary))
                 salary = ExtractText(section, @"<div[^>]*class=""[^""]*salary[^""]*""[^>]*>(.*?)</div>");
 
+            // Extract recruiter/agency name if present
+            var contacts = new List<ContactEntry>();
+            var recruiter = ExtractText(section, @"<span[^>]*class=""[^""]*recruiter[^""]*""[^>]*>(.*?)</span>");
+            if (string.IsNullOrWhiteSpace(recruiter))
+                recruiter = ExtractText(section, @"<div[^>]*class=""[^""]*recruiter[^""]*""[^>]*>(.*?)</div>");
+            if (string.IsNullOrWhiteSpace(recruiter))
+                recruiter = ExtractText(section, @"<span[^>]*class=""[^""]*posted-by[^""]*""[^>]*>(.*?)</span>");
+            if (!string.IsNullOrWhiteSpace(recruiter))
+            {
+                contacts.Add(new ContactEntry
+                {
+                    Name = CleanHtmlText(recruiter),
+                    Role = "Recruiter"
+                });
+            }
+
             jobs.Add(new JobListing
             {
                 Title = CleanHtmlText(title),
@@ -370,6 +399,7 @@ public class JobCrawlService
                 DatePosted = DateTime.Now,
                 DateAdded = DateTime.Now,
                 Source = "S1Jobs",
+                Contacts = contacts,
             });
         }
 
@@ -659,6 +689,38 @@ public class JobCrawlService
         // Extract description from profile field (HTML) and summary
         var description = GetJsonString(item, "summary") ?? "";
 
+        // Extract recruiter/HR contact if available in the job data
+        var contacts = new List<ContactEntry>();
+        if (item.TryGetProperty("recruiter", out var recruiter))
+        {
+            var recruiterName = GetJsonString(recruiter, "name");
+            if (!string.IsNullOrWhiteSpace(recruiterName))
+            {
+                var contactEntry = new ContactEntry
+                {
+                    Name = recruiterName,
+                    Role = "Recruiter"
+                };
+                var recruiterEmail = GetJsonString(recruiter, "email");
+                if (!string.IsNullOrWhiteSpace(recruiterEmail))
+                    contactEntry.Email = recruiterEmail;
+                contacts.Add(contactEntry);
+            }
+        }
+        // Also check for hiring_manager or office_manager fields
+        if (item.TryGetProperty("hiring_manager", out var hm))
+        {
+            var hmName = GetJsonString(hm, "name");
+            if (!string.IsNullOrWhiteSpace(hmName))
+            {
+                contacts.Add(new ContactEntry
+                {
+                    Name = hmName,
+                    Role = "Hiring Manager"
+                });
+            }
+        }
+
         return new JobListing
         {
             Title = title,
@@ -672,6 +734,7 @@ public class JobCrawlService
             IsRemote = isRemote,
             JobType = jobType,
             Description = description,
+            Contacts = contacts,
         };
     }
 
@@ -785,6 +848,43 @@ public class JobCrawlService
                     if (!string.IsNullOrEmpty(description))
                         description = ConvertHtmlToPlainText(description);
 
+                    // Extract recruiter/contact info from JSON-LD
+                    var contacts = new List<ContactEntry>();
+                    if (root.TryGetProperty("applicationContact", out var appContact))
+                    {
+                        var contactName = GetJsonString(appContact, "name");
+                        if (!string.IsNullOrWhiteSpace(contactName))
+                        {
+                            var contactEntry = new ContactEntry { Name = contactName, Role = "Recruiter" };
+                            var contactEmail = GetJsonString(appContact, "email");
+                            if (!string.IsNullOrWhiteSpace(contactEmail))
+                                contactEntry.Email = contactEmail;
+                            var contactPhone = GetJsonString(appContact, "telephone");
+                            if (!string.IsNullOrWhiteSpace(contactPhone))
+                                contactEntry.Phone = contactPhone;
+                            contacts.Add(contactEntry);
+                        }
+                    }
+                    // Also check for recruiter info in hiringOrganization
+                    if (contacts.Count == 0 && root.TryGetProperty("hiringOrganization", out var hiringOrg))
+                    {
+                        var contactEmail = GetJsonString(hiringOrg, "email");
+                        var contactPhone = GetJsonString(hiringOrg, "telephone");
+                        if (!string.IsNullOrWhiteSpace(contactEmail) || !string.IsNullOrWhiteSpace(contactPhone))
+                        {
+                            var contactEntry = new ContactEntry
+                            {
+                                Name = GetJsonString(hiringOrg, "name") ?? company,
+                                Role = "HR"
+                            };
+                            if (!string.IsNullOrWhiteSpace(contactEmail))
+                                contactEntry.Email = contactEmail;
+                            if (!string.IsNullOrWhiteSpace(contactPhone))
+                                contactEntry.Phone = contactPhone;
+                            contacts.Add(contactEntry);
+                        }
+                    }
+
                     // Try to extract URL from the page
                     var urlMatch = Regex.Match(html, @"<link[^>]*rel=""canonical""[^>]*href=""([^""]+)""",
                         RegexOptions.IgnoreCase);
@@ -800,6 +900,7 @@ public class JobCrawlService
                         DateAdded = DateTime.Now,
                         Source = "EnergyJobSearch",
                         Description = description,
+                        Contacts = contacts,
                     });
                 }
             }

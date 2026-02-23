@@ -270,6 +270,57 @@
     return url.replace(/\/$/, '').split('?')[0].toLowerCase();
   }
 
+  function getRecruiterInfo() {
+    var contact = null;
+    try {
+      // JSON-LD: use existing getJsonLdJobData() for applicationContact and hiringOrganization.contactPoint
+      var jsonLd = getJsonLdJobData();
+      if (jsonLd) {
+        if (jsonLd.applicationContact && jsonLd.applicationContact.name) {
+          var ac = jsonLd.applicationContact;
+          contact = { Name: ac.name };
+          if (ac.email) contact.Email = ac.email;
+          if (ac.telephone) contact.Phone = ac.telephone;
+          if (ac.url) contact.ProfileUrl = ac.url;
+        }
+        if (!contact && jsonLd.hiringOrganization && jsonLd.hiringOrganization.contactPoint) {
+          var cp = jsonLd.hiringOrganization.contactPoint;
+          if (cp.name || cp.contactType) {
+            contact = { Name: cp.name || cp.contactType };
+            if (cp.email) contact.Email = cp.email;
+            if (cp.telephone) contact.Phone = cp.telephone;
+            if (cp.url) contact.ProfileUrl = cp.url;
+          }
+        }
+      }
+
+      // DOM fallback
+      if (!contact) {
+        var selectors = ['[class*="recruiter"]', '[class*="contact-person"]', '[class*="posted-by"]'];
+        for (var i = 0; i < selectors.length; i++) {
+          try {
+            var el = document.querySelector(selectors[i]);
+            if (!el) continue;
+            var name = (el.textContent || '').trim().split('\n')[0].trim();
+            if (name && name.length >= 2 && name.length < 100) {
+              contact = { Name: name };
+              var link = el.querySelector('a');
+              if (link && link.href) contact.ProfileUrl = link.href.split('?')[0];
+              break;
+            }
+          } catch (e) {}
+        }
+      }
+
+      if (contact) {
+        console.log('[EJS] Found recruiter: ' + contact.Name);
+      }
+    } catch (e) {
+      console.log('[EJS] Error extracting recruiter info: ' + e.message);
+    }
+    return contact;
+  }
+
   function updateDescription(url, description) {
     if (!url || !description || description.length < 50) {
       return Promise.resolve(false);
@@ -278,10 +329,16 @@
     var normalizedUrl = normalizeJobUrl(url);
     console.log('[EJS] Updating description for URL:', normalizedUrl);
 
+    var body = { Url: normalizedUrl, Description: description };
+    var recruiter = getRecruiterInfo();
+    if (recruiter) {
+      body.Contacts = [recruiter];
+    }
+
     return fetch(SERVER_URL + '/api/jobs/description', {
       method: 'PUT',
       headers: getHeaders(),
-      body: JSON.stringify({ Url: normalizedUrl, Description: description })
+      body: JSON.stringify(body)
     })
     .then(function(r) { return r.json(); })
     .then(function(d) {
@@ -513,6 +570,10 @@
           }
         }
 
+        var recruiter = getRecruiterInfo();
+        if (recruiter) {
+          detailJob.Contacts = [recruiter];
+        }
         jobs.push(detailJob);
         seenIds[currentJobId] = true;
       }
@@ -544,7 +605,7 @@
           var locEl = document.querySelector('.location, [class*="location"]');
           var salEl = document.querySelector('.salary, [class*="salary"]');
 
-          jobs.push({
+          var domDetailJob = {
             Title: detailTitle,
             Company: compEl ? cleanText(compEl.textContent) : '',
             Location: locEl ? cleanText(locEl.textContent) : '',
@@ -556,7 +617,12 @@
             IsRemote: false,
             Skills: [],
             Source: 'EnergyJobSearch'
-          });
+          };
+          var domRecruiter = getRecruiterInfo();
+          if (domRecruiter) {
+            domDetailJob.Contacts = [domRecruiter];
+          }
+          jobs.push(domDetailJob);
         }
       }
     }

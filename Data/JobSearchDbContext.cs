@@ -11,6 +11,8 @@ public class JobSearchDbContext : DbContext
     public DbSet<JobHistoryEntry> HistoryEntries { get; set; }
     public DbSet<JobRule> JobRules { get; set; }
     public DbSet<AppSettingsEntity> AppSettings { get; set; }
+    public DbSet<Contact> Contacts { get; set; }
+    public DbSet<JobContact> JobContacts { get; set; }
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -66,6 +68,39 @@ public class JobSearchDbContext : DbContext
                 v => JsonSerializer.Serialize(v, JsonOptions),
                 v => JsonSerializer.Deserialize<List<ApplicationStageChange>>(v, JsonOptions) ?? new List<ApplicationStageChange>()
             ).HasColumnType("nvarchar(max)");
+
+            // List<ContactEntry> Contacts -> JSON column (kept for backward compat / data migration)
+            entity.Property(j => j.Contacts).HasConversion(
+                v => JsonSerializer.Serialize(v, JsonOptions),
+                v => JsonSerializer.Deserialize<List<ContactEntry>>(v, JsonOptions) ?? new List<ContactEntry>()
+            ).HasColumnType("nvarchar(max)");
+        });
+
+        // Contact configuration (normalized)
+        modelBuilder.Entity<Contact>(entity =>
+        {
+            entity.HasKey(c => c.Id);
+            entity.HasIndex(c => c.UserId);
+            entity.HasIndex(c => new { c.UserId, c.Name });
+
+            entity.Property(c => c.Name).HasColumnType("nvarchar(max)");
+            entity.Property(c => c.Email).HasColumnType("nvarchar(max)");
+            entity.Property(c => c.Phone).HasColumnType("nvarchar(max)");
+            entity.Property(c => c.ProfileUrl).HasColumnType("nvarchar(max)");
+            entity.Property(c => c.Role).HasColumnType("nvarchar(max)");
+
+            entity.Property(c => c.Interactions).HasConversion(
+                v => JsonSerializer.Serialize(v, JsonOptions),
+                v => JsonSerializer.Deserialize<List<ContactInteraction>>(v, JsonOptions) ?? new List<ContactInteraction>()
+            ).HasColumnType("nvarchar(max)");
+        });
+
+        // JobContact junction configuration
+        modelBuilder.Entity<JobContact>(entity =>
+        {
+            entity.HasKey(jc => new { jc.JobId, jc.ContactId });
+            entity.HasIndex(jc => jc.JobId);
+            entity.HasIndex(jc => jc.ContactId);
         });
 
         // JobHistoryEntry configuration

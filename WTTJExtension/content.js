@@ -352,13 +352,61 @@
     return url.split('?')[0].replace(/\/$/, '').toLowerCase();
   }
 
+  function getRecruiterInfo() {
+    var contact = null;
+    try {
+      // data-testid selectors (WTTJ uses these)
+      var selectors = [
+        '[data-testid="recruiter-name"]',
+        '[data-testid="job-recruiter"]',
+        '[class*="recruiter"]',
+        '[class*="team-member"]',
+        '[data-testid="company-recruiter"]'
+      ];
+      for (var i = 0; i < selectors.length; i++) {
+        try {
+          var el = document.querySelector(selectors[i]);
+          if (!el) continue;
+          var name = (el.textContent || '').trim().split('\n')[0].trim();
+          if (name && name.length >= 2 && name.length < 100) {
+            contact = { Name: name };
+            var link = el.querySelector('a');
+            if (link && link.href) contact.ProfileUrl = link.href.split('?')[0];
+            // Try role from nearby element
+            var roleEl = el.querySelector('[class*="role"], [class*="title"]') || el.nextElementSibling;
+            if (roleEl) {
+              var role = (roleEl.textContent || '').trim().split('\n')[0].trim();
+              if (role && role.length > 1 && role.length < 100 && role !== name) {
+                contact.Role = role;
+              }
+            }
+            break;
+          }
+        } catch (e) {}
+      }
+
+      if (contact) {
+        console.log('[WTTJ] Found recruiter: ' + contact.Name);
+      }
+    } catch (e) {
+      console.log('[WTTJ] Error extracting recruiter info: ' + e.message);
+    }
+    return contact;
+  }
+
   function updateDescription(url, description) {
     if (!url || !description || description.length < 50) return Promise.resolve(false);
+
+    var body = { Url: url, Description: description };
+    var recruiter = getRecruiterInfo();
+    if (recruiter) {
+      body.Contacts = [recruiter];
+    }
 
     return fetch(SERVER_URL + '/api/jobs/description', {
       method: 'PUT',
       headers: getHeaders(),
-      body: JSON.stringify({ Url: url, Description: description })
+      body: JSON.stringify(body)
     })
     .then(function(r) {
       if (!r.ok) {
@@ -820,7 +868,7 @@
             if (skillText && skills.length < 15) skills.push(skillText);
           });
 
-          jobs.push({
+          var detailJob = {
             Title: detailTitle,
             Company: company,
             Location: location,
@@ -832,7 +880,12 @@
             IsRemote: location.toLowerCase().includes('remote'),
             Skills: skills,
             Source: 'WTTJ'
-          });
+          };
+          var recruiter = getRecruiterInfo();
+          if (recruiter) {
+            detailJob.Contacts = [recruiter];
+          }
+          jobs.push(detailJob);
           console.log('[WTTJ] Added detail view job: ' + detailTitle.substring(0, 30));
         }
       }

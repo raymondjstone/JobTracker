@@ -42,7 +42,10 @@ public enum HistoryActionType
     BulkImport,
     DuplicateRemoved,
     RemoteStatusChanged,
-    Modified              // Generic field modification (for change timeline)
+    Modified,             // Generic field modification (for change timeline)
+    ContactAdded,
+    ContactRemoved,
+    InteractionAdded
 }
 
 public enum HistoryChangeSource

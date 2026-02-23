@@ -255,6 +255,20 @@ public class JobHistoryService
         }, job.UserId);
     }
 
+    public void RecordContactChange(JobListing job, HistoryActionType actionType, string details)
+    {
+        AddEntry(new JobHistoryEntry
+        {
+            JobId = job.Id,
+            JobTitle = job.Title,
+            Company = job.Company,
+            JobUrl = job.Url,
+            ActionType = actionType,
+            ChangeSource = HistoryChangeSource.Manual,
+            Details = details
+        }, job.UserId);
+    }
+
     public void RecordChange(Guid jobId, Guid userId, string fieldName, string? oldValue, string? newValue, string description, string jobTitle, string company, string? jobUrl)
     {
         AddEntry(new JobHistoryEntry

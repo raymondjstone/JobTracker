@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "EnergyJobSearch Extractor",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Automatically extract job listings from EnergyJobSearch.com and send them to your Job Tracker app",
   "permissions": [
     "activeTab",

@@ -195,6 +195,20 @@ public class JobListingService
             if (jobListing.Interest == default)
                 jobListing.Interest = InterestStatus.NotRated;
 
+            // Ensure contacts have proper IDs and timestamps
+            if (jobListing.Contacts?.Count > 0)
+            {
+                foreach (var contact in jobListing.Contacts)
+                {
+                    if (string.IsNullOrWhiteSpace(contact.Name))
+                        continue;
+                    contact.Id = Guid.NewGuid();
+                    contact.DateAdded = DateTime.Now;
+                }
+                jobListing.Contacts = jobListing.Contacts
+                    .Where(c => !string.IsNullOrWhiteSpace(c.Name)).ToList();
+            }
+
             // Auto-infer source from URL if not set
             if (string.IsNullOrWhiteSpace(jobListing.Source))
             {
@@ -552,6 +566,163 @@ public class JobListingService
         }
     }
 
+    public void AddContact(Guid jobId, Contact contact)
+    {
+        lock (_lock)
+        {
+            var job = _jobListings.FirstOrDefault(j => j.Id == jobId);
+            if (job == null) return;
+
+            // Check if this contact already exists across user's contacts
+            var existing = _storage.FindContactByName(job.UserId, contact.Name);
+            if (existing != null)
+            {
+                // Merge empty fields
+                if (string.IsNullOrWhiteSpace(existing.ProfileUrl) && !string.IsNullOrWhiteSpace(contact.ProfileUrl))
+                    existing.ProfileUrl = contact.ProfileUrl;
+                if (string.IsNullOrWhiteSpace(existing.Email) && !string.IsNullOrWhiteSpace(contact.Email))
+                    existing.Email = contact.Email;
+                if (string.IsNullOrWhiteSpace(existing.Phone) && !string.IsNullOrWhiteSpace(contact.Phone))
+                    existing.Phone = contact.Phone;
+                if (string.IsNullOrWhiteSpace(existing.Role) && !string.IsNullOrWhiteSpace(contact.Role))
+                    existing.Role = contact.Role;
+                _storage.SaveContact(existing);
+                _storage.LinkContactToJob(existing.Id, jobId);
+            }
+            else
+            {
+                contact.Id = Guid.NewGuid();
+                contact.UserId = job.UserId;
+                contact.DateAdded = DateTime.Now;
+                _storage.AddContact(contact);
+                _storage.LinkContactToJob(contact.Id, jobId);
+            }
+            NotifyStateChanged();
+            _historyService.Value.RecordContactChange(job, HistoryActionType.ContactAdded, $"Added contact: {contact.Name}");
+        }
+    }
+
+    public void UpdateContact(Contact updated)
+    {
+        lock (_lock)
+        {
+            _storage.SaveContact(updated);
+            NotifyStateChanged();
+        }
+    }
+
+    public void RemoveContact(Guid jobId, Guid contactId)
+    {
+        lock (_lock)
+        {
+            var job = _jobListings.FirstOrDefault(j => j.Id == jobId);
+            var contact = _storage.GetContactById(contactId);
+            if (contact != null)
+            {
+                _storage.UnlinkContactFromJob(contactId, jobId);
+                if (job != null)
+                {
+                    _historyService.Value.RecordContactChange(job, HistoryActionType.ContactRemoved, $"Removed contact: {contact.Name}");
+                }
+                NotifyStateChanged();
+            }
+        }
+    }
+
+    public void AddContactInteraction(Guid contactId, ContactInteraction interaction)
+    {
+        lock (_lock)
+        {
+            var contact = _storage.GetContactById(contactId);
+            if (contact != null)
+            {
+                interaction.Id = Guid.NewGuid();
+                contact.Interactions.Add(interaction);
+                _storage.SaveContact(contact);
+                NotifyStateChanged();
+            }
+        }
+    }
+
+    public List<Contact> GetContactsForJob(Guid jobId)
+    {
+        return _storage.GetContactsForJob(jobId);
+    }
+
+    public List<Guid> GetJobIdsForContact(Guid contactId)
+    {
+        var userId = CurrentUserId;
+        EnsureJobsLoaded(userId);
+        lock (_lock)
+        {
+            // Find all jobs that are linked to this contact
+            var allJobs = _jobListings.Where(j => j.UserId == userId).ToList();
+            var linkedJobIds = new List<Guid>();
+            foreach (var job in allJobs)
+            {
+                var contacts = _storage.GetContactsForJob(job.Id);
+                if (contacts.Any(c => c.Id == contactId))
+                    linkedJobIds.Add(job.Id);
+            }
+            return linkedJobIds;
+        }
+    }
+
+    public List<Contact> GetAllContacts()
+    {
+        var userId = CurrentUserId;
+        return _storage.LoadContacts(userId);
+    }
+
+    public void DeleteContact(Guid contactId)
+    {
+        lock (_lock)
+        {
+            _storage.DeleteContact(contactId);
+            NotifyStateChanged();
+        }
+    }
+
+    public void AddStandaloneContact(Contact contact)
+    {
+        lock (_lock)
+        {
+            contact.Id = Guid.NewGuid();
+            contact.UserId = CurrentUserId;
+            contact.DateAdded = DateTime.Now;
+            _storage.AddContact(contact);
+            NotifyStateChanged();
+        }
+    }
+
+    public void LinkContactToJob(Guid contactId, Guid jobId)
+    {
+        _storage.LinkContactToJob(contactId, jobId);
+        NotifyStateChanged();
+    }
+
+    public void UnlinkContactFromJob(Guid contactId, Guid jobId)
+    {
+        _storage.UnlinkContactFromJob(contactId, jobId);
+        NotifyStateChanged();
+    }
+
+    public List<JobListing> GetLinkedJobsForContact(Guid contactId)
+    {
+        var userId = CurrentUserId;
+        EnsureJobsLoaded(userId);
+        var linkedJobIds = _storage.GetLinkedJobIds(contactId).ToHashSet();
+        lock (_lock)
+        {
+            return _jobListings.Where(j => linkedJobIds.Contains(j.Id)).ToList();
+        }
+    }
+
+    public Dictionary<Guid, int> GetJobLinkCountsForContacts(List<Guid> contactIds)
+    {
+        return _storage.GetJobLinkCountsForContacts(contactIds);
+    }
+
     /// <summary>
     /// Cycles to the next application stage
     /// </summary>
@@ -775,7 +946,7 @@ public class JobListingService
     /// Updates the description of an existing job by URL
     /// Also re-evaluates rules since description content may trigger new matches
     /// </summary>
-    public bool UpdateJobDescription(string url, string description, Guid? forUserId = null, string? company = null)
+    public bool UpdateJobDescription(string url, string description, Guid? forUserId = null, string? company = null, List<ContactEntry>? contacts = null)
     {
         if (string.IsNullOrWhiteSpace(url)) return false;
 
@@ -787,6 +958,9 @@ public class JobListingService
             var job = _jobListings.FirstOrDefault(j => j.UserId == userId && NormalizeUrl(j.Url) == normalizedUrl);
 
             if (job == null) return false;
+
+            // Merge in any new contacts (avoid duplicates by name)
+            MergeContacts(job, contacts);
 
             // Update if: no existing description, OR new description is substantial (>100 chars) and different
             var hasNoDescription = string.IsNullOrWhiteSpace(job.Description) || job.Description.Length < 100;
@@ -940,6 +1114,53 @@ public class JobListingService
             _logger.LogDebug("Skipped description update for {Title}: existing={ExistingLen}, new={NewLen}",
                 job.Title, job.Description?.Length ?? 0, description.Length);
             return false;
+        }
+    }
+
+    private void MergeContacts(JobListing job, List<ContactEntry>? newContacts)
+    {
+        if (newContacts == null || newContacts.Count == 0) return;
+
+        foreach (var entry in newContacts)
+        {
+            if (string.IsNullOrWhiteSpace(entry.Name)) continue;
+
+            var profileUrl = entry.ProfileUrl ?? entry.LinkedInUrl;
+
+            // Search ALL user contacts by name (cross-job dedup)
+            var existing = _storage.FindContactByName(job.UserId, entry.Name);
+            if (existing != null)
+            {
+                // Merge empty fields
+                if (string.IsNullOrWhiteSpace(existing.ProfileUrl) && !string.IsNullOrWhiteSpace(profileUrl))
+                    existing.ProfileUrl = profileUrl;
+                if (string.IsNullOrWhiteSpace(existing.Email) && !string.IsNullOrWhiteSpace(entry.Email))
+                    existing.Email = entry.Email;
+                if (string.IsNullOrWhiteSpace(existing.Phone) && !string.IsNullOrWhiteSpace(entry.Phone))
+                    existing.Phone = entry.Phone;
+                if (string.IsNullOrWhiteSpace(existing.Role) && !string.IsNullOrWhiteSpace(entry.Role))
+                    existing.Role = entry.Role;
+                _storage.SaveContact(existing);
+                _storage.LinkContactToJob(existing.Id, job.Id);
+            }
+            else
+            {
+                var contact = new Contact
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = job.UserId,
+                    Name = entry.Name,
+                    Email = entry.Email,
+                    Phone = entry.Phone,
+                    ProfileUrl = profileUrl,
+                    Role = entry.Role,
+                    DateAdded = DateTime.Now
+                };
+                _storage.AddContact(contact);
+                _storage.LinkContactToJob(contact.Id, job.Id);
+                _historyService.Value.RecordContactChange(job, HistoryActionType.ContactAdded, $"Added contact: {entry.Name}");
+                _logger.LogInformation("Auto-added contact '{Name}' for job: {Title}", entry.Name, job.Title);
+            }
         }
     }
 
