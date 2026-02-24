@@ -377,7 +377,7 @@
           var subtitleEl = el.querySelector('[class*="subtitle"], [class*="headline"], .artdeco-entity-lockup__subtitle');
           if (subtitleEl) {
             var role = cleanText(subtitleEl.textContent).split('\n')[0].trim();
-            if (role && role.length > 1 && role.length < 100 && role !== name) {
+            if (role && role.length > 1 && role.length < 200 && role !== name) {
               contact.Role = role;
             }
           }
@@ -385,7 +385,36 @@
         } catch (e) { }
       }
 
-      // Method 2: "Direct message the job poster" section
+      // Method 2: "message-the-recruiter" section (public & logged-in pages)
+      // Contains a card with the recruiter's name, title, and profile link
+      if (!contact) {
+        var recruiterSection = document.querySelector('.message-the-recruiter, [class*="message-the-recruiter"]');
+        if (recruiterSection) {
+          // Name is in the card title heading
+          var titleEl = recruiterSection.querySelector('[class*="card__title"], h3, h4');
+          if (titleEl) {
+            var recruiterName = cleanText(titleEl.textContent).split('\n')[0].trim();
+            if (recruiterName && recruiterName.length >= 2 && recruiterName.length < 100) {
+              contact = { Name: recruiterName };
+              // Profile URL
+              var profLink = recruiterSection.querySelector('a[href*="/in/"]');
+              if (profLink) {
+                contact.ProfileUrl = profLink.href.split('?')[0];
+              }
+              // Role/subtitle
+              var subEl = recruiterSection.querySelector('[class*="card__subtitle"], [class*="subtitle"]');
+              if (subEl) {
+                var role = cleanText(subEl.textContent).split('\n')[0].trim();
+                if (role && role.length > 1 && role.length < 200 && role !== recruiterName) {
+                  contact.Role = role;
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // Method 3: "Direct message the job poster" text in page
       if (!contact) {
         var bodyText = document.body.innerText || '';
         var posterMatch = bodyText.match(/(?:job poster|message the poster)\s*\n\s*([^\n]+)/i);
@@ -403,7 +432,7 @@
         }
       }
 
-      // Method 3: Posted-by section at top of job card
+      // Method 4: Posted-by / hiring manager section at top of job card
       if (!contact) {
         var postedBySelectors = [
           '.job-details-jobs-unified-top-card__hiring-manager',
@@ -422,6 +451,14 @@
                   Name: recruiterName,
                   ProfileUrl: nameLink.href.split('?')[0]
                 };
+                // Try to get role from nearby text
+                var roleEl = section.querySelector('[class*="subtitle"], [class*="headline"]');
+                if (roleEl) {
+                  var role = cleanText(roleEl.textContent).split('\n')[0].trim();
+                  if (role && role.length > 1 && role.length < 200 && role !== recruiterName) {
+                    contact.Role = role;
+                  }
+                }
                 break;
               }
             }
@@ -429,8 +466,25 @@
         }
       }
 
+      // Method 5: aria-label="Message <Name>" on CTA buttons
+      if (!contact) {
+        var msgBtn = document.querySelector('a[aria-label^="Message "], button[aria-label^="Message "]');
+        if (msgBtn) {
+          var ariaName = msgBtn.getAttribute('aria-label').replace(/^Message\s+/i, '').trim();
+          if (ariaName && ariaName.length >= 3 && ariaName.length < 100) {
+            contact = { Name: ariaName };
+            // Find profile link nearby
+            var parent = msgBtn.closest('[class*="recruiter"], [class*="hirer"], [class*="poster"]') || msgBtn.parentElement;
+            if (parent) {
+              var profLink = parent.querySelector('a[href*="/in/"]');
+              if (profLink) contact.ProfileUrl = profLink.href.split('?')[0];
+            }
+          }
+        }
+      }
+
       if (contact) {
-        console.log('[LJE] Found recruiter: ' + contact.Name + (contact.ProfileUrl ? ' (' + contact.ProfileUrl + ')' : ''));
+        console.log('[LJE] Found recruiter: ' + contact.Name + (contact.ProfileUrl ? ' (' + contact.ProfileUrl + ')' : '') + (contact.Role ? ' [' + contact.Role + ']' : ''));
       }
     } catch (e) {
       console.log('[LJE] Error extracting recruiter info: ' + e.message);

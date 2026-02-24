@@ -707,17 +707,17 @@ else
                         @if (!string.IsNullOrEmpty(job.Url))
                         {
                             <button class="btn btn-sm btn-outline-secondary mb-2 @(!string.IsNullOrEmpty(job.Description) && job.Description.Length > 150 ? "ms-1" : "")"
-                                    @onclick="() => FetchSingleJobDescription(job)"
-                                    disabled="@(fetchingDescriptionJobId == job.Id)"
-                                    title="Fetch latest description from job page">
-                                @if (fetchingDescriptionJobId == job.Id)
+                                    @onclick="() => FetchJobDetails(job)"
+                                    disabled="@(fetchingDetailsJobId == job.Id)"
+                                    title="@GetFetchDetailsTooltip(job.Source)">
+                                @if (fetchingDetailsJobId == job.Id)
                                 {
                                     <span class="spinner-border spinner-border-sm me-1" role="status"></span>
                                     <text>Fetching...</text>
                                 }
                                 else
                                 {
-                                    <i class="bi bi-arrow-repeat"></i> <text>Fetch Description</text>
+                                    <i class="bi bi-arrow-repeat"></i> <text>Fetch Details</text>
                                 }
                             </button>
                         }
@@ -2365,7 +2365,7 @@ else
     private bool isScanning = false;
     private JobAvailabilityProgress? scanProgress = null;
     private CancellationTokenSource? scanCts = null;
-    private Guid? fetchingDescriptionJobId = null;
+    private Guid? fetchingDetailsJobId = null;
 
     // AI Analysis state
     private Guid? analyzingJobId = null;
@@ -2989,33 +2989,70 @@ else
         }
     }
 
-    private async Task FetchSingleJobDescription(JobListing job)
+    private async Task FetchJobDetails(JobListing job)
     {
-        if (fetchingDescriptionJobId.HasValue) return;
+        if (fetchingDetailsJobId.HasValue) return;
 
-        fetchingDescriptionJobId = job.Id;
+        fetchingDetailsJobId = job.Id;
         StateHasChanged();
 
         try
         {
+            // Always try server-side check first
             var result = await AvailabilityService.CheckJobAvailabilityAsync(job);
 
             if (result.Result == JobAvailabilityResult.Unavailable)
             {
                 JobService.SetSuitabilityStatus(job.Id, SuitabilityStatus.Unsuitable, HistoryChangeSource.System, result.Reason ?? "Job no longer available");
+                JobService.SetLastChecked(job.Id);
+                JobService.ApplyRulesToExistingJobs(job.Id);
+                RefreshData();
             }
-            else if (result.Result == JobAvailabilityResult.Available && result.ParsedJob != null)
+            else if (result.Result == JobAvailabilityResult.Available)
             {
-                JobService.UpdateJobIfBetter(job.Id, result.ParsedJob);
-            }
+                // Update job details (description, salary, location, contacts, etc.)
+                if (result.ParsedJob != null)
+                    JobService.UpdateJobIfBetter(job.Id, result.ParsedJob);
 
-            JobService.SetLastChecked(job.Id);
-            JobService.ApplyRulesToExistingJobs(job.Id);
-            RefreshData();
+                JobService.SetLastChecked(job.Id);
+                JobService.ApplyRulesToExistingJobs(job.Id);
+                RefreshData();
+            }
+            else if (result.Result == JobAvailabilityResult.Error || result.Result == JobAvailabilityResult.Skipped)
+            {
+                // Server-side check failed or was skipped - fall back to browser extension
+                if (!string.IsNullOrEmpty(job.Url))
+                {
+                    await JSRuntime.InvokeVoidAsync("open", job.Url, "_blank");
+                    await JSRuntime.InvokeVoidAsync("alert", 
+                        $"Could not fetch details from server (site may be blocking automated requests).\n\n" +
+                        $"Job page opened in new tab. The browser extension will automatically fetch the latest details.\n\n" +
+                        $"Refresh this page after a moment to see the updates.");
+
+                    // Mark as checked so we don't keep retrying
+                    JobService.SetLastChecked(job.Id);
+                    RefreshData();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            // If any error occurs during server-side fetch, fall back to browser
+            if (!string.IsNullOrEmpty(job.Url))
+            {
+                await JSRuntime.InvokeVoidAsync("open", job.Url, "_blank");
+                await JSRuntime.InvokeVoidAsync("alert", 
+                    $"Error fetching from server: {ex.Message}\n\n" +
+                    $"Job page opened in new tab. The browser extension will fetch the details.\n\n" +
+                    $"Refresh this page after a moment to see the updates.");
+
+                JobService.SetLastChecked(job.Id);
+                RefreshData();
+            }
         }
         finally
         {
-            fetchingDescriptionJobId = null;
+            fetchingDetailsJobId = null;
             await InvokeAsync(StateHasChanged);
         }
     }
@@ -3190,6 +3227,11 @@ else
         "energyjobsearch" => "source-energyjobsearch",
         _ => "source-unknown"
     };
+
+    private string GetFetchDetailsTooltip(string? source)
+    {
+        return "Fetch latest job details from server (opens in browser if blocked)";
+    }
 
     // Settings methods
     private void OnSettingsChanged()

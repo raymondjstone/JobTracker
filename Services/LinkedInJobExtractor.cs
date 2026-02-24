@@ -240,6 +240,19 @@ public partial class LinkedInJobExtractor
                 job.IsRemote = job.Location.Contains("Remote", StringComparison.OrdinalIgnoreCase) ||
                               (job.Description?.Contains("remote", StringComparison.OrdinalIgnoreCase) ?? false);
 
+                // Extract recruiter/poster contact information
+                var recruiterContact = ExtractRecruiterContact(html, logger);
+                if (recruiterContact != null)
+                {
+                    logger?.LogInformation("LinkedIn: Extracted contact {Name} with profile {ProfileUrl}", 
+                        recruiterContact.Name, recruiterContact.ProfileUrl ?? "(none)");
+                    job.Contacts.Add(recruiterContact);
+                }
+                else
+                {
+                    logger?.LogWarning("LinkedIn: No recruiter contact found in job page");
+                }
+
                 return job;
             }
             catch (JsonException ex)
@@ -269,6 +282,19 @@ public partial class LinkedInJobExtractor
             job.Company = fallbackPosterCompany;
 
         job.Skills = ExtractSkills(job.Description);
+
+        // Extract recruiter contact in fallback path too
+        var fallbackRecruiterContact = ExtractRecruiterContact(html, logger);
+        if (fallbackRecruiterContact != null)
+        {
+            logger?.LogInformation("LinkedIn (fallback): Extracted contact {Name} with profile {ProfileUrl}", 
+                fallbackRecruiterContact.Name, fallbackRecruiterContact.ProfileUrl ?? "(none)");
+            job.Contacts.Add(fallbackRecruiterContact);
+        }
+        else
+        {
+            logger?.LogWarning("LinkedIn (fallback): No recruiter contact found in job page");
+        }
 
         return string.IsNullOrEmpty(job.Title) ? null : job;
     }
@@ -349,6 +375,227 @@ public partial class LinkedInJobExtractor
                 return CleanCompanyName(company);
         }
         return null;
+    }
+
+    /// <summary>
+    /// Extracts recruiter/job poster contact information from LinkedIn job page
+    /// </summary>
+    private static ContactEntry? ExtractRecruiterContact(string html, ILogger? logger = null)
+    {
+        string? name = null;
+        string? profileUrl = null;
+        string? role = null;
+
+        logger?.LogInformation("LinkedIn contact extraction: Starting search in HTML ({Length} chars)", html.Length);
+
+        // Pattern 1: "message-the-recruiter" section — LinkedIn public job pages show a card
+        // with the recruiter's name in an <h3> and profile link in a base-card__full-link <a>.
+        // The profile URL may use a country subdomain (uk.linkedin.com, de.linkedin.com, etc.)
+        var recruiterSection = Regex.Match(html,
+            @"message-the-recruiter[\s\S]{0,2000}?base-main-card__title[^>]*>\s*([^<]+?)\s*<",
+            RegexOptions.IgnoreCase);
+
+        if (recruiterSection.Success)
+        {
+            var potentialName = recruiterSection.Groups[1].Value.Trim();
+            logger?.LogInformation("LinkedIn contact: Pattern 1 (recruiter card) - raw name: '{Name}'", potentialName);
+            if (IsValidPersonName(potentialName))
+            {
+                name = potentialName;
+
+                // Extract profile URL from the same section
+                var sectionHtml = recruiterSection.Value;
+                var urlMatch = Regex.Match(sectionHtml,
+                    @"href=[""'](https?://[a-z]{2,3}\.linkedin\.com/in/[^""'?]+)",
+                    RegexOptions.IgnoreCase);
+                if (urlMatch.Success)
+                    profileUrl = urlMatch.Groups[1].Value;
+
+                // Extract role/subtitle — it appears after the title, so look ahead from the match end
+                var afterMatch = html.Substring(recruiterSection.Index, Math.Min(3000, html.Length - recruiterSection.Index));
+                var roleMatch = Regex.Match(afterMatch,
+                    @"base-main-card__subtitle[^>]*>\s*([^<]+?)\s*<",
+                    RegexOptions.IgnoreCase);
+                if (roleMatch.Success)
+                    role = roleMatch.Groups[1].Value.Trim();
+
+                logger?.LogInformation("LinkedIn contact: Found via Pattern 1 - {Name} ({Url}), role: {Role}", name, profileUrl ?? "(none)", role ?? "(none)");
+            }
+        }
+
+        // Pattern 2: aria-label="Message <Name>" on a link (recruiter CTA button)
+        if (name == null)
+        {
+            var ariaMatch = Regex.Match(html,
+                @"aria-label=[""']Message\s+([^""']+)[""']",
+                RegexOptions.IgnoreCase);
+
+            if (ariaMatch.Success)
+            {
+                var potentialName = ariaMatch.Groups[1].Value.Trim();
+                logger?.LogInformation("LinkedIn contact: Pattern 2 (aria-label) - raw name: '{Name}'", potentialName);
+                if (IsValidPersonName(potentialName))
+                {
+                    name = potentialName;
+
+                    // Try to find their profile URL nearby
+                    var nearbyUrl = Regex.Match(html,
+                        @"href=[""'](https?://[a-z]{2,3}\.linkedin\.com/in/[^""'?]+)",
+                        RegexOptions.IgnoreCase);
+                    if (nearbyUrl.Success)
+                        profileUrl = nearbyUrl.Groups[1].Value;
+
+                    logger?.LogInformation("LinkedIn contact: Found via Pattern 2 - {Name} ({Url})", name, profileUrl ?? "(none)");
+                }
+            }
+        }
+
+        // Pattern 3: "hiring team" or "job poster" section followed by a name in a heading/link
+        if (name == null)
+        {
+            var hiringTeamMatch = Regex.Match(html,
+                @"(?:Meet the hiring team|hiring.team|job.poster)[\s\S]{0,500}?(?:card__title|<h[2-4])[^>]*>\s*([^<]+?)\s*<",
+                RegexOptions.IgnoreCase);
+
+            if (hiringTeamMatch.Success)
+            {
+                var potentialName = hiringTeamMatch.Groups[1].Value.Trim();
+                logger?.LogInformation("LinkedIn contact: Pattern 3 (hiring team heading) - raw name: '{Name}'", potentialName);
+                if (IsValidPersonName(potentialName))
+                {
+                    name = potentialName;
+                    logger?.LogInformation("LinkedIn contact: Found via Pattern 3 - {Name}", name);
+                }
+            }
+        }
+
+        // Pattern 4: Profile links with any LinkedIn subdomain, name in nearby heading
+        if (name == null)
+        {
+            // Find all LinkedIn profile links (any subdomain: www, uk, de, fr, etc.)
+            var allProfileLinks = Regex.Matches(html,
+                @"href=[""'](https?://[a-z]{2,3}\.linkedin\.com/in/[^""'?]+)[""']",
+                RegexOptions.IgnoreCase);
+
+            logger?.LogInformation("LinkedIn contact: Pattern 4 found {Count} profile links", allProfileLinks.Count);
+
+            foreach (Match match in allProfileLinks)
+            {
+                var url = match.Groups[1].Value;
+                // Look for a name near this link — check for alt text or nearby heading
+                var afterLink = html.Substring(match.Index, Math.Min(500, html.Length - match.Index));
+
+                // Try alt="Click here to view <Name>'s profile"
+                var altMatch = Regex.Match(afterLink,
+                    @"alt=[""'](?:Click here to view\s+)?([^""']+?)(?:'s profile)?[""']",
+                    RegexOptions.IgnoreCase);
+                if (altMatch.Success)
+                {
+                    var potentialName = altMatch.Groups[1].Value.Trim();
+                    if (IsValidPersonName(potentialName))
+                    {
+                        name = potentialName;
+                        profileUrl = url;
+                        logger?.LogInformation("LinkedIn contact: Found via Pattern 4 (alt text) - {Name} ({Url})", name, profileUrl);
+                        break;
+                    }
+                }
+
+                // Try heading text nearby
+                var headingMatch = Regex.Match(afterLink,
+                    @"card__title[^>]*>\s*([^<]+?)\s*<",
+                    RegexOptions.IgnoreCase);
+                if (headingMatch.Success)
+                {
+                    var potentialName = headingMatch.Groups[1].Value.Trim();
+                    if (IsValidPersonName(potentialName))
+                    {
+                        name = potentialName;
+                        profileUrl = url;
+                        logger?.LogInformation("LinkedIn contact: Found via Pattern 4 (heading) - {Name} ({Url})", name, profileUrl);
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!string.IsNullOrEmpty(name))
+        {
+            return new ContactEntry
+            {
+                Name = name,
+                Role = role ?? "Recruiter",
+                ProfileUrl = profileUrl
+            };
+        }
+
+        logger?.LogWarning("LinkedIn contact: No valid contact found after trying all patterns");
+        return null;
+    }
+
+    /// <summary>
+    /// Validates if a string looks like a valid person name
+    /// </summary>
+    private static bool IsValidPersonName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return false;
+
+        name = name.Trim();
+
+        // Filter out common false positives (UI elements, buttons, etc.)
+        var invalidNames = new[]
+        {
+            "Sign In", "Join Now", "Easy Apply", "Save Job", "Share Job", "Report Job",
+            "Apply", "Save", "Share", "Message", "Follow", "More", "Show More",
+            "Show Less", "See More", "See Less", "Learn More", "View", "Click Here",
+            "LinkedIn", "Jobs", "Post", "Home", "My Network", "Messaging", "Notifications",
+            "Me", "Work", "Settings", "Help", "Privacy", "Terms", "About", "Careers",
+            "Talent Solutions", "Marketing Solutions", "Sales Solutions", "Safety Center",
+            "Community Guidelines", "Cookies", "Copyright", "Contact", "Directory",
+            "Language", "Upload", "Download", "Get Started", "Try Premium", "Sign Up"
+        };
+
+        if (invalidNames.Any(invalid => name.Equals(invalid, StringComparison.OrdinalIgnoreCase)))
+            return false;
+
+        // Name should be between 3 and 60 characters
+        if (name.Length < 3 || name.Length > 60)
+            return false;
+
+        // Should have at least 2 words (first and last name)
+        var nameParts = name.Split(new[] { ' ', '\t', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+        if (nameParts.Length < 2 || nameParts.Length > 5)
+            return false;
+
+        // Each part should start with a letter and contain mostly letters
+        foreach (var part in nameParts)
+        {
+            if (part.Length == 0 || !char.IsLetter(part[0]))
+                return false;
+
+            // At least 50% of characters should be letters
+            var letterCount = part.Count(char.IsLetter);
+            if (letterCount < part.Length * 0.5)
+                return false;
+        }
+
+        // Should not be all uppercase or all lowercase (unless it's a short name)
+        if (name.Length > 10)
+        {
+            var letterChars = name.Where(char.IsLetter).ToArray();
+            if (letterChars.Length > 0)
+            {
+                var allUpper = letterChars.All(char.IsUpper);
+                var allLower = letterChars.All(char.IsLower);
+
+                // All caps or all lowercase for longer names is suspicious
+                if ((allUpper || allLower) && letterChars.Length > 15)
+                    return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>

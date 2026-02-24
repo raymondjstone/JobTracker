@@ -166,7 +166,7 @@ public class JobAvailabilityService
                 // Try to parse job details to update stored data if better
                 if (html.Length > 0)
                 {
-                    var parsed = LinkedInJobExtractor.TryParseJobFromHtml(html, job.Url);
+                    var parsed = LinkedInJobExtractor.TryParseJobFromHtml(html, job.Url, _logger);
                     return new JobAvailabilityCheckResult
                     {
                         Result = JobAvailabilityResult.Available,
@@ -201,6 +201,17 @@ public class JobAvailabilityService
                             Reason = $"WTTJ: {indicator}"
                         };
                     }
+                }
+
+                // Parse job details from WTTJ page HTML (JSON-LD)
+                if (html.Length > 0)
+                {
+                    var parsed = TryParseWttjFromHtml(html, job.Url);
+                    return new JobAvailabilityCheckResult
+                    {
+                        Result = JobAvailabilityResult.Available,
+                        ParsedJob = parsed
+                    };
                 }
             }
 
@@ -476,6 +487,88 @@ public class JobAvailabilityService
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Parses job details from a WTTJ (Welcome to the Jungle) job detail page HTML using JSON-LD.
+    /// </summary>
+    public static JobListing? TryParseWttjFromHtml(string html, string url)
+    {
+        var job = new JobListing { Url = url, Source = "WTTJ" };
+
+        // WTTJ pages include JSON-LD JobPosting structured data
+        var jsonLdMatches = System.Text.RegularExpressions.Regex.Matches(html,
+            @"<script[^>]*type=""application/ld\+json""[^>]*>(.*?)</script>",
+            System.Text.RegularExpressions.RegexOptions.Singleline);
+
+        foreach (System.Text.RegularExpressions.Match jsonLdMatch in jsonLdMatches)
+        {
+            try
+            {
+                var jsonText = System.Net.WebUtility.HtmlDecode(jsonLdMatch.Groups[1].Value);
+                using var doc = System.Text.Json.JsonDocument.Parse(jsonText);
+                var root = doc.RootElement;
+
+                if (!root.TryGetProperty("@type", out var typeEl) ||
+                    typeEl.GetString() != "JobPosting")
+                    continue;
+
+                if (root.TryGetProperty("title", out var titleEl))
+                    job.Title = titleEl.GetString() ?? "";
+
+                if (root.TryGetProperty("hiringOrganization", out var org) &&
+                    org.TryGetProperty("name", out var orgName))
+                    job.Company = orgName.GetString() ?? "";
+
+                // jobLocation can be an array or single object
+                if (root.TryGetProperty("jobLocation", out var loc))
+                {
+                    System.Text.Json.JsonElement addrEl;
+                    if (loc.ValueKind == System.Text.Json.JsonValueKind.Array && loc.GetArrayLength() > 0)
+                        addrEl = loc[0];
+                    else
+                        addrEl = loc;
+
+                    if (addrEl.TryGetProperty("address", out var addr) &&
+                        addr.ValueKind == System.Text.Json.JsonValueKind.Object)
+                    {
+                        var parts = new List<string>();
+                        if (addr.TryGetProperty("addressLocality", out var locality))
+                            parts.Add(locality.GetString() ?? "");
+                        if (addr.TryGetProperty("addressRegion", out var region))
+                            parts.Add(region.GetString() ?? "");
+                        if (addr.TryGetProperty("addressCountry", out var country))
+                            parts.Add(country.GetString() ?? "");
+                        job.Location = string.Join(", ", parts.Where(p => !string.IsNullOrEmpty(p)));
+                    }
+                }
+
+                if (root.TryGetProperty("description", out var descEl))
+                {
+                    var desc = descEl.GetString() ?? "";
+                    desc = ConvertHtmlToPlainText(desc);
+                    job.Description = desc;
+                }
+
+                if (root.TryGetProperty("industry", out var industryEl))
+                {
+                    var industry = industryEl.GetString() ?? "";
+                    if (!string.IsNullOrWhiteSpace(industry))
+                        job.Skills = industry.Split(',').Select(s => s.Trim()).Where(s => s.Length > 0).ToList();
+                }
+
+                break; // Found JobPosting, done
+            }
+            catch { }
+        }
+
+        if (string.IsNullOrWhiteSpace(job.Title) && string.IsNullOrWhiteSpace(job.Description))
+            return null;
+
+        job.IsRemote = job.Location?.Contains("Remote", StringComparison.OrdinalIgnoreCase) == true ||
+                      job.Description?.Contains("remote", StringComparison.OrdinalIgnoreCase) == true;
+
+        return job;
     }
 
     /// <summary>

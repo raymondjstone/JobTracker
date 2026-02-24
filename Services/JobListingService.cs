@@ -195,19 +195,9 @@ public class JobListingService
             if (jobListing.Interest == default)
                 jobListing.Interest = InterestStatus.NotRated;
 
-            // Ensure contacts have proper IDs and timestamps
-            if (jobListing.Contacts?.Count > 0)
-            {
-                foreach (var contact in jobListing.Contacts)
-                {
-                    if (string.IsNullOrWhiteSpace(contact.Name))
-                        continue;
-                    contact.Id = Guid.NewGuid();
-                    contact.DateAdded = DateTime.Now;
-                }
-                jobListing.Contacts = jobListing.Contacts
-                    .Where(c => !string.IsNullOrWhiteSpace(c.Name)).ToList();
-            }
+            // Promote inline ContactEntry objects to proper Contact records
+            var inlineContacts = jobListing.Contacts?.Where(c => !string.IsNullOrWhiteSpace(c.Name)).ToList();
+            jobListing.Contacts = new List<ContactEntry>(); // Clear inline; will be stored in contacts system
 
             // Auto-infer source from URL if not set
             if (string.IsNullOrWhiteSpace(jobListing.Source))
@@ -257,6 +247,13 @@ public class JobListingService
             _jobListings.Add(jobListing);
 
             _storage.AddJob(jobListing);
+
+            // Create proper Contact records from inline contacts sent by browser extension
+            if (inlineContacts?.Count > 0)
+            {
+                MergeContacts(jobListing, inlineContacts);
+            }
+
             NotifyStateChanged();
 
             // Record history
@@ -899,6 +896,12 @@ public class JobListingService
             {
                 job.IsRemote = true;
                 changed = true;
+            }
+
+            // Merge any contacts extracted from the job page
+            if (parsed.Contacts?.Count > 0)
+            {
+                MergeContacts(job, parsed.Contacts);
             }
 
             if (changed)
