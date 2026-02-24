@@ -696,7 +696,7 @@ else
                             </button>
                         }
 
-                        @if (job.LastUpdated.HasValue && job.LastUpdated > job.DateAdded.AddMinutes(0)) @* TEMP: 0 for testing *@
+                        @if (job.LastUpdated.HasValue && job.LastUpdated > job.DateAdded.AddMinutes(5))
                         {
                             <button class="btn btn-sm btn-outline-warning mb-2 ms-1" @onclick="() => ShowChangeTimeline(job)"
                                     title="View what changed">
