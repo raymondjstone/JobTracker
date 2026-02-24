@@ -29,6 +29,8 @@ A **comprehensive AI-powered** Blazor application with browser extensions that a
 | Welcome to the Jungle | `BrowserExtensions/WTTJExtension/` | `WTTJ` | Full support |
 | EnergyJobSearch | `BrowserExtensions/EnergyJobSearchExtension/` | `EJS` | Full support |
 
+> Note: The LinkedIn extension folder was renamed from `BrowserExtension/` to `LinkedInExtension/` and all extensions are now located under `BrowserExtensions/`.
+
 ## Features
 
 ### 🤖 AI Job Assistant (NEW!)
