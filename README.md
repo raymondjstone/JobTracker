@@ -310,6 +310,25 @@ Navigate to `https://localhost:7046` to access the dashboard.
 - Archive/unarchive jobs
 - Click WhatsApp icon to share
 - Click "View Full Description" for details
+- Click "Fetch Details" to refresh job information from the job page (description, salary/location if available; some sites may limit what can be fetched server-side)
+
+## Contacts
+
+JobTracker includes a built-in contact manager so you can track recruiters, hiring managers, and your interactions.
+
+### Where contacts live
+
+- **Contacts page** (`/contacts`): browse/search all contacts and view interaction history.
+- **Per-job Contacts tab**: each job has a **Contacts** tab in the job details modal where you can add/edit/remove contacts and log interactions (Email/Phone/LinkedIn/etc.).
+
+### Capturing contacts from job sites
+
+Contacts can be associated with jobs in two ways:
+
+1. **Manual entry (always works):** open a job → **Contacts** tab → **Add Contact**.
+2. **Automatic capture (via browser extensions where supported):** extensions can send recruiter/contact data along with description updates.
+
+When an extension updates a job via `PUT /api/jobs/description`, it may include a `Contacts` array. The server will merge/dedupe contacts by name and link them to the matching job.
 
 #### Filtering Options
 
