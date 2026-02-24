@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Indeed Job Extractor",
-  "version": "1.0.8",
+  "version": "1.2.0",
   "description": "Automatically extract job listings from Indeed.com and send them to your Job Tracker app",
   "permissions": [
     "activeTab",

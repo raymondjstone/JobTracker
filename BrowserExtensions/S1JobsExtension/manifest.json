@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "S1Jobs Extractor",
-  "version": "1.0.5",
+  "version": "1.2.0",
   "description": "Automatically extract job listings from S1Jobs.com and send them to your Job Tracker app",
   "permissions": [
     "activeTab",

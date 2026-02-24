@@ -1,17 +1,16 @@
 {
   "manifest_version": 3,
-  "name": "Welcome to the Jungle Job Extractor",
-  "version": "1.0.4",
-  "description": "Automatically extract job listings from Welcome to the Jungle and send them to your Job Tracker app",
+  "name": "EnergyJobSearch Extractor",
+  "version": "1.2.0",
+  "description": "Automatically extract job listings from EnergyJobSearch.com and send them to your Job Tracker app",
   "permissions": [
     "activeTab",
     "storage",
     "scripting"
   ],
   "host_permissions": [
-    "https://www.welcometothejungle.com/*",
-    "https://app.welcometothejungle.com/*",
-    "https://*.welcometothejungle.com/*",
+    "https://energyjobsearch.com/*",
+    "https://www.energyjobsearch.com/*",
     "https://localhost/*"
   ],
   "icons": {
@@ -22,7 +21,7 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "WTTJ Job Extractor",
+    "default_title": "EnergyJobSearch Extractor",
     "default_icon": {
       "16": "icons/icon16.svg",
       "32": "icons/icon32.svg",
@@ -32,9 +31,8 @@
   "content_scripts": [
     {
       "matches": [
-        "https://www.welcometothejungle.com/*",
-        "https://app.welcometothejungle.com/*",
-        "https://*.welcometothejungle.com/*"
+        "https://energyjobsearch.com/*",
+        "https://www.energyjobsearch.com/*"
       ],
       "js": ["content.js"],
       "run_at": "document_end"

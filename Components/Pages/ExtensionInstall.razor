@@ -71,7 +71,7 @@
                         <div class="card-body">
                             <h5 class="card-title"><i class="bi bi-linkedin text-primary"></i> LinkedIn</h5>
                             <p class="card-text text-muted small">Extract jobs from LinkedIn Jobs pages. Captures job cards and full descriptions.</p>
-                            <span class="badge bg-primary">BrowserExtension</span>
+                            <span class="badge bg-primary">LinkedInExtension</span>
                         </div>
                     </div>
                 </div>
@@ -149,11 +149,15 @@
                         <li class="mb-3">
                             <strong>Load the extension</strong>
                             <p class="text-muted mb-1">
-                                Click <strong>"Load unpacked"</strong> and select the extension folder:
+                                Click <strong>"Load unpacked"</strong> and select the LinkedIn extension folder (example):
                             </p>
                             <div class="bg-light p-2 rounded">
-                                <code>@GetExtensionPath()</code>
+                                <code>@System.IO.Path.Combine(GetBasePath(), "BrowserExtensions", "LinkedInExtension")</code>
                             </div>
+                            <p class="text-muted small mt-2 mb-0">
+                                For the other job sites, repeat the same step but select a different folder under <code>BrowserExtensions</code>:
+                                <code>IndeedExtension</code>, <code>S1JobsExtension</code>, <code>WTTJExtension</code>, or <code>EnergyJobSearchExtension</code>.
+                            </p>
                         </li>
                         <li class="mb-3">
                             <strong>Pin the extension (optional)</strong>
@@ -171,116 +175,133 @@
                 </div>
             </div>
 
-            <!-- Extension-specific details -->
+            <!-- Extension details (all extensions) -->
             <div class="card mb-4">
                 <div class="card-header">
-                    <h5 class="mb-0"><i class="bi bi-info-circle"></i> @GetExtensionTitle() Details</h5>
+                    <h5 class="mb-0"><i class="bi bi-info-circle"></i> LinkedIn Extension Details</h5>
                 </div>
                 <div class="card-body">
-                    @if (selectedExtension == "linkedin")
-                    {
-                        <h6>Supported Pages</h6>
-                        <ul>
-                            <li><code>linkedin.com/jobs/*</code> - Job search results and recommendations</li>
-                            <li><code>linkedin.com/jobs/view/*</code> - Individual job detail pages</li>
-                            <li><code>linkedin.com/jobs/collections/*</code> - Saved jobs and collections</li>
-                        </ul>
-                        <h6>Features</h6>
-                        <ul>
-                            <li>Automatically extracts job cards as you scroll</li>
-                            <li>Captures full job descriptions when you click on a job</li>
-                            <li>Detects remote work status from job tags</li>
-                            <li>Configurable server URL in popup</li>
-                        </ul>
-                        <h6>Console Commands</h6>
-                        <ul class="mb-0">
-                            <li><code>LJE.debug()</code> - Show diagnostic information</li>
-                            <li><code>LJE.getDesc()</code> - Manually extract current job description</li>
-                        </ul>
-                    }
-                    else if (selectedExtension == "indeed")
-                    {
-                        <h6>Supported Pages</h6>
-                        <ul>
-                            <li><code>uk.indeed.com/jobs</code> - Job search results</li>
-                            <li><code>uk.indeed.com/viewjob</code> - Individual job detail pages</li>
-                        </ul>
-                        <h6>Features</h6>
-                        <ul>
-                            <li>Extracts job cards from search results</li>
-                            <li>Captures full descriptions from detail pages</li>
-                            <li>Parses salary information when available</li>
-                            <li>Configurable server URL and auto-fetch delay in popup</li>
-                        </ul>
-                        <h6>Console Commands</h6>
-                        <ul class="mb-0">
-                            <li><code>INDEED.debug()</code> - Show diagnostic information</li>
-                            <li><code>INDEED.getDesc()</code> - Manually extract current job description</li>
-                        </ul>
-                    }
-                    else if (selectedExtension == "s1jobs")
-                    {
-                        <h6>Supported Pages</h6>
-                        <ul>
-                            <li><code>s1jobs.com/jobs/*</code> - Job search results</li>
-                            <li><code>s1jobs.com/job/*</code> - Individual job detail pages</li>
-                        </ul>
-                        <h6>Features</h6>
-                        <ul>
-                            <li>Extracts job listings from search results</li>
-                            <li>Captures detailed job descriptions</li>
-                            <li>Parses Scottish location data</li>
-                            <li>Configurable server URL in popup</li>
-                        </ul>
-                        <h6>Console Commands</h6>
-                        <ul class="mb-0">
-                            <li><code>S1.debug()</code> - Show diagnostic information</li>
-                            <li><code>S1.getDesc()</code> - Manually extract current job description</li>
-                        </ul>
-                    }
-                    else if (selectedExtension == "wttj")
-                    {
-                        <h6>Supported Pages</h6>
-                        <ul>
-                            <li><code>welcometothejungle.com/*/jobs</code> - Job listings</li>
-                            <li><code>welcometothejungle.com/*/companies/*/jobs/*</code> - Company job pages</li>
-                            <li><code>app.welcometothejungle.com/jobs/*</code> - Otta-style job pages</li>
-                        </ul>
-                        <h6>Features</h6>
-                        <ul>
-                            <li>Works on both WTTJ and Otta-branded pages</li>
-                            <li>Extracts job cards from search/listing pages</li>
-                            <li>Captures full descriptions with fallback selectors</li>
-                            <li>Parses remote work status and salary when available</li>
-                            <li>Configurable server URL in popup</li>
-                        </ul>
-                        <h6>Console Commands</h6>
-                        <ul class="mb-0">
-                            <li><code>WTTJ.debug()</code> - Show diagnostic information</li>
-                            <li><code>WTTJ.getDesc()</code> - Manually extract current job description</li>
-                        </ul>
-                    }
-                    else if (selectedExtension == "energyjobsearch")
-                    {
-                        <h6>Supported Pages</h6>
-                        <ul>
-                            <li><code>energyjobsearch.com/jobs</code> - Job search results</li>
-                            <li><code>energyjobsearch.com/jobs/*</code> - Individual job detail pages</li>
-                        </ul>
-                        <h6>Features</h6>
-                        <ul>
-                            <li>Extracts job listings from search results (React SPA)</li>
-                            <li>Captures full descriptions via JSON-LD structured data</li>
-                            <li>Crawl function with automatic pagination</li>
-                            <li>Availability checking for expired listings</li>
-                            <li>Configurable server URL in popup</li>
-                        </ul>
-                        <h6>Console Commands</h6>
-                        <ul class="mb-0">
-                            <li><code>EJS.debug()</code> - Show diagnostic information</li>
-                            <li><code>EJS.help()</code> - Show all available commands</li>
-                        </ul>
-                    }
+                    <h6>Supported Pages</h6>
+                    <ul>
+                        <li><code>linkedin.com/jobs/*</code> - Job search results and recommendations</li>
+                        <li><code>linkedin.com/jobs/view/*</code> - Individual job detail pages</li>
+                        <li><code>linkedin.com/jobs/collections/*</code> - Saved jobs and collections</li>
+                    </ul>
+                    <h6>Features</h6>
+                    <ul>
+                        <li>Automatically extracts job cards as you scroll</li>
+                        <li>Captures full job descriptions when you click on a job</li>
+                        <li>Detects remote work status from job tags</li>
+                        <li>Configurable server URL in popup</li>
+                    </ul>
+                    <h6>Console Commands</h6>
+                    <ul class="mb-0">
+                        <li><code>LJE.debug()</code> - Show diagnostic information</li>
+                        <li><code>LJE.getDesc()</code> - Manually extract current job description</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-info-circle"></i> Indeed Extension Details</h5>
+                </div>
+                <div class="card-body">
+                    <h6>Supported Pages</h6>
+                    <ul>
+                        <li><code>uk.indeed.com/jobs</code> - Job search results</li>
+                        <li><code>uk.indeed.com/viewjob</code> - Individual job detail pages</li>
+                    </ul>
+                    <h6>Features</h6>
+                    <ul>
+                        <li>Extracts job cards from search results</li>
+                        <li>Captures full descriptions from detail pages</li>
+                        <li>Parses salary information when available</li>
+                        <li>Configurable server URL and auto-fetch delay in popup</li>
+                    </ul>
+                    <h6>Console Commands</h6>
+                    <ul class="mb-0">
+                        <li><code>INDEED.debug()</code> - Show diagnostic information</li>
+                        <li><code>INDEED.getDesc()</code> - Manually extract current job description</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-info-circle"></i> S1Jobs Extension Details</h5>
+                </div>
+                <div class="card-body">
+                    <h6>Supported Pages</h6>
+                    <ul>
+                        <li><code>s1jobs.com/jobs/*</code> - Job search results</li>
+                        <li><code>s1jobs.com/job/*</code> - Individual job detail pages</li>
+                    </ul>
+                    <h6>Features</h6>
+                    <ul>
+                        <li>Extracts job listings from search results</li>
+                        <li>Captures detailed job descriptions</li>
+                        <li>Parses Scottish location data</li>
+                        <li>Configurable server URL in popup</li>
+                    </ul>
+                    <h6>Console Commands</h6>
+                    <ul class="mb-0">
+                        <li><code>S1.debug()</code> - Show diagnostic information</li>
+                        <li><code>S1.getDesc()</code> - Manually extract current job description</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-info-circle"></i> Welcome to the Jungle Extension Details</h5>
+                </div>
+                <div class="card-body">
+                    <h6>Supported Pages</h6>
+                    <ul>
+                        <li><code>welcometothejungle.com/*/jobs</code> - Job listings</li>
+                        <li><code>welcometothejungle.com/*/companies/*/jobs/*</code> - Company job pages</li>
+                        <li><code>app.welcometothejungle.com/jobs/*</code> - Otta-style job pages</li>
+                    </ul>
+                    <h6>Features</h6>
+                    <ul>
+                        <li>Works on both WTTJ and Otta-branded pages</li>
+                        <li>Extracts job cards from search/listing pages</li>
+                        <li>Captures full descriptions with fallback selectors</li>
+                        <li>Parses remote work status and salary when available</li>
+                        <li>Configurable server URL in popup</li>
+                    </ul>
+                    <h6>Console Commands</h6>
+                    <ul class="mb-0">
+                        <li><code>WTTJ.debug()</code> - Show diagnostic information</li>
+                        <li><code>WTTJ.getDesc()</code> - Manually extract current job description</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-info-circle"></i> EnergyJobSearch Extension Details</h5>
+                </div>
+                <div class="card-body">
+                    <h6>Supported Pages</h6>
+                    <ul>
+                        <li><code>energyjobsearch.com/jobs</code> - Job search results</li>
+                        <li><code>energyjobsearch.com/jobs/*</code> - Individual job detail pages</li>
+                    </ul>
+                    <h6>Features</h6>
+                    <ul>
+                        <li>Extracts job listings from search results (React SPA)</li>
+                        <li>Captures full descriptions via JSON-LD structured data</li>
+                        <li>Crawl function with automatic pagination</li>
+                        <li>Availability checking for expired listings</li>
+                        <li>Configurable server URL in popup</li>
+                    </ul>
+                    <h6>Console Commands</h6>
+                    <ul class="mb-0">
+                        <li><code>EJS.debug()</code> - Show diagnostic information</li>
+                        <li><code>EJS.help()</code> - Show all available commands</li>
+                    </ul>
                 </div>
             </div>
 
@@ -439,23 +460,23 @@
                         <tbody>
                             <tr>
                                 <td><i class="bi bi-linkedin text-primary"></i> LinkedIn</td>
-                                <td><code>@GetBasePath()\BrowserExtension</code></td>
+                                <td><code>@GetBasePath()\BrowserExtensions\LinkedInExtension</code></td>
                             </tr>
                             <tr>
                                 <td><i class="bi bi-briefcase text-info"></i> Indeed</td>
-                                <td><code>@GetBasePath()\IndeedExtension</code></td>
+                                <td><code>@GetBasePath()\BrowserExtensions\IndeedExtension</code></td>
                             </tr>
                             <tr>
                                 <td><i class="bi bi-geo-alt text-success"></i> S1Jobs</td>
-                                <td><code>@GetBasePath()\S1JobsExtension</code></td>
+                                <td><code>@GetBasePath()\BrowserExtensions\S1JobsExtension</code></td>
                             </tr>
                             <tr>
                                 <td><i class="bi bi-tree text-warning"></i> WTTJ</td>
-                                <td><code>@GetBasePath()\WTTJExtension</code></td>
+                                <td><code>@GetBasePath()\BrowserExtensions\WTTJExtension</code></td>
                             </tr>
                             <tr>
                                 <td><i class="bi bi-lightning-charge" style="color: #FF6B00;"></i> EnergyJobSearch</td>
-                                <td><code>@GetBasePath()\EnergyJobSearchExtension</code></td>
+                                <td><code>@GetBasePath()\BrowserExtensions\EnergyJobSearchExtension</code></td>
                             </tr>
                         </tbody>
                     </table>
@@ -489,12 +510,12 @@
     {
         return selectedExtension switch
         {
-            "linkedin" => System.IO.Path.Combine(GetBasePath(), "BrowserExtension"),
-            "indeed" => System.IO.Path.Combine(GetBasePath(), "IndeedExtension"),
-            "s1jobs" => System.IO.Path.Combine(GetBasePath(), "S1JobsExtension"),
-            "wttj" => System.IO.Path.Combine(GetBasePath(), "WTTJExtension"),
-            "energyjobsearch" => System.IO.Path.Combine(GetBasePath(), "EnergyJobSearchExtension"),
-            _ => System.IO.Path.Combine(GetBasePath(), "BrowserExtension")
+            "linkedin" => System.IO.Path.Combine(GetBasePath(), "BrowserExtensions", "LinkedInExtension"),
+            "indeed" => System.IO.Path.Combine(GetBasePath(), "BrowserExtensions", "IndeedExtension"),
+            "s1jobs" => System.IO.Path.Combine(GetBasePath(), "BrowserExtensions", "S1JobsExtension"),
+            "wttj" => System.IO.Path.Combine(GetBasePath(), "BrowserExtensions", "WTTJExtension"),
+            "energyjobsearch" => System.IO.Path.Combine(GetBasePath(), "BrowserExtensions", "EnergyJobSearchExtension"),
+            _ => System.IO.Path.Combine(GetBasePath(), "BrowserExtensions", "LinkedInExtension")
         };
     }
 

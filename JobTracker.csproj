@@ -22,11 +22,11 @@
 
   <!-- Extension directories to zip -->
   <ItemGroup>
-    <ExtensionSource Include="BrowserExtension" ZipName="LinkedInExtension.zip" />
-    <ExtensionSource Include="IndeedExtension" ZipName="IndeedExtension.zip" />
-    <ExtensionSource Include="S1JobsExtension" ZipName="S1JobsExtension.zip" />
-    <ExtensionSource Include="WTTJExtension" ZipName="WTTJExtension.zip" />
-    <ExtensionSource Include="EnergyJobSearchExtension" ZipName="EnergyJobSearchExtension.zip" />
+    <ExtensionSource Include="BrowserExtensions\LinkedInExtension" ZipName="LinkedInExtension.zip" />
+    <ExtensionSource Include="BrowserExtensions\IndeedExtension" ZipName="IndeedExtension.zip" />
+    <ExtensionSource Include="BrowserExtensions\S1JobsExtension" ZipName="S1JobsExtension.zip" />
+    <ExtensionSource Include="BrowserExtensions\WTTJExtension" ZipName="WTTJExtension.zip" />
+    <ExtensionSource Include="BrowserExtensions\EnergyJobSearchExtension" ZipName="EnergyJobSearchExtension.zip" />
   </ItemGroup>
 
   <!-- Update extension versions when content changes -->
@@ -50,11 +50,11 @@
     <Delete Files="wwwroot/extensions/EnergyJobSearchExtension.zip" Condition="Exists('wwwroot/extensions/EnergyJobSearchExtension.zip')" />
 
     <!-- Create zip files using PowerShell (Windows) -->
-    <Exec Command="powershell -Command &quot;Compress-Archive -Path 'BrowserExtension\*' -DestinationPath 'wwwroot\extensions\LinkedInExtension.zip' -Force&quot;" Condition="Exists('BrowserExtension')" />
-    <Exec Command="powershell -Command &quot;Compress-Archive -Path 'IndeedExtension\*' -DestinationPath 'wwwroot\extensions\IndeedExtension.zip' -Force&quot;" Condition="Exists('IndeedExtension')" />
-    <Exec Command="powershell -Command &quot;Compress-Archive -Path 'S1JobsExtension\*' -DestinationPath 'wwwroot\extensions\S1JobsExtension.zip' -Force&quot;" Condition="Exists('S1JobsExtension')" />
-    <Exec Command="powershell -Command &quot;Compress-Archive -Path 'WTTJExtension\*' -DestinationPath 'wwwroot\extensions\WTTJExtension.zip' -Force&quot;" Condition="Exists('WTTJExtension')" />
-    <Exec Command="powershell -Command &quot;Compress-Archive -Path 'EnergyJobSearchExtension\*' -DestinationPath 'wwwroot\extensions\EnergyJobSearchExtension.zip' -Force&quot;" Condition="Exists('EnergyJobSearchExtension')" />
+    <Exec Command="powershell -Command &quot;Compress-Archive -Path 'BrowserExtensions\LinkedInExtension\*' -DestinationPath 'wwwroot\extensions\LinkedInExtension.zip' -Force&quot;" Condition="Exists('BrowserExtensions\LinkedInExtension')" />
+    <Exec Command="powershell -Command &quot;Compress-Archive -Path 'BrowserExtensions\IndeedExtension\*' -DestinationPath 'wwwroot\extensions\IndeedExtension.zip' -Force&quot;" Condition="Exists('BrowserExtensions\IndeedExtension')" />
+    <Exec Command="powershell -Command &quot;Compress-Archive -Path 'BrowserExtensions\S1JobsExtension\*' -DestinationPath 'wwwroot\extensions\S1JobsExtension.zip' -Force&quot;" Condition="Exists('BrowserExtensions\S1JobsExtension')" />
+    <Exec Command="powershell -Command &quot;Compress-Archive -Path 'BrowserExtensions\WTTJExtension\*' -DestinationPath 'wwwroot\extensions\WTTJExtension.zip' -Force&quot;" Condition="Exists('BrowserExtensions\WTTJExtension')" />
+    <Exec Command="powershell -Command &quot;Compress-Archive -Path 'BrowserExtensions\EnergyJobSearchExtension\*' -DestinationPath 'wwwroot\extensions\EnergyJobSearchExtension.zip' -Force&quot;" Condition="Exists('BrowserExtensions\EnergyJobSearchExtension')" />
 
     <Message Importance="high" Text="Extension zip files created in wwwroot/extensions/" />
   </Target>

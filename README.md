@@ -23,11 +23,11 @@ A **comprehensive AI-powered** Blazor application with browser extensions that a
 
 | Site | Extension Folder | Console Prefix | Status |
 |------|-----------------|----------------|--------|
-| LinkedIn | `BrowserExtension/` | `LJE` | Full support |
-| Indeed | `IndeedExtension/` | `IND` | Full support |
-| S1Jobs | `S1JobsExtension/` | `S1J` | Full support |
-| Welcome to the Jungle | `WTTJExtension/` | `WTTJ` | Full support |
-| EnergyJobSearch | `EnergyJobSearchExtension/` | `EJS` | Full support |
+| LinkedIn | `BrowserExtensions/LinkedInExtension/` | `LJE` | Full support |
+| Indeed | `BrowserExtensions/IndeedExtension/` | `IND` | Full support |
+| S1Jobs | `BrowserExtensions/S1JobsExtension/` | `S1J` | Full support |
+| Welcome to the Jungle | `BrowserExtensions/WTTJExtension/` | `WTTJ` | Full support |
+| EnergyJobSearch | `BrowserExtensions/EnergyJobSearchExtension/` | `EJS` | Full support |
 
 ## Features
 
@@ -208,11 +208,11 @@ Each job site has its own extension. Install the ones you need:
 2. Enable **Developer mode** (toggle in the top-right corner)
 3. Click **Load unpacked**
 4. Select the extension folder:
-   - `BrowserExtension/` - LinkedIn
-   - `IndeedExtension/` - Indeed
-   - `S1JobsExtension/` - S1Jobs
-   - `WTTJExtension/` - Welcome to the Jungle
-   - `EnergyJobSearchExtension/` - EnergyJobSearch
+   - `BrowserExtensions/LinkedInExtension/` - LinkedIn
+   - `BrowserExtensions/IndeedExtension/` - Indeed
+   - `BrowserExtensions/S1JobsExtension/` - S1Jobs
+   - `BrowserExtensions/WTTJExtension/` - Welcome to the Jungle
+   - `BrowserExtensions/EnergyJobSearchExtension/` - EnergyJobSearch
 5. Repeat for each extension you want to install
 
 ## Usage
@@ -449,31 +449,32 @@ JobTracker/
 │   └── LocalBackgroundService.cs   # Background task runner
 ├── Data/
 │   └── jobs.json                   # Persistent job storage (JSON mode)
-├── BrowserExtension/               # LinkedIn extension
-│   ├── manifest.json
-│   ├── content.js
-│   ├── popup.html
-│   └── popup.js
-├── IndeedExtension/                # Indeed extension
-│   ├── manifest.json
-│   ├── content.js
-│   ├── popup.html
-│   └── popup.js
-├── S1JobsExtension/                # S1Jobs extension
-│   ├── manifest.json
-│   ├── content.js
-│   ├── popup.html
-│   └── popup.js
-├── WTTJExtension/                  # Welcome to the Jungle extension
-│   ├── manifest.json
-│   ├── content.js
-│   ├── popup.html
-│   └── popup.js
-├── EnergyJobSearchExtension/       # EnergyJobSearch extension
-│   ├── manifest.json
-│   ├── content.js
-│   ├── popup.html
-│   └── popup.js
+├── BrowserExtensions/
+│   ├── LinkedInExtension/
+│   │   ├── manifest.json
+│   │   ├── content.js
+│   │   ├── popup.html
+│   │   └── popup.js
+│   ├── IndeedExtension/
+│   │   ├── manifest.json
+│   │   ├── content.js
+│   │   ├── popup.html
+│   │   └── popup.js
+│   ├── S1JobsExtension/
+│   │   ├── manifest.json
+│   │   ├── content.js
+│   │   ├── popup.html
+│   │   └── popup.js
+│   ├── WTTJExtension/
+│   │   ├── manifest.json
+│   │   ├── content.js
+│   │   ├── popup.html
+│   │   └── popup.js
+│   └── EnergyJobSearchExtension/
+│       ├── manifest.json
+│       ├── content.js
+│       ├── popup.html
+│       └── popup.js
 └── Program.cs                      # App configuration and API endpoints
 ```
 
