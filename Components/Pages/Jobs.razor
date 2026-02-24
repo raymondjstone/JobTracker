@@ -2920,6 +2920,7 @@ else
                 updateJobAction: (jobId, parsed) =>
                 {
                     JobService.UpdateJobIfBetter(jobId, parsed);
+                    JobService.ApplyRulesToExistingJobs(jobId);
                 },
                 onProgress: (progress) =>
                 {

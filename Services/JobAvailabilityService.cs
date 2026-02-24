@@ -471,8 +471,13 @@ public class JobAvailabilityService
         // Extract headline from main profile page
         if (profileHtml.Length > 0)
         {
-            var headlineDetails = ExtractHeadlineFromProfile(profileHtml, contact.Name);
-            details.Headline = headlineDetails;
+            details.Headline = ExtractHeadlineFromProfile(profileHtml, contact.Name);
+            _logger.LogInformation("Profile page for {Name}: {Length} bytes, headline={Headline}",
+                contact.Name, profileHtml.Length, details.Headline ?? "(none)");
+        }
+        else
+        {
+            _logger.LogWarning("Empty profile page response for {Name}: {Url}", contact.Name, profileUrl);
         }
 
         // 2. Fetch the contact-info overlay page (for email/phone)
@@ -490,6 +495,12 @@ public class JobAvailabilityService
                     var contactInfo = ExtractContactInfoFromOverlay(overlayHtml);
                     details.Email ??= contactInfo.Email;
                     details.Phone ??= contactInfo.Phone;
+                    _logger.LogInformation("Overlay for {Name}: {Length} bytes, email={Email}, phone={Phone}",
+                        contact.Name, overlayHtml.Length, contactInfo.Email ?? "(none)", contactInfo.Phone ?? "(none)");
+                }
+                else
+                {
+                    _logger.LogWarning("Empty overlay response for {Name}: {Url}", contact.Name, overlayUrl);
                 }
             }
             catch (HttpRequestException ex)
@@ -507,6 +518,11 @@ public class JobAvailabilityService
         }
 
         // 4. Apply extracted details to the contact
+        _logger.LogInformation(
+            "Enrichment results for {Name} (overwrite={Overwrite}): Email={Email}, Phone={Phone}, Headline={Headline}, CurrentRole={Role}",
+            contact.Name, overwrite, details.Email ?? "(none)", details.Phone ?? "(none)",
+            details.Headline ?? "(none)", contact.Role ?? "(none)");
+
         bool updated = false;
 
         if (!string.IsNullOrWhiteSpace(details.Email) &&
@@ -514,6 +530,7 @@ public class JobAvailabilityService
         {
             if (contact.Email != details.Email)
             {
+                _logger.LogInformation("Updating email for {Name}: {Old} -> {New}", contact.Name, contact.Email, details.Email);
                 contact.Email = details.Email;
                 updated = true;
             }
@@ -524,72 +541,110 @@ public class JobAvailabilityService
         {
             if (contact.Phone != details.Phone)
             {
+                _logger.LogInformation("Updating phone for {Name}: {Old} -> {New}", contact.Name, contact.Phone, details.Phone);
                 contact.Phone = details.Phone;
                 updated = true;
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(details.Headline) &&
-            (overwrite || string.IsNullOrWhiteSpace(contact.Role) || contact.Role == "Recruiter"))
+        if (!string.IsNullOrWhiteSpace(details.Headline))
         {
-            if (overwrite)
+            if (overwrite || string.IsNullOrWhiteSpace(contact.Role) || contact.Role == "Recruiter")
             {
                 if (contact.Role != details.Headline)
                 {
+                    _logger.LogInformation("Updating role for {Name}: {Old} -> {New}", contact.Name, contact.Role, details.Headline);
                     contact.Role = details.Headline;
                     updated = true;
                 }
-            }
-            else if (contact.Role == "Recruiter" && !details.Headline.Contains("Recruiter", StringComparison.OrdinalIgnoreCase))
-            {
-                contact.Role = details.Headline;
-                updated = true;
-            }
-            else if (string.IsNullOrWhiteSpace(contact.Role))
-            {
-                contact.Role = details.Headline;
-                updated = true;
             }
         }
 
         if (updated)
         {
-            _logger.LogInformation("Enriched contact {Name}: Email={Email}, Phone={Phone}, Headline={Headline}",
-                contact.Name, details.Email, details.Phone, details.Headline);
+            _logger.LogInformation("Contact {Name} was enriched successfully", contact.Name);
+        }
+        else
+        {
+            _logger.LogInformation("No new data found for contact {Name}", contact.Name);
         }
 
         return updated;
     }
 
     /// <summary>
-    /// Extracts the headline/title from a LinkedIn profile page's title tag.
+    /// Extracts the headline/title from a LinkedIn profile page HTML.
+    /// Tries multiple sources: &lt;title&gt; tag, og:title meta, and the profile top-card headline element.
     /// </summary>
     internal static string? ExtractHeadlineFromProfile(string html, string contactName)
     {
+        // Try extracting "Name - Headline | LinkedIn" from multiple sources
+        var candidates = new List<string>();
+
+        // Source 1: <title> tag
         var titleMatch = System.Text.RegularExpressions.Regex.Match(html, @"<title[^>]*>(.*?)</title>",
             System.Text.RegularExpressions.RegexOptions.Singleline | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-        if (!titleMatch.Success)
-            return null;
+        if (titleMatch.Success)
+            candidates.Add(WebUtility.HtmlDecode(titleMatch.Groups[1].Value).Trim());
 
-        var title = WebUtility.HtmlDecode(titleMatch.Groups[1].Value).Trim();
-        var pipeIdx = title.IndexOf('|');
-        if (pipeIdx > 0)
-            title = title.Substring(0, pipeIdx).Trim();
-        var dashIdx = title.IndexOf(" - ");
-        if (dashIdx <= 0)
-            return null;
+        // Source 2: og:title meta tag
+        var ogMatch = System.Text.RegularExpressions.Regex.Match(html,
+            @"<meta[^>]*property=""og:title""[^>]*content=""([^""]*)""",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (ogMatch.Success)
+            candidates.Add(WebUtility.HtmlDecode(ogMatch.Groups[1].Value).Trim());
+        // Also try reversed attribute order
+        var ogMatch2 = System.Text.RegularExpressions.Regex.Match(html,
+            @"<meta[^>]*content=""([^""]*)""[^>]*property=""og:title""",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (ogMatch2.Success)
+            candidates.Add(WebUtility.HtmlDecode(ogMatch2.Groups[1].Value).Trim());
 
-        // Validate the title belongs to this contact
-        var namePart = title.Substring(0, dashIdx).Trim();
-        if (!string.IsNullOrWhiteSpace(contactName))
+        foreach (var raw in candidates)
         {
-            var nameParts = contactName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (!nameParts.Any(part => namePart.Contains(part, StringComparison.OrdinalIgnoreCase)))
-                return null;
+            var text = raw;
+            // Strip " | LinkedIn" suffix
+            var pipeIdx = text.IndexOf('|');
+            if (pipeIdx > 0)
+                text = text.Substring(0, pipeIdx).Trim();
+
+            var dashIdx = text.IndexOf(" - ");
+            if (dashIdx <= 0)
+                continue;
+
+            var namePart = text.Substring(0, dashIdx).Trim();
+            var headline = text.Substring(dashIdx + 3).Trim();
+
+            if (string.IsNullOrWhiteSpace(headline) || headline.Length >= 100)
+                continue;
+
+            // Validate name if provided (at least one name part must match)
+            if (!string.IsNullOrWhiteSpace(contactName))
+            {
+                var nameParts = contactName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (!nameParts.Any(part => part.Length >= 2 &&
+                    namePart.Contains(part, StringComparison.OrdinalIgnoreCase)))
+                    continue;
+            }
+
+            return headline;
         }
 
-        var headline = title.Substring(dashIdx + 3).Trim();
-        return !string.IsNullOrWhiteSpace(headline) && headline.Length < 100 ? headline : null;
+        // Source 3: LinkedIn top-card headline element (public profile)
+        // <div class="top-card-layout__headline">Senior Recruiter at Company</div>
+        var headlineMatch = System.Text.RegularExpressions.Regex.Match(html,
+            @"class=""[^""]*top-card[^""]*headline[^""]*""[^>]*>(.*?)</",
+            System.Text.RegularExpressions.RegexOptions.Singleline | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (headlineMatch.Success)
+        {
+            var headline = WebUtility.HtmlDecode(headlineMatch.Groups[1].Value).Trim();
+            // Strip HTML tags if any
+            headline = System.Text.RegularExpressions.Regex.Replace(headline, @"<[^>]+>", "").Trim();
+            if (!string.IsNullOrWhiteSpace(headline) && headline.Length < 100)
+                return headline;
+        }
+
+        return null;
     }
 
     /// <summary>
