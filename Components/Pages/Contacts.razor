@@ -4,6 +4,7 @@
 @using Microsoft.AspNetCore.Authorization
 @attribute [Authorize]
 @inject JobListingService JobService
+@inject JobAvailabilityService AvailabilityService
 @inject NavigationManager Navigation
 @implements IDisposable
 @rendermode InteractiveServer
@@ -14,11 +15,86 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1><i class="bi bi-people"></i> Contacts</h1>
         <div class="d-flex gap-2">
+            @if (isEnriching)
+            {
+                <button class="btn btn-info" disabled>
+                    <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                    <span>Enriching...</span>
+                </button>
+                <button class="btn btn-outline-danger" @onclick="CancelEnrichment">
+                    <i class="bi bi-x-lg"></i> Cancel
+                </button>
+            }
+            else
+            {
+                <button class="btn btn-info" @onclick="() => EnrichContacts(false)">
+                    <i class="bi bi-globe me-1"></i>Enrich Missing
+                    @if (EnrichableContactCount > 0)
+                    {
+                        <span class="badge bg-light text-dark ms-1">@EnrichableContactCount</span>
+                    }
+                </button>
+                <button class="btn btn-outline-info" @onclick="() => EnrichContacts(true)">
+                    <i class="bi bi-arrow-repeat me-1"></i>Re-enrich All
+                    @if (AllEnrichableContactCount > 0)
+                    {
+                        <span class="badge bg-info text-white ms-1">@AllEnrichableContactCount</span>
+                    }
+                </button>
+            }
             <button class="btn btn-primary" @onclick="StartAddContact">
                 <i class="bi bi-person-plus"></i> Add Contact
             </button>
         </div>
     </div>
+
+    @* Enrichment Progress *@
+    @if (enrichProgress != null)
+    {
+        <div class="alert @(enrichProgress.IsComplete ? (enrichProgress.WasCancelled ? "alert-warning" : "alert-success") : "alert-info") mb-4">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <strong>
+                    @if (enrichProgress.IsComplete)
+                    {
+                        if (enrichProgress.WasCancelled)
+                        {
+                            <i class="bi bi-exclamation-triangle"></i>
+                            <span> Enrichment Cancelled</span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-check-circle"></i>
+                            <span> Enrichment Complete &mdash; @enrichProgress.EnrichedCount contact@(enrichProgress.EnrichedCount != 1 ? "s" : "") updated</span>
+                        }
+                    }
+                    else
+                    {
+                        <span class="spinner-border spinner-border-sm me-1"></span>
+                        <span>Checking: @enrichProgress.CurrentContactName</span>
+                    }
+                </strong>
+                @if (enrichProgress.IsComplete)
+                {
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="() => enrichProgress = null">
+                        <i class="bi bi-x"></i> Dismiss
+                    </button>
+                }
+            </div>
+            <div class="progress mb-2" style="height: 20px;">
+                @{
+                    var enrichPct = enrichProgress.TotalContacts > 0 ? (int)(100.0 * enrichProgress.CheckedCount / enrichProgress.TotalContacts) : 0;
+                }
+                <div class="progress-bar @(enrichProgress.IsComplete ? "bg-success" : "")" role="progressbar" style="width: @(enrichPct)%">
+                    @enrichProgress.CheckedCount / @enrichProgress.TotalContacts contacts checked
+                </div>
+            </div>
+            <small>
+                <span class="text-success">
+                    <i class="bi bi-person-check"></i> @enrichProgress.EnrichedCount enriched
+                </span>
+            </small>
+        </div>
+    }
 
     <!-- Summary Stats -->
     <div class="row mb-4">
@@ -113,69 +189,79 @@
         </div>
     </div>
 
-    <!-- Add/Edit Contact Form -->
+    <!-- Add/Edit Contact Modal -->
     @if (showForm)
     {
-        <div class="card mb-4 border-primary">
-            <div class="card-header bg-primary text-white">
-                <h5 class="mb-0">@(editingContactId.HasValue ? "Edit Contact" : "New Contact")</h5>
-            </div>
-            <div class="card-body">
-                <div class="row g-3 mb-3">
-                    <div class="col-md-4">
-                        <label class="form-label">Name *</label>
-                        <input type="text" class="form-control" @bind="formName" placeholder="Full name" />
+        <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5);" @onclick="CancelForm">
+            <div class="modal-dialog modal-lg" @onclick:stopPropagation="true">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">
+                            <i class="bi bi-@(editingContactId.HasValue ? "pencil" : "person-plus") me-1"></i>
+                            @(editingContactId.HasValue ? "Edit Contact" : "New Contact")
+                        </h5>
+                        <button type="button" class="btn-close" @onclick="CancelForm"></button>
                     </div>
-                    <div class="col-md-2">
-                        <label class="form-label">Role</label>
-                        <select class="form-select" @bind="formRole">
-                            <option value="">-- Role --</option>
-                            <option>Recruiter</option>
-                            <option>Hiring Manager</option>
-                            <option>HR</option>
-                            <option>Team Lead</option>
-                            <option>Other</option>
-                        </select>
-                    </div>
-                    <div class="col-md-3">
-                        <label class="form-label">Email</label>
-                        <input type="email" class="form-control" @bind="formEmail" placeholder="email@example.com" />
-                    </div>
-                    <div class="col-md-3">
-                        <label class="form-label">Phone</label>
-                        <input type="tel" class="form-control" @bind="formPhone" placeholder="+44..." />
-                    </div>
-                </div>
-                <div class="row g-3 mb-3">
-                    <div class="col-md-6">
-                        <label class="form-label">Profile URL</label>
-                        <input type="url" class="form-control" @bind="formProfileUrl" placeholder="https://linkedin.com/in/..." />
-                    </div>
-                    <div class="col-md-6">
-                        @if (editingContactId.HasValue)
-                        {
-                            <label class="form-label">Link to Job</label>
-                            <select class="form-select" @bind="linkJobId">
-                                <option value="">-- Select job to link --</option>
-                                @foreach (var job in availableJobs)
+                    <div class="modal-body">
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Name *</label>
+                                <input type="text" class="form-control" @bind="formName" placeholder="Full name" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Role</label>
+                                <select class="form-select" @bind="formRole">
+                                    <option value="">-- Role --</option>
+                                    <option>Recruiter</option>
+                                    <option>Hiring Manager</option>
+                                    <option>HR</option>
+                                    <option>Team Lead</option>
+                                    <option>Other</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Email</label>
+                                <input type="email" class="form-control" @bind="formEmail" placeholder="email@example.com" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Phone</label>
+                                <input type="tel" class="form-control" @bind="formPhone" placeholder="+44..." />
+                            </div>
+                        </div>
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Profile URL</label>
+                                <input type="url" class="form-control" @bind="formProfileUrl" placeholder="https://linkedin.com/in/..." />
+                            </div>
+                            <div class="col-md-6">
+                                @if (editingContactId.HasValue)
                                 {
-                                    <option value="@job.Id">@job.Title - @job.Company</option>
+                                    <label class="form-label">Link to Job</label>
+                                    <select class="form-select" @bind="linkJobId">
+                                        <option value="">-- Select job to link --</option>
+                                        @foreach (var job in availableJobs)
+                                        {
+                                            <option value="@job.Id">@job.Title - @job.Company</option>
+                                        }
+                                    </select>
                                 }
-                            </select>
-                        }
+                            </div>
+                        </div>
                     </div>
-                </div>
-                <div class="d-flex gap-2">
-                    <button class="btn btn-primary" @onclick="SaveContact" disabled="@string.IsNullOrWhiteSpace(formName)">
-                        <i class="bi bi-check-lg"></i> Save
-                    </button>
-                    @if (editingContactId.HasValue && !string.IsNullOrWhiteSpace(linkJobId))
-                    {
-                        <button class="btn btn-outline-success" @onclick="LinkJob">
-                            <i class="bi bi-link-45deg"></i> Link Job
+                    <div class="modal-footer">
+                        @if (editingContactId.HasValue && !string.IsNullOrWhiteSpace(linkJobId))
+                        {
+                            <button class="btn btn-outline-success" @onclick="LinkJob">
+                                <i class="bi bi-link-45deg"></i> Link Job
+                            </button>
+                        }
+                        <button class="btn btn-outline-secondary" @onclick="CancelForm">Cancel</button>
+                        <button class="btn btn-primary" @onclick="SaveContact" disabled="@string.IsNullOrWhiteSpace(formName)">
+                            <i class="bi bi-check-lg"></i> Save
                         </button>
-                    }
-                    <button class="btn btn-outline-secondary" @onclick="CancelForm">Cancel</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -206,8 +292,8 @@
                     <div class="card h-100 @(selectedContactId == contact.Id ? "border-primary" : "")">
                         <div class="card-body">
                             <div class="d-flex justify-content-between align-items-start mb-2">
-                                <div>
-                                    <h5 class="card-title mb-1">
+                                <div class="me-2" style="min-width: 0;">
+                                    <h5 class="card-title mb-1 text-truncate">
                                         <i class="bi bi-person-circle me-1"></i>@contact.Name
                                     </h5>
                                     @if (!string.IsNullOrWhiteSpace(contact.Role))
@@ -215,7 +301,20 @@
                                         <span class="badge bg-info">@contact.Role</span>
                                     }
                                 </div>
-                                <div class="d-flex gap-1">
+                                <div class="d-flex gap-1 flex-shrink-0">
+                                    <button class="btn btn-sm btn-outline-info"
+                                            @onclick="() => EnrichSingleContact(contact)"
+                                            disabled="@(enrichingSingleContactId == contact.Id || string.IsNullOrWhiteSpace(contact.ProfileUrl))"
+                                            title="@(string.IsNullOrWhiteSpace(contact.ProfileUrl) ? "No profile URL set" : "Fetch details from profile")">
+                                        @if (enrichingSingleContactId == contact.Id)
+                                        {
+                                            <span class="spinner-border spinner-border-sm" role="status"></span>
+                                        }
+                                        else
+                                        {
+                                            <i class="bi bi-globe"></i>
+                                        }
+                                    </button>
                                     <button class="btn btn-sm btn-outline-secondary" @onclick="() => StartEditContact(contact)" title="Edit">
                                         <i class="bi bi-pencil"></i>
                                     </button>
@@ -425,8 +524,22 @@
     // Delete confirm
     private Contact? contactToDelete = null;
 
+    // Enrichment state
+    private bool isEnriching = false;
+    private ContactEnrichmentProgress? enrichProgress = null;
+    private CancellationTokenSource? enrichCts = null;
+    private Guid? enrichingSingleContactId = null;
+
     private bool HasActiveFilters => !string.IsNullOrWhiteSpace(searchText) || !string.IsNullOrWhiteSpace(filterRole)
         || !string.IsNullOrWhiteSpace(filterInteractions) || !string.IsNullOrWhiteSpace(filterHasProfile);
+
+    private int EnrichableContactCount => allContacts.Count(c =>
+        !string.IsNullOrWhiteSpace(c.ProfileUrl) &&
+        string.IsNullOrWhiteSpace(c.Email) &&
+        string.IsNullOrWhiteSpace(c.Phone));
+
+    private int AllEnrichableContactCount => allContacts.Count(c =>
+        !string.IsNullOrWhiteSpace(c.ProfileUrl));
 
     protected override void OnInitialized()
     {
@@ -437,6 +550,8 @@
     public void Dispose()
     {
         JobService.OnChange -= OnJobServiceChange;
+        enrichCts?.Cancel();
+        enrichCts?.Dispose();
     }
 
     private void OnJobServiceChange() => InvokeAsync(() =>
@@ -643,6 +758,88 @@
 
         addingInteractionForContactId = null;
         LoadData();
+    }
+
+    private async Task EnrichContacts(bool overwrite)
+    {
+        if (isEnriching) return;
+
+        var contactsToEnrich = overwrite
+            ? allContacts.Where(c => !string.IsNullOrWhiteSpace(c.ProfileUrl)).ToList()
+            : allContacts.Where(c => !string.IsNullOrWhiteSpace(c.ProfileUrl) &&
+                                      string.IsNullOrWhiteSpace(c.Email) &&
+                                      string.IsNullOrWhiteSpace(c.Phone)).ToList();
+
+        if (!contactsToEnrich.Any()) return;
+
+        isEnriching = true;
+        enrichProgress = new ContactEnrichmentProgress { TotalContacts = contactsToEnrich.Count };
+        enrichCts = new CancellationTokenSource();
+        StateHasChanged();
+
+        try
+        {
+            await AvailabilityService.EnrichContactsAsync(
+                contactsToEnrich,
+                saveContact: (contact) => JobService.UpdateContact(contact),
+                overwrite: overwrite,
+                onProgress: (progress) =>
+                {
+                    enrichProgress = progress;
+                    InvokeAsync(StateHasChanged);
+                },
+                cancellationToken: enrichCts.Token
+            );
+        }
+        catch (OperationCanceledException)
+        {
+            if (enrichProgress != null)
+            {
+                enrichProgress.IsComplete = true;
+                enrichProgress.WasCancelled = true;
+            }
+        }
+        finally
+        {
+            isEnriching = false;
+            LoadData();
+            await InvokeAsync(StateHasChanged);
+            enrichCts?.Dispose();
+            enrichCts = null;
+        }
+    }
+
+    private void CancelEnrichment()
+    {
+        enrichCts?.Cancel();
+    }
+
+    private async Task EnrichSingleContact(Contact contact)
+    {
+        if (enrichingSingleContactId.HasValue) return;
+        if (string.IsNullOrWhiteSpace(contact.ProfileUrl)) return;
+
+        enrichingSingleContactId = contact.Id;
+        StateHasChanged();
+
+        try
+        {
+            var updated = await AvailabilityService.EnrichContactAsync(contact, overwrite: true);
+            if (updated)
+            {
+                JobService.UpdateContact(contact);
+                LoadData();
+            }
+        }
+        catch (Exception ex)
+        {
+            _ = ex; // logged by the service
+        }
+        finally
+        {
+            enrichingSingleContactId = null;
+            StateHasChanged();
+        }
     }
 
     private void NavigateToJob(Guid jobId)

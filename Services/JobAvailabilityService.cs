@@ -31,6 +31,23 @@ public class JobAvailabilityProgress
     public bool WasCancelled { get; set; }
 }
 
+public class ContactEnrichmentProgress
+{
+    public int TotalContacts { get; set; }
+    public int CheckedCount { get; set; }
+    public int EnrichedCount { get; set; }
+    public string? CurrentContactName { get; set; }
+    public bool IsComplete { get; set; }
+    public bool WasCancelled { get; set; }
+}
+
+public class ContactProfileDetails
+{
+    public string? Email { get; set; }
+    public string? Phone { get; set; }
+    public string? Headline { get; set; }
+}
+
 public class JobAvailabilityService
 {
     private readonly HttpClient _httpClient;
@@ -395,6 +412,496 @@ public class JobAvailabilityService
         progress.IsComplete = true;
         progress.CurrentJobTitle = "";
         onProgress?.Invoke(progress);
+    }
+
+    private HttpRequestMessage CreateBrowserRequest(string url)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Add("User-Agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+        request.Headers.Add("Accept",
+            "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8");
+        request.Headers.Add("Accept-Language", "en-US,en;q=0.5");
+        return request;
+    }
+
+    /// <summary>
+    /// Builds the LinkedIn contact-info overlay URL from a profile URL.
+    /// e.g. https://www.linkedin.com/in/johndoe -> https://www.linkedin.com/in/johndoe/overlay/contact-info/
+    /// </summary>
+    internal static string? BuildContactInfoOverlayUrl(string profileUrl)
+    {
+        if (!Uri.TryCreate(profileUrl, UriKind.Absolute, out var uri))
+            return null;
+        var host = uri.Host.ToLowerInvariant();
+        if (!host.Contains("linkedin.com"))
+            return null;
+        // Only works for /in/ profile URLs
+        var path = uri.AbsolutePath.TrimEnd('/');
+        if (!path.StartsWith("/in/", StringComparison.OrdinalIgnoreCase))
+            return null;
+        return $"{uri.Scheme}://{uri.Host}{path}/overlay/contact-info/";
+    }
+
+    /// <summary>
+    /// Fetches a single contact's profile page and contact-info overlay to update their details.
+    /// Returns true if the contact was updated.
+    /// </summary>
+    public async Task<bool> EnrichContactAsync(
+        Contact contact,
+        bool overwrite = false,
+        CancellationToken cancellationToken = default)
+    {
+        var profileUrl = contact.ProfileUrl;
+        if (string.IsNullOrWhiteSpace(profileUrl))
+            return false;
+
+        if (!ValidateExternalUrl(profileUrl))
+        {
+            _logger.LogWarning("Blocked profile URL (SSRF protection): {Url}", profileUrl);
+            return false;
+        }
+
+        // 1. Fetch main profile page (for headline from <title>)
+        var response = await _httpClient.SendAsync(CreateBrowserRequest(profileUrl), cancellationToken);
+        var profileHtml = await response.Content.ReadAsStringAsync(cancellationToken);
+
+        var details = new ContactProfileDetails();
+
+        // Extract headline from main profile page
+        if (profileHtml.Length > 0)
+        {
+            var headlineDetails = ExtractHeadlineFromProfile(profileHtml, contact.Name);
+            details.Headline = headlineDetails;
+        }
+
+        // 2. Fetch the contact-info overlay page (for email/phone)
+        var overlayUrl = BuildContactInfoOverlayUrl(profileUrl);
+        if (overlayUrl != null)
+        {
+            _logger.LogDebug("Fetching contact info overlay: {Url}", overlayUrl);
+            try
+            {
+                var overlayResponse = await _httpClient.SendAsync(CreateBrowserRequest(overlayUrl), cancellationToken);
+                var overlayHtml = await overlayResponse.Content.ReadAsStringAsync(cancellationToken);
+
+                if (overlayHtml.Length > 0)
+                {
+                    var contactInfo = ExtractContactInfoFromOverlay(overlayHtml);
+                    details.Email ??= contactInfo.Email;
+                    details.Phone ??= contactInfo.Phone;
+                }
+            }
+            catch (HttpRequestException ex)
+            {
+                _logger.LogDebug(ex, "Could not fetch contact info overlay for {Name}", contact.Name);
+            }
+        }
+
+        // 3. If overlay didn't yield results, try the main profile page as fallback
+        if (profileHtml.Length > 0 && (details.Email == null || details.Phone == null))
+        {
+            var fallback = ExtractContactDetailsFromProfile(profileHtml, contact.Name);
+            details.Email ??= fallback.Email;
+            details.Phone ??= fallback.Phone;
+        }
+
+        // 4. Apply extracted details to the contact
+        bool updated = false;
+
+        if (!string.IsNullOrWhiteSpace(details.Email) &&
+            (overwrite || string.IsNullOrWhiteSpace(contact.Email)))
+        {
+            if (contact.Email != details.Email)
+            {
+                contact.Email = details.Email;
+                updated = true;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(details.Phone) &&
+            (overwrite || string.IsNullOrWhiteSpace(contact.Phone)))
+        {
+            if (contact.Phone != details.Phone)
+            {
+                contact.Phone = details.Phone;
+                updated = true;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(details.Headline) &&
+            (overwrite || string.IsNullOrWhiteSpace(contact.Role) || contact.Role == "Recruiter"))
+        {
+            if (overwrite)
+            {
+                if (contact.Role != details.Headline)
+                {
+                    contact.Role = details.Headline;
+                    updated = true;
+                }
+            }
+            else if (contact.Role == "Recruiter" && !details.Headline.Contains("Recruiter", StringComparison.OrdinalIgnoreCase))
+            {
+                contact.Role = details.Headline;
+                updated = true;
+            }
+            else if (string.IsNullOrWhiteSpace(contact.Role))
+            {
+                contact.Role = details.Headline;
+                updated = true;
+            }
+        }
+
+        if (updated)
+        {
+            _logger.LogInformation("Enriched contact {Name}: Email={Email}, Phone={Phone}, Headline={Headline}",
+                contact.Name, details.Email, details.Phone, details.Headline);
+        }
+
+        return updated;
+    }
+
+    /// <summary>
+    /// Extracts the headline/title from a LinkedIn profile page's title tag.
+    /// </summary>
+    internal static string? ExtractHeadlineFromProfile(string html, string contactName)
+    {
+        var titleMatch = System.Text.RegularExpressions.Regex.Match(html, @"<title[^>]*>(.*?)</title>",
+            System.Text.RegularExpressions.RegexOptions.Singleline | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (!titleMatch.Success)
+            return null;
+
+        var title = WebUtility.HtmlDecode(titleMatch.Groups[1].Value).Trim();
+        var pipeIdx = title.IndexOf('|');
+        if (pipeIdx > 0)
+            title = title.Substring(0, pipeIdx).Trim();
+        var dashIdx = title.IndexOf(" - ");
+        if (dashIdx <= 0)
+            return null;
+
+        // Validate the title belongs to this contact
+        var namePart = title.Substring(0, dashIdx).Trim();
+        if (!string.IsNullOrWhiteSpace(contactName))
+        {
+            var nameParts = contactName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (!nameParts.Any(part => namePart.Contains(part, StringComparison.OrdinalIgnoreCase)))
+                return null;
+        }
+
+        var headline = title.Substring(dashIdx + 3).Trim();
+        return !string.IsNullOrWhiteSpace(headline) && headline.Length < 100 ? headline : null;
+    }
+
+    /// <summary>
+    /// Extracts email and phone from the LinkedIn contact-info overlay page.
+    /// This page is much simpler and purpose-built — contact details appear as
+    /// mailto: links, tel: links, and in ci-email/ci-phone sections.
+    /// </summary>
+    internal static ContactProfileDetails ExtractContactInfoFromOverlay(string html)
+    {
+        var details = new ContactProfileDetails();
+
+        // Strip scripts/styles
+        var clean = System.Text.RegularExpressions.Regex.Replace(html,
+            @"<script[^>]*>[\s\S]*?</script>", " ",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        clean = System.Text.RegularExpressions.Regex.Replace(clean,
+            @"<style[^>]*>[\s\S]*?</style>", " ",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        // Email: look for mailto: links first (strongest signal on overlay page)
+        var mailtoRegex = new System.Text.RegularExpressions.Regex(
+            @"href=""mailto:([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})""",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        var mailtoMatch = mailtoRegex.Match(clean);
+        if (mailtoMatch.Success)
+        {
+            var email = mailtoMatch.Groups[1].Value;
+            if (!email.Contains("@linkedin.com", StringComparison.OrdinalIgnoreCase) &&
+                !email.Contains("@licdn.com", StringComparison.OrdinalIgnoreCase))
+            {
+                details.Email = email;
+            }
+        }
+
+        // Email fallback: look in ci-email sections
+        if (details.Email == null)
+        {
+            var ciEmailMatch = System.Text.RegularExpressions.Regex.Match(clean,
+                @"ci-email[^>]*>([\s\S]*?)</",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (ciEmailMatch.Success)
+            {
+                var emailRegex = new System.Text.RegularExpressions.Regex(
+                    @"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}");
+                var emailMatch = emailRegex.Match(ciEmailMatch.Groups[1].Value);
+                if (emailMatch.Success)
+                    details.Email = emailMatch.Value;
+            }
+        }
+
+        // Email fallback: any email in the overlay that isn't a LinkedIn system address
+        if (details.Email == null)
+        {
+            var emailRegex = new System.Text.RegularExpressions.Regex(
+                @"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}");
+            var systemDomains = new[] { "linkedin.com", "licdn.com", "w3.org", "schema.org" };
+            foreach (System.Text.RegularExpressions.Match m in emailRegex.Matches(clean))
+            {
+                var email = m.Value;
+                var domain = email.Substring(email.IndexOf('@') + 1).ToLowerInvariant();
+                if (!systemDomains.Any(d => domain.Contains(d)))
+                {
+                    details.Email = email;
+                    break;
+                }
+            }
+        }
+
+        // Phone: look for tel: links first
+        var telRegex = new System.Text.RegularExpressions.Regex(
+            @"href=""tel:([\+\d\s\-\(\)]+)""",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        var telMatch = telRegex.Match(clean);
+        if (telMatch.Success)
+        {
+            var phone = telMatch.Groups[1].Value.Trim();
+            if (phone.Count(char.IsDigit) >= 7)
+                details.Phone = phone;
+        }
+
+        // Phone fallback: ci-phone sections
+        if (details.Phone == null)
+        {
+            var ciPhoneMatch = System.Text.RegularExpressions.Regex.Match(clean,
+                @"ci-phone[^>]*>([\s\S]*?)</",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (ciPhoneMatch.Success)
+            {
+                var phoneRegex = new System.Text.RegularExpressions.Regex(
+                    @"\+?[\d\s\-\(\)]{7,20}");
+                var phoneMatch = phoneRegex.Match(ciPhoneMatch.Groups[1].Value);
+                if (phoneMatch.Success && phoneMatch.Value.Count(char.IsDigit) >= 7)
+                    details.Phone = phoneMatch.Value.Trim();
+            }
+        }
+
+        // Phone fallback: phone near keyword in overlay
+        if (details.Phone == null)
+        {
+            var phoneContextRegex = new System.Text.RegularExpressions.Regex(
+                @"(?:phone|mobile|cell|tel|telephone)[\s:.\-]*(\+?[\d\s\-\(\)]{7,20})",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            var phoneContextMatch = phoneContextRegex.Match(clean);
+            if (phoneContextMatch.Success && phoneContextMatch.Groups[1].Value.Count(char.IsDigit) >= 7)
+                details.Phone = phoneContextMatch.Groups[1].Value.Trim();
+        }
+
+        return details;
+    }
+
+    public async Task EnrichContactsAsync(
+        IReadOnlyList<Contact> contacts,
+        Action<Contact> saveContact,
+        bool overwrite = false,
+        Action<ContactEnrichmentProgress>? onProgress = null,
+        CancellationToken cancellationToken = default)
+    {
+        var progress = new ContactEnrichmentProgress
+        {
+            TotalContacts = contacts.Count
+        };
+
+        foreach (var contact in contacts)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            progress.CurrentContactName = contact.Name;
+            onProgress?.Invoke(progress);
+
+            try
+            {
+                var enriched = await EnrichContactAsync(contact, overwrite, cancellationToken);
+                if (enriched)
+                {
+                    saveContact(contact);
+                    progress.EnrichedCount++;
+                }
+            }
+            catch (HttpRequestException ex)
+            {
+                _logger.LogWarning(ex, "HTTP error enriching contact: {Name}", contact.Name);
+            }
+            catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogWarning("Timeout enriching contact: {Name}", contact.Name);
+            }
+            catch (TaskCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error enriching contact: {Name}", contact.Name);
+            }
+
+            progress.CheckedCount++;
+            onProgress?.Invoke(progress);
+
+            // Rate-limit: 5-second delay between LinkedIn requests
+            if (progress.CheckedCount < contacts.Count)
+            {
+                await Task.Delay(5000, cancellationToken);
+            }
+        }
+
+        progress.IsComplete = true;
+        progress.CurrentContactName = null;
+        onProgress?.Invoke(progress);
+    }
+
+    /// <summary>
+    /// Fallback extraction of email/phone from the main LinkedIn profile page HTML.
+    /// Used when the contact-info overlay doesn't yield results.
+    /// </summary>
+    internal static ContactProfileDetails ExtractContactDetailsFromProfile(string html, string contactName = "")
+    {
+        var details = new ContactProfileDetails();
+
+        // --- Extract profile-specific content sections only ---
+        // Strip all <script> and <style> blocks to avoid matching JS/CSS content
+        var cleanHtml = System.Text.RegularExpressions.Regex.Replace(html,
+            @"<script[^>]*>[\s\S]*?</script>", " ",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        cleanHtml = System.Text.RegularExpressions.Regex.Replace(cleanHtml,
+            @"<style[^>]*>[\s\S]*?</style>", " ",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        // Try to isolate LinkedIn profile content sections where contact info actually appears.
+        // These are the "About" section and the "Contact info" overlay content.
+        var profileSections = new List<string>();
+
+        // About section: <section ... class="...pv-about-section..."> or data-section="summary"
+        var aboutMatches = System.Text.RegularExpressions.Regex.Matches(cleanHtml,
+            @"<section[^>]*(?:pv-about|summary|about)[^>]*>([\s\S]*?)</section>",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        foreach (System.Text.RegularExpressions.Match m in aboutMatches)
+            profileSections.Add(m.Groups[1].Value);
+
+        // Contact info section (LinkedIn puts this in a specific section/div)
+        var contactInfoMatches = System.Text.RegularExpressions.Regex.Matches(cleanHtml,
+            @"<section[^>]*(?:contact-info|pv-contact-info)[^>]*>([\s\S]*?)</section>",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        foreach (System.Text.RegularExpressions.Match m in contactInfoMatches)
+            profileSections.Add(m.Groups[1].Value);
+
+        // Also look for ci-email / ci-phone sections (LinkedIn contact info overlay)
+        var ciMatches = System.Text.RegularExpressions.Regex.Matches(cleanHtml,
+            @"<div[^>]*(?:ci-email|ci-phone|ci-vanity-url)[^>]*>([\s\S]*?)</div>",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        foreach (System.Text.RegularExpressions.Match m in ciMatches)
+            profileSections.Add(m.Groups[1].Value);
+
+        // LinkedIn public profile sometimes renders contact info as plain text in the top card area
+        var topCardMatches = System.Text.RegularExpressions.Regex.Matches(cleanHtml,
+            @"<div[^>]*(?:top-card|profile-header|pv-top-card)[^>]*>([\s\S]*?)</div>",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        foreach (System.Text.RegularExpressions.Match m in topCardMatches)
+            profileSections.Add(m.Groups[1].Value);
+
+        // Use the isolated sections if we found any, otherwise fall back to script-stripped HTML
+        // but with much stricter filtering
+        var searchText = profileSections.Count > 0
+            ? string.Join(" ", profileSections)
+            : cleanHtml;
+        bool usingFullPage = profileSections.Count == 0;
+
+        // --- Email extraction ---
+        var emailRegex = new System.Text.RegularExpressions.Regex(
+            @"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}");
+
+        var excludedEmailDomains = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "linkedin.com", "licdn.com", "sentry.io", "w3.org", "schema.org",
+            "googletagmanager.com", "google.com", "facebook.com", "meta.com",
+            "apple.com", "microsoft.com", "cloudflare.com", "amazonaws.com",
+            "gstatic.com", "doubleclick.net", "googlesyndication.com",
+            "twitter.com", "x.com", "github.com", "example.com", "example.org",
+            "test.com", "localhost"
+        };
+        var excludedEmailPrefixes = new[] { "noreply", "no-reply", "donotreply", "support", "info@cdn", "admin" };
+        var assetExtensions = new[] { ".png", ".jpg", ".jpeg", ".svg", ".gif", ".css", ".js", ".woff" };
+
+        var candidateEmails = new List<string>();
+        foreach (System.Text.RegularExpressions.Match match in emailRegex.Matches(searchText))
+        {
+            var email = match.Value;
+            var domain = email.Substring(email.IndexOf('@') + 1).ToLowerInvariant();
+            var localPart = email.Substring(0, email.IndexOf('@')).ToLowerInvariant();
+
+            if (excludedEmailDomains.Contains(domain))
+                continue;
+            if (excludedEmailDomains.Any(d => domain.EndsWith("." + d)))
+                continue;
+            if (excludedEmailPrefixes.Any(p => localPart.StartsWith(p)))
+                continue;
+            if (assetExtensions.Any(ext => email.EndsWith(ext, StringComparison.OrdinalIgnoreCase)))
+                continue;
+
+            // When using full-page fallback, require the email to look personal
+            // (contain part of the contact's name, or be in a mailto: link)
+            if (usingFullPage && !string.IsNullOrWhiteSpace(contactName))
+            {
+                var nameParts = contactName.ToLowerInvariant()
+                    .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                    .Where(p => p.Length >= 3) // skip short name fragments
+                    .ToArray();
+                var emailLower = email.ToLowerInvariant();
+                bool nameInEmail = nameParts.Any(part => emailLower.Contains(part));
+
+                // Also check if it appears in a mailto: link (strong signal)
+                bool inMailtoLink = searchText.Contains($"mailto:{email}", StringComparison.OrdinalIgnoreCase);
+
+                if (!nameInEmail && !inMailtoLink)
+                    continue;
+            }
+
+            candidateEmails.Add(email);
+        }
+        if (candidateEmails.Count > 0)
+            details.Email = candidateEmails[0];
+
+        // --- Phone extraction ---
+        // Only look for phone numbers that appear in a recognisable context:
+        // within href="tel:..." links, or near phone-related keywords
+        var telLinkRegex = new System.Text.RegularExpressions.Regex(
+            @"href=""tel:([\+\d\s\-\(\)]+)""", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        var telMatch = telLinkRegex.Match(searchText);
+        if (telMatch.Success)
+        {
+            var phone = telMatch.Groups[1].Value.Trim();
+            var digitCount = phone.Count(char.IsDigit);
+            if (digitCount >= 10 && digitCount <= 15)
+                details.Phone = phone;
+        }
+
+        // If no tel: link found, look for phone numbers near phone-related keywords
+        if (details.Phone == null)
+        {
+            var phoneContextRegex = new System.Text.RegularExpressions.Regex(
+                @"(?:phone|mobile|cell|tel|telephone|call)[\s:.\-]*(\+?[\d\s\-\(\)]{10,20})",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            var phoneContextMatch = phoneContextRegex.Match(searchText);
+            if (phoneContextMatch.Success)
+            {
+                var phone = phoneContextMatch.Groups[1].Value.Trim();
+                var digitCount = phone.Count(char.IsDigit);
+                if (digitCount >= 10 && digitCount <= 15)
+                    details.Phone = phone;
+            }
+        }
+
+        return details;
     }
 
     private static readonly HashSet<string> AllowedHosts = new(StringComparer.OrdinalIgnoreCase)
