@@ -802,8 +802,10 @@ public class JobListingService
     /// <summary>
     /// Updates job fields if the parsed data is better than what's stored.
     /// "Better" means: non-empty where stored is empty, or longer description.
+    /// When <paramref name="overwriteNonEmpty"/> is true, non-empty fields may also be updated
+    /// if the parsed value is non-empty and different.
     /// </summary>
-    public void UpdateJobIfBetter(Guid id, JobListing parsed)
+    public void UpdateJobIfBetter(Guid id, JobListing parsed, bool overwriteNonEmpty = false)
     {
         lock (_lock)
         {
@@ -865,7 +867,8 @@ public class JobListingService
                 }
             }
 
-            if (!string.IsNullOrWhiteSpace(parsed.Salary) && string.IsNullOrWhiteSpace(job.Salary))
+            if (!string.IsNullOrWhiteSpace(parsed.Salary) &&
+                (string.IsNullOrWhiteSpace(job.Salary) || (overwriteNonEmpty && !string.Equals(job.Salary, parsed.Salary, StringComparison.Ordinal))))
             {
                 job.Salary = parsed.Salary;
                 var (salMin, salMax) = SalaryParser.Parse(job.Salary);
@@ -874,19 +877,22 @@ public class JobListingService
                 changed = true;
             }
 
-            if (!string.IsNullOrWhiteSpace(parsed.Company) && string.IsNullOrWhiteSpace(job.Company))
+            if (!string.IsNullOrWhiteSpace(parsed.Company) &&
+                (string.IsNullOrWhiteSpace(job.Company) || (overwriteNonEmpty && !string.Equals(job.Company, parsed.Company, StringComparison.Ordinal))))
             {
                 job.Company = parsed.Company;
                 changed = true;
             }
 
-            if (!string.IsNullOrWhiteSpace(parsed.Location) && string.IsNullOrWhiteSpace(job.Location))
+            if (!string.IsNullOrWhiteSpace(parsed.Location) &&
+                (string.IsNullOrWhiteSpace(job.Location) || (overwriteNonEmpty && !string.Equals(job.Location, parsed.Location, StringComparison.Ordinal))))
             {
                 job.Location = parsed.Location;
                 changed = true;
             }
 
-            if (parsed.Skills != null && parsed.Skills.Count > 0 && (job.Skills == null || job.Skills.Count == 0))
+            if (parsed.Skills != null && parsed.Skills.Count > 0 &&
+                ((job.Skills == null || job.Skills.Count == 0) || overwriteNonEmpty))
             {
                 job.Skills = parsed.Skills;
                 changed = true;

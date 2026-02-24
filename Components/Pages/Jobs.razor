@@ -3013,7 +3013,7 @@ else
             {
                 // Update job details (description, salary, location, contacts, etc.)
                 if (result.ParsedJob != null)
-                    JobService.UpdateJobIfBetter(job.Id, result.ParsedJob);
+                    JobService.UpdateJobIfBetter(job.Id, result.ParsedJob, overwriteNonEmpty: true);
 
                 JobService.SetLastChecked(job.Id);
                 JobService.ApplyRulesToExistingJobs(job.Id);
