@@ -2,6 +2,7 @@
 @using JobTracker.Services
 @using JobTracker.Models
 @using System.Security.Claims
+@using System.IO.Compression
 @using Microsoft.AspNetCore.Components.Authorization
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject AuthService AuthService
@@ -11,6 +12,7 @@
 @inject IJSRuntime JS
 @inject IConfiguration Configuration
 @inject NavigationManager Navigation
+@inject IStorageBackend StorageBackend
 @rendermode InteractiveServer
 
 <PageTitle>Settings - Job Tracker</PageTitle>
@@ -680,6 +682,74 @@
                 }
             </div>
         </div>
+
+        @if (StorageBackend is JsonStorageBackend)
+        {
+            <div class="card mb-4">
+                <div class="card-header bg-secondary text-white">
+                    <h5 class="mb-0"><i class="bi bi-archive"></i> Backup & Restore</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-4">
+                        <h6>Download Backup</h6>
+                        <p class="text-muted small">Creates a ZIP archive of all JSON data files.</p>
+                        <button class="btn btn-outline-primary" @onclick="DownloadBackup" disabled="@isBackingUp">
+                            @if (isBackingUp)
+                            {
+                                <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                                <span>Creating backup...</span>
+                            }
+                            else
+                            {
+                                <i class="bi bi-download me-1"></i>
+                                <span>Download Backup</span>
+                            }
+                        </button>
+                    </div>
+
+                    <hr />
+
+                    <div class="mb-3">
+                        <h6>Restore from Backup</h6>
+                        <p class="text-muted small">Upload a previously downloaded .zip backup file to restore your data.</p>
+                        <InputFile OnChange="OnRestoreFileSelected" accept=".zip" class="form-control" style="max-width: 400px;" />
+                    </div>
+
+                    @if (pendingRestoreFiles != null)
+                    {
+                        <div class="alert alert-warning">
+                            <strong>The following files will be replaced:</strong>
+                            <ul class="mb-2 mt-1">
+                                @foreach (var file in pendingRestoreFiles)
+                                {
+                                    <li><code>@file</code></li>
+                                }
+                            </ul>
+                            <button class="btn btn-danger btn-sm me-2" @onclick="ConfirmRestore" disabled="@isRestoring">
+                                @if (isRestoring)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                                    <span>Restoring...</span>
+                                }
+                                else
+                                {
+                                    <i class="bi bi-exclamation-triangle me-1"></i>
+                                    <span>Confirm Restore</span>
+                                }
+                            </button>
+                            <button class="btn btn-outline-secondary btn-sm" @onclick="CancelRestore" disabled="@isRestoring">Cancel</button>
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(backupRestoreMessage))
+                    {
+                        <div class="alert @(backupRestoreIsError ? "alert-danger" : "alert-success") mt-2">
+                            @backupRestoreMessage
+                        </div>
+                    }
+                </div>
+            </div>
+        }
 </div>
 
 @code {
@@ -750,6 +820,14 @@
     private CoverLetterTemplate? editingTemplate;
     private string editTemplateName = "";
     private string editTemplateContent = "";
+
+    // Backup & Restore state
+    private bool isBackingUp = false;
+    private bool isRestoring = false;
+    private string? backupRestoreMessage = null;
+    private bool backupRestoreIsError = false;
+    private List<string>? pendingRestoreFiles = null;
+    private byte[]? pendingRestoreData = null;
 
     protected override async Task OnInitializedAsync()
     {
@@ -1147,6 +1225,193 @@
         {
             isSavingName = false;
         }
+    }
+
+    private async Task DownloadBackup()
+    {
+        if (StorageBackend is not JsonStorageBackend jsonBackend) return;
+
+        isBackingUp = true;
+        backupRestoreMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            var dataDir = jsonBackend.GetDataDirectory();
+            var jsonFiles = Directory.GetFiles(dataDir, "*.json");
+
+            if (jsonFiles.Length == 0)
+            {
+                backupRestoreMessage = "No data files found to back up.";
+                backupRestoreIsError = true;
+                return;
+            }
+
+            using var memoryStream = new MemoryStream();
+            using (var archive = new ZipArchive(memoryStream, ZipArchiveMode.Create, true))
+            {
+                foreach (var filePath in jsonFiles)
+                {
+                    var fileName = Path.GetFileName(filePath);
+                    var entry = archive.CreateEntry(fileName);
+                    using var entryStream = entry.Open();
+                    using var fileStream = File.OpenRead(filePath);
+                    await fileStream.CopyToAsync(entryStream);
+                }
+            }
+
+            var bytes = memoryStream.ToArray();
+            var base64 = Convert.ToBase64String(bytes);
+            var fileName2 = $"jobtracker-backup-{DateTime.Now:yyyy-MM-dd}.zip";
+            await JS.InvokeVoidAsync("eval", $"(function(){{var a=document.createElement('a');a.href='data:application/zip;base64,{base64}';a.download='{fileName2}';document.body.appendChild(a);a.click();document.body.removeChild(a);}})()");
+
+            backupRestoreMessage = $"Backup downloaded with {jsonFiles.Length} file(s).";
+            backupRestoreIsError = false;
+        }
+        catch (Exception ex)
+        {
+            backupRestoreMessage = $"Error creating backup: {ex.Message}";
+            backupRestoreIsError = true;
+            _logger.LogError(ex, "Error creating backup");
+        }
+        finally
+        {
+            isBackingUp = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnRestoreFileSelected(InputFileChangeEventArgs e)
+    {
+        backupRestoreMessage = null;
+        pendingRestoreFiles = null;
+        pendingRestoreData = null;
+
+        try
+        {
+            var file = e.File;
+            if (file == null) return;
+
+            const long maxSize = 50 * 1024 * 1024; // 50MB
+            if (file.Size > maxSize)
+            {
+                backupRestoreMessage = "File is too large. Maximum size is 50MB.";
+                backupRestoreIsError = true;
+                return;
+            }
+
+            using var stream = file.OpenReadStream(maxSize);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            var zipBytes = ms.ToArray();
+
+            // Validate ZIP and extract file list
+            var fileNames = new List<string>();
+            using (var archive = new ZipArchive(new MemoryStream(zipBytes), ZipArchiveMode.Read))
+            {
+                foreach (var entry in archive.Entries)
+                {
+                    var name = entry.FullName;
+
+                    // Security: reject path traversal and non-JSON files
+                    if (name.Contains("..") || name.Contains('/') || name.Contains('\\') || Path.IsPathRooted(name))
+                    {
+                        backupRestoreMessage = $"Invalid entry in ZIP: '{name}'. Only simple .json filenames are allowed.";
+                        backupRestoreIsError = true;
+                        return;
+                    }
+
+                    if (!name.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                    {
+                        backupRestoreMessage = $"Invalid file type in ZIP: '{name}'. Only .json files are allowed.";
+                        backupRestoreIsError = true;
+                        return;
+                    }
+
+                    fileNames.Add(name);
+                }
+            }
+
+            if (fileNames.Count == 0)
+            {
+                backupRestoreMessage = "ZIP file contains no entries.";
+                backupRestoreIsError = true;
+                return;
+            }
+
+            pendingRestoreFiles = fileNames;
+            pendingRestoreData = zipBytes;
+        }
+        catch (InvalidDataException)
+        {
+            backupRestoreMessage = "The selected file is not a valid ZIP archive.";
+            backupRestoreIsError = true;
+        }
+        catch (Exception ex)
+        {
+            backupRestoreMessage = $"Error reading file: {ex.Message}";
+            backupRestoreIsError = true;
+            _logger.LogError(ex, "Error reading restore file");
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task ConfirmRestore()
+    {
+        if (StorageBackend is not JsonStorageBackend jsonBackend || pendingRestoreData == null) return;
+
+        isRestoring = true;
+        backupRestoreMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            var dataDir = jsonBackend.GetDataDirectory();
+
+            using var archive = new ZipArchive(new MemoryStream(pendingRestoreData), ZipArchiveMode.Read);
+            foreach (var entry in archive.Entries)
+            {
+                var targetPath = Path.Combine(dataDir, entry.FullName);
+
+                // Double-check the resolved path is inside the data directory
+                var fullTarget = Path.GetFullPath(targetPath);
+                var fullDataDir = Path.GetFullPath(dataDir);
+                if (!fullTarget.StartsWith(fullDataDir, StringComparison.OrdinalIgnoreCase))
+                {
+                    backupRestoreMessage = $"Security error: entry '{entry.FullName}' would write outside the data directory.";
+                    backupRestoreIsError = true;
+                    return;
+                }
+
+                using var entryStream = entry.Open();
+                using var fileStream = new FileStream(targetPath, FileMode.Create, FileAccess.Write);
+                await entryStream.CopyToAsync(fileStream);
+            }
+
+            backupRestoreMessage = $"Restore complete ({archive.Entries.Count} file(s)). Please refresh the page to reload data.";
+            backupRestoreIsError = false;
+            pendingRestoreFiles = null;
+            pendingRestoreData = null;
+        }
+        catch (Exception ex)
+        {
+            backupRestoreMessage = $"Error restoring backup: {ex.Message}";
+            backupRestoreIsError = true;
+            _logger.LogError(ex, "Error restoring backup");
+        }
+        finally
+        {
+            isRestoring = false;
+            StateHasChanged();
+        }
+    }
+
+    private void CancelRestore()
+    {
+        pendingRestoreFiles = null;
+        pendingRestoreData = null;
+        backupRestoreMessage = null;
     }
 
     private class NameModel

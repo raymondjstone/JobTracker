@@ -744,4 +744,6 @@ public class JsonStorageBackend : IStorageBackend
     {
         return File.Exists(_jobsFilePath) || File.Exists(_historyFilePath) || File.Exists(_settingsFilePath);
     }
+
+    public string GetDataDirectory() => _dataDirectory;
 }
