@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
     <Version>1.$([System.DateTime]::Now.ToString("yy")).$([System.DateTime]::Now.ToString("MMdd")).$([System.DateTime]::Now.ToString("HHmm"))</Version>
+    <DefaultItemExcludes>$(DefaultItemExcludes);JobTracker.Tests\**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>

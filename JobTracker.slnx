@@ -1,4 +1,5 @@
 <Solution>
   <Project Path="JobTracker.csproj" />
+  <Project Path="JobTracker.Tests\JobTracker.Tests.csproj" />
 </Solution>
 

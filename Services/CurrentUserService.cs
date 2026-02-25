@@ -27,7 +27,7 @@ public class CurrentUserService
     /// <summary>
     /// Gets the current user's ID from HttpContext or AuthenticationStateProvider.
     /// </summary>
-    public Guid GetCurrentUserId()
+    public virtual Guid GetCurrentUserId()
     {
         // In LocalMode, always return the local user
         if (_configuration.GetValue<bool>("LocalMode"))

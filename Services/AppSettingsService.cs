@@ -69,7 +69,7 @@ public class AppSettingsService
         }
     }
 
-    public AppSettings GetSettings(Guid? forUserId = null)
+    public virtual AppSettings GetSettings(Guid? forUserId = null)
     {
         EnsureSettingsLoaded(forUserId);
         lock (_lock)
@@ -134,7 +134,7 @@ public class AppSettingsService
     /// Saves current settings to the storage backend.
     /// Uses the userId that was used to load the settings.
     /// </summary>
-    public void Save()
+    public virtual void Save()
     {
         lock (_lock)
         {
