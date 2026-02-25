@@ -690,6 +690,28 @@
                     <h5 class="mb-0"><i class="bi bi-archive"></i> Backup & Restore</h5>
                 </div>
                 <div class="card-body">
+                    @{ var scheduledBackupInfo = GetScheduledBackupInfo(); }
+                    @if (scheduledBackupInfo != null)
+                    {
+                        <div class="alert alert-info small mb-3">
+                            <i class="bi bi-clock-history me-1"></i>
+                            <strong>Scheduled Backups:</strong> @scheduledBackupInfo.Value.Count backup(s) in <code>@scheduledBackupInfo.Value.Path</code>
+                            &mdash; <a href="/background-jobs">Configure schedule</a>
+                        </div>
+                    }
+
+                    <div class="mb-4">
+                        <h6>Backup Directory</h6>
+                        <p class="text-muted small">Custom directory for scheduled backups. Leave empty to use the default location.</p>
+                        <div class="input-group" style="max-width: 500px;">
+                            <input type="text" class="form-control" @bind="editBackupDirectory"
+                                   placeholder="@GetDefaultBackupPath()" />
+                            <button class="btn btn-primary" @onclick="SaveBackupDirectory">Save</button>
+                        </div>
+                    </div>
+
+                    <hr />
+
                     <div class="mb-4">
                         <h6>Download Backup</h6>
                         <p class="text-muted small">Creates a ZIP archive of all JSON data files.</p>
@@ -821,6 +843,9 @@
     private string editTemplateName = "";
     private string editTemplateContent = "";
 
+    // Backup directory
+    private string editBackupDirectory = "";
+
     // Backup & Restore state
     private bool isBackingUp = false;
     private bool isRestoring = false;
@@ -883,6 +908,7 @@
         editDeleteUnsuitableAfterDays = settings.DeleteUnsuitableAfterDays;
         editDeleteRejectedAfterDays = settings.DeleteRejectedAfterDays;
         editDeleteGhostedAfterDays = settings.DeleteGhostedAfterDays;
+        editBackupDirectory = settings.BackupDirectory;
         editSmtpHost = settings.SmtpHost;
         editSmtpPort = settings.SmtpPort;
         editSmtpUsername = settings.SmtpUsername;
@@ -1412,6 +1438,31 @@
         pendingRestoreFiles = null;
         pendingRestoreData = null;
         backupRestoreMessage = null;
+    }
+
+    private void SaveBackupDirectory()
+    {
+        var settings = SettingsService.GetSettings();
+        settings.BackupDirectory = editBackupDirectory?.Trim() ?? "";
+        SettingsService.Save();
+    }
+
+    private string GetDefaultBackupPath()
+    {
+        if (StorageBackend is not JsonStorageBackend jsonBackend) return "Data/Backups";
+        return System.IO.Path.Combine(jsonBackend.GetDataDirectory(), "Backups");
+    }
+
+    private (string Path, int Count)? GetScheduledBackupInfo()
+    {
+        if (StorageBackend is not JsonStorageBackend jsonBackend) return null;
+        var settings = SettingsService.GetSettings();
+        var backupDir = string.IsNullOrWhiteSpace(settings.BackupDirectory)
+            ? System.IO.Path.Combine(jsonBackend.GetDataDirectory(), "Backups")
+            : settings.BackupDirectory;
+        if (!Directory.Exists(backupDir)) return (backupDir, 0);
+        var count = Directory.GetFiles(backupDir, "jobtracker-backup-*.zip").Length;
+        return (backupDir, count);
     }
 
     private class NameModel

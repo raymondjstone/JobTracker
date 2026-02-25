@@ -25,6 +25,7 @@ public class AppSettings
     public ScoringPreferences ScoringPreferences { get; set; } = new();
     public AIAssistantSettings AIAssistant { get; set; } = new();
     public bool DarkMode { get; set; }
+    public string BackupDirectory { get; set; } = "";
 }
 
 public class CoverLetterTemplate

@@ -138,6 +138,7 @@ builder.Services.AddTransient<NoReplyCheckJob>();
 builder.Services.AddTransient<AutoArchiveJob>();
 builder.Services.AddTransient<JobCleanupJob>();
 builder.Services.AddTransient<EmailNotificationJob>();
+builder.Services.AddTransient<ScheduledBackupJob>();
 
 // In LocalMode, use a BackgroundService for recurring jobs
 if (localMode)

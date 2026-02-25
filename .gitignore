@@ -363,6 +363,7 @@ MigrationBackup/
 FodyWeavers.xsd
 # Application data files
 Data/*.json
+Data/Backups/
 
 # Environment-specific settings (keep base appsettings.json which has redacted values)
 appsettings.*.json

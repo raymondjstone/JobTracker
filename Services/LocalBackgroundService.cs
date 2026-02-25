@@ -34,6 +34,7 @@ public class LocalBackgroundService : BackgroundService
         ["AutoArchive"] = ("Auto Archive", TimeSpan.FromHours(24)),
         ["JobCleanup"] = ("Job Cleanup", TimeSpan.FromHours(24)),
         ["EmailNotifications"] = ("Email Notifications", TimeSpan.FromHours(24)),
+        ["ScheduledBackup"] = ("Scheduled Backup", TimeSpan.FromHours(24)),
     };
 
     private readonly Dictionary<string, BackgroundJobStatus> _jobStatuses = new();
@@ -124,6 +125,7 @@ public class LocalBackgroundService : BackgroundService
             RunLoop("AutoArchive", RunAutoArchive, stoppingToken),
             RunLoop("JobCleanup", RunJobCleanup, stoppingToken),
             RunLoop("EmailNotifications", RunEmailNotifications, stoppingToken),
+            RunLoop("ScheduledBackup", RunScheduledBackup, stoppingToken),
         };
 
         await Task.WhenAll(tasks);
@@ -327,5 +329,13 @@ public class LocalBackgroundService : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var job = scope.ServiceProvider.GetRequiredService<EmailNotificationJob>();
         await job.RunAsync();
+    }
+
+    private Task RunScheduledBackup()
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var job = scope.ServiceProvider.GetRequiredService<ScheduledBackupJob>();
+        job.Run();
+        return Task.CompletedTask;
     }
 }
