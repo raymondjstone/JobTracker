@@ -855,7 +855,7 @@ public partial class LinkedInJobExtractor
             (@"\bGo\b(?:lang)?", "Go"),
             (@"\bRust\b", "Rust"),
             (@"\bR\b(?:\s+programming|\s+language)?", "R"),
-            (@"\bC\b(?![\+#\w])", "C"),  // Match standalone C only, not C++ or C#
+            (@"(?<![.\w])C(?![\+#\w./-])(?=\s*[\(,;/]|\s+(?:programming|language|code|compiler|development))", "C"),  // C language only in technical context
             (@"\bC\+\+\b", "C++"),
             (@"\bC#\b|C\s*Sharp", "C#"),
             (@"\bF#\b", "F#"),
@@ -887,7 +887,7 @@ public partial class LinkedInJobExtractor
             (@"\bNest(?:\.?js|JS)\b", "NestJS"),
             (@"\bDeno\b", "Deno"),
             (@"\bBun\b", "Bun"),
-            (@"\.NET(?:\s*Core|\s*Framework|\s*\d+)?", ".NET"),
+            (@"(?<!\w)\.NET(?:\s*Core|\s*Framework|\s*\d+)?(?!\w)", ".NET"),  // Word boundaries to avoid .network, company.net etc
             (@"\bASP\.NET(?:\s*Core|\s*MVC|\s*Web\s*API)?", "ASP.NET"),
             (@"\bWPF\b", "WPF"),
             (@"\bWinForms\b|Windows\s+Forms", "WinForms"),

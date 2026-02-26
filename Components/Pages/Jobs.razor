@@ -972,7 +972,7 @@ else
                         <div class="mb-3">
                             <strong>Skills:</strong>
                             <div class="mt-1">
-                                @foreach (var skill in selectedJob.Skills)
+                                @foreach (var skill in OrderSkills(selectedJob.Skills, skillPriorities))
                                 {
                                     <span class="badge bg-primary me-1 mb-1">@skill</span>
                                 }

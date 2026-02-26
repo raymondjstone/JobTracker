@@ -892,10 +892,23 @@ public class JobListingService
             }
 
             if (parsed.Skills != null && parsed.Skills.Count > 0 &&
-                ((job.Skills == null || job.Skills.Count == 0) || overwriteNonEmpty))
+                (job.Skills == null || job.Skills.Count == 0))
             {
                 job.Skills = parsed.Skills;
                 changed = true;
+            }
+            else if (overwriteNonEmpty && parsed.Skills != null && parsed.Skills.Count > 0 &&
+                     job.Skills != null && job.Skills.Count > 0)
+            {
+                // Only overwrite if the new set contains skills not already present
+                var existingSet = new HashSet<string>(job.Skills, StringComparer.OrdinalIgnoreCase);
+                var newSkills = parsed.Skills.Where(s => !existingSet.Contains(s)).ToList();
+                if (newSkills.Count > 0)
+                {
+                    // Merge: keep existing skills in their current order, append genuinely new ones
+                    job.Skills = job.Skills.Concat(newSkills).ToList();
+                    changed = true;
+                }
             }
 
             if (parsed.IsRemote && !job.IsRemote)
