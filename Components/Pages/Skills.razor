@@ -1,0 +1,225 @@
+@page "/skills"
+@using JobTracker.Models
+@using JobTracker.Services
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject AppSettingsService SettingsService
+@inject JobListingService JobService
+@rendermode InteractiveServer
+
+<PageTitle>Skill Priorities - Job Tracker</PageTitle>
+
+<div class="container my-4">
+    <h2 class="mb-4"><i class="bi bi-star"></i> Skill Priorities</h2>
+    <p class="text-muted mb-4">Order your skills by importance. Higher-priority skills appear first on job cards.</p>
+
+    @if (!string.IsNullOrEmpty(statusMessage))
+    {
+        <div class="alert @(isError ? "alert-danger" : "alert-success") alert-dismissible fade show">
+            @statusMessage
+            <button type="button" class="btn-close" @onclick="() => statusMessage = string.Empty"></button>
+        </div>
+    }
+
+    <div class="row">
+        <!-- Prioritised Skills -->
+        <div class="col-lg-6 mb-4">
+            <div class="card">
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="bi bi-sort-numeric-down"></i> Prioritised Skills</h5>
+                    <span class="badge bg-light text-dark">@skillPriorities.Count</span>
+                </div>
+                <div class="card-body">
+                    @if (skillPriorities.Count == 0)
+                    {
+                        <p class="text-muted text-center py-3">No skills prioritised yet. Add skills from the discovered list or enter one manually.</p>
+                    }
+                    else
+                    {
+                        <div class="list-group">
+                            @for (int i = 0; i < skillPriorities.Count; i++)
+                            {
+                                var index = i;
+                                var skill = skillPriorities[index];
+                                <div class="list-group-item d-flex justify-content-between align-items-center @(dragOverIndex == index ? "border-primary border-2" : "") @(dragSourceIndex == index ? "opacity-50" : "")"
+                                     draggable="true"
+                                     ondragover="event.preventDefault();"
+                                     @ondragstart="() => OnDragStart(index)"
+                                     @ondragenter="() => dragOverIndex = index"
+                                     @ondragleave="() => { if (dragOverIndex == index) dragOverIndex = null; }"
+                                     @ondrop="() => OnDrop(index)"
+                                     @ondragend="() => { dragSourceIndex = null; dragOverIndex = null; }"
+                                     style="cursor: grab;">
+                                    <div class="d-flex align-items-center">
+                                        <span class="badge bg-secondary me-2">@(index + 1)</span>
+                                        <span>@skill</span>
+                                    </div>
+                                    <div>
+                                        <button class="btn btn-sm btn-outline-secondary me-1" @onclick="() => MoveUp(index)" disabled="@(index == 0)" title="Move up">
+                                            <i class="bi bi-arrow-up"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-secondary me-1" @onclick="() => MoveDown(index)" disabled="@(index == skillPriorities.Count - 1)" title="Move down">
+                                            <i class="bi bi-arrow-down"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveSkill(index)" title="Remove">
+                                            <i class="bi bi-x-lg"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    <!-- Add custom skill -->
+                    <div class="input-group mt-3">
+                        <input type="text" class="form-control" placeholder="Add a custom skill..."
+                               @bind="newSkillName" @bind:event="oninput"
+                               @onkeydown="OnCustomSkillKeyDown" />
+                        <button class="btn btn-outline-primary" @onclick="AddCustomSkill" disabled="@string.IsNullOrWhiteSpace(newSkillName)">
+                            <i class="bi bi-plus-lg"></i> Add
+                        </button>
+                    </div>
+
+                    <!-- Save button -->
+                    <div class="mt-3 d-flex justify-content-end">
+                        <button class="btn btn-success" @onclick="Save" disabled="@(!hasChanges)">
+                            <i class="bi bi-check-lg"></i> Save Priorities
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Discovered Skills -->
+        <div class="col-lg-6 mb-4">
+            <div class="card">
+                <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="bi bi-search"></i> Discovered Skills</h5>
+                    <span class="badge bg-light text-dark">@discoveredSkills.Count</span>
+                </div>
+                <div class="card-body">
+                    @if (discoveredSkills.Count == 0)
+                    {
+                        <p class="text-muted text-center py-3">All discovered skills have been prioritised, or no jobs have skills yet.</p>
+                    }
+                    else
+                    {
+                        <div class="d-flex flex-wrap gap-2">
+                            @foreach (var skill in discoveredSkills)
+                            {
+                                <button class="btn btn-sm btn-outline-secondary" @onclick="() => AddDiscoveredSkill(skill)" title="Add to priorities">
+                                    <i class="bi bi-plus"></i> @skill
+                                </button>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<string> skillPriorities = new();
+    private List<string> discoveredSkills = new();
+    private string newSkillName = "";
+    private string statusMessage = "";
+    private bool isError = false;
+    private bool hasChanges = false;
+
+    // Drag state
+    private int? dragSourceIndex = null;
+    private int? dragOverIndex = null;
+
+    protected override void OnInitialized()
+    {
+        var settings = SettingsService.GetSettings();
+        skillPriorities = new List<string>(settings.ScoringPreferences.SkillPriorities);
+        RefreshDiscoveredSkills();
+    }
+
+    private void RefreshDiscoveredSkills()
+    {
+        var allSkills = JobService.GetDistinctSkills();
+        var prioritySet = new HashSet<string>(skillPriorities, StringComparer.OrdinalIgnoreCase);
+        discoveredSkills = allSkills
+            .Where(s => !prioritySet.Contains(s))
+            .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private void AddDiscoveredSkill(string skill)
+    {
+        skillPriorities.Add(skill);
+        hasChanges = true;
+        RefreshDiscoveredSkills();
+    }
+
+    private void AddCustomSkill()
+    {
+        var trimmed = newSkillName.Trim();
+        if (string.IsNullOrWhiteSpace(trimmed)) return;
+        if (skillPriorities.Any(s => s.Equals(trimmed, StringComparison.OrdinalIgnoreCase)))
+        {
+            statusMessage = $"'{trimmed}' is already in the priority list.";
+            isError = true;
+            return;
+        }
+        skillPriorities.Add(trimmed);
+        newSkillName = "";
+        hasChanges = true;
+        RefreshDiscoveredSkills();
+    }
+
+    private void OnCustomSkillKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") AddCustomSkill();
+    }
+
+    private void RemoveSkill(int index)
+    {
+        skillPriorities.RemoveAt(index);
+        hasChanges = true;
+        RefreshDiscoveredSkills();
+    }
+
+    private void MoveUp(int index)
+    {
+        if (index <= 0) return;
+        (skillPriorities[index], skillPriorities[index - 1]) = (skillPriorities[index - 1], skillPriorities[index]);
+        hasChanges = true;
+    }
+
+    private void MoveDown(int index)
+    {
+        if (index >= skillPriorities.Count - 1) return;
+        (skillPriorities[index], skillPriorities[index + 1]) = (skillPriorities[index + 1], skillPriorities[index]);
+        hasChanges = true;
+    }
+
+    private void OnDragStart(int index)
+    {
+        dragSourceIndex = index;
+    }
+
+    private void OnDrop(int targetIndex)
+    {
+        if (dragSourceIndex == null || dragSourceIndex == targetIndex) return;
+        var item = skillPriorities[dragSourceIndex.Value];
+        skillPriorities.RemoveAt(dragSourceIndex.Value);
+        skillPriorities.Insert(targetIndex, item);
+        dragSourceIndex = null;
+        dragOverIndex = null;
+        hasChanges = true;
+    }
+
+    private void Save()
+    {
+        var settings = SettingsService.GetSettings();
+        settings.ScoringPreferences.SkillPriorities = new List<string>(skillPriorities);
+        SettingsService.Save();
+        hasChanges = false;
+        statusMessage = "Skill priorities saved successfully.";
+        isError = false;
+    }
+}

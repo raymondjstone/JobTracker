@@ -678,13 +678,13 @@ else
                         @if (job.Skills.Any())
                         {
                             <div class="mb-2">
-                                @foreach (var skill in job.Skills.Take(3))
+                                @foreach (var skill in OrderSkills(job.Skills, skillPriorities).Take(5))
                                 {
                                     <span class="badge bg-secondary me-1">@skill</span>
                                 }
-                                @if (job.Skills.Count > 3)
+                                @if (job.Skills.Count > 5)
                                 {
-                                    <span class="badge bg-light text-dark">+@(job.Skills.Count - 3) more</span>
+                                    <span class="badge bg-light text-dark">+@(job.Skills.Count - 5) more</span>
                                 }
                             </div>
                         }
@@ -2387,6 +2387,7 @@ else
     private ResumeOptimization? currentResumeOptimization = null;
     private ApplicationPrediction? currentApplicationPrediction = null;
     private AIAssistantSettings aiSettings = new();
+    private List<string> skillPriorities = new();
     private string? aiErrorMessage = null;
 
     // Change timeline state
@@ -2451,6 +2452,7 @@ else
         pipelineSettings = initSettings.Pipeline;
         coverLetterTemplates = initSettings.CoverLetterTemplates;
         aiSettings = initSettings.AIAssistant;
+        skillPriorities = initSettings.ScoringPreferences.SkillPriorities;
         RefreshData();
         
         // Auto-refresh every 5 seconds to pick up changes from extensions
@@ -3056,6 +3058,15 @@ else
             fetchingDetailsJobId = null;
             await InvokeAsync(StateHasChanged);
         }
+    }
+
+    private IEnumerable<string> OrderSkills(List<string> skills, List<string> priorities)
+    {
+        if (priorities.Count == 0) return skills;
+        var priorityIndex = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        for (int i = 0; i < priorities.Count; i++)
+            priorityIndex[priorities[i]] = i;
+        return skills.OrderBy(s => priorityIndex.TryGetValue(s, out var idx) ? idx : int.MaxValue);
     }
 
     private string TruncateDescription(string description, int maxLength)

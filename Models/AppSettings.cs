@@ -106,6 +106,9 @@ public class ScoringPreferences
     public List<string> PreferredCompanies { get; set; } = new();
     public List<string> AvoidCompanies { get; set; } = new();
 
+    // Skill display priorities (ordered — first = highest priority)
+    public List<string> SkillPriorities { get; set; } = new();
+
     // Auto-score threshold
     public int MinScoreToShow { get; set; } = 0; // Hide jobs below this score
 }
