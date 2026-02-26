@@ -926,9 +926,46 @@ public class JobListingService
             if (changed)
             {
                 job.LastChecked = DateTime.Now;
+
+                // Re-evaluate rules against updated data (description, skills, company, etc.)
+                var oldInterest = job.Interest;
+                var oldSuitability = job.Suitability;
+                var oldIsRemote = job.IsRemote;
+
+                var ruleResult = _rulesService.Value.EvaluateJob(job);
+                if (ruleResult.Interest.HasValue && job.Interest == InterestStatus.NotRated)
+                {
+                    job.Interest = ruleResult.Interest.Value;
+                    _logger.LogInformation("Rule '{Rule}' applied after update: Set interest to {Interest} for {Title}",
+                        ruleResult.InterestRuleName, ruleResult.Interest, job.Title);
+                }
+                if (ruleResult.Suitability.HasValue && job.Suitability == SuitabilityStatus.NotChecked)
+                {
+                    job.Suitability = ruleResult.Suitability.Value;
+                    _logger.LogInformation("Rule '{Rule}' applied after update: Set suitability to {Suitability} for {Title}",
+                        ruleResult.SuitabilityRuleName, ruleResult.Suitability, job.Title);
+                }
+                if (ruleResult.IsRemote.HasValue && !job.IsRemote)
+                {
+                    job.IsRemote = ruleResult.IsRemote.Value;
+                    _logger.LogInformation("Rule '{Rule}' applied after update: Set IsRemote to {IsRemote} for {Title}",
+                        ruleResult.IsRemoteRuleName, ruleResult.IsRemote, job.Title);
+                }
+
                 _storage.SaveJob(job);
                 NotifyStateChanged();
                 _logger.LogInformation("Updated job details from availability check: {Title}", job.Title);
+
+                // Record history for rule changes
+                if (ruleResult.HasMatches)
+                {
+                    if (job.Interest != oldInterest)
+                        _historyService.Value.RecordInterestChanged(job, oldInterest, job.Interest, HistoryChangeSource.Rule, ruleResult.InterestRuleName);
+                    if (job.Suitability != oldSuitability)
+                        _historyService.Value.RecordSuitabilityChanged(job, oldSuitability, job.Suitability, HistoryChangeSource.Rule, ruleResult.SuitabilityRuleName);
+                    if (job.IsRemote != oldIsRemote)
+                        _historyService.Value.RecordRemoteStatusChanged(job, oldIsRemote, job.IsRemote, HistoryChangeSource.Rule, ruleResult.IsRemoteRuleName);
+                }
             }
         }
     }
