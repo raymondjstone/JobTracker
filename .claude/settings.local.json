@@ -28,7 +28,9 @@
       "WebFetch(domain:webcache.googleusercontent.com)",
       "Bash(dotnet ef database update:*)",
       "Bash(xargs -I {} sh -c 'echo \"\"=== {} ===\"\" && head -20 \"\"{}\"\"')",
-      "Bash(cd /c/Code/JobTracker && python3 << 'PYEOF'\nimport re\nhtml = open\\('li_profile_test.html', 'r', encoding='utf-8'\\).read\\(\\)\n\n# Find context around the email\nemail = 'Tommy@digitalwaffle.co'\nidx = html.find\\(email\\)\nif idx >= 0:\n    print\\(\"Context around email:\"\\)\n    print\\(html[max\\(0,idx-200\\):idx+len\\(email\\)+200]\\)\nPYEOF)"
+      "Bash(cd /c/Code/JobTracker && python3 << 'PYEOF'\nimport re\nhtml = open\\('li_profile_test.html', 'r', encoding='utf-8'\\).read\\(\\)\n\n# Find context around the email\nemail = 'Tommy@digitalwaffle.co'\nidx = html.find\\(email\\)\nif idx >= 0:\n    print\\(\"Context around email:\"\\)\n    print\\(html[max\\(0,idx-200\\):idx+len\\(email\\)+200]\\)\nPYEOF)",
+      "Bash(cd:)",
+      "Bash(cd:*)"
     ]
   }
 }

@@ -843,7 +843,7 @@ public partial class LinkedInJobExtractor
         return text;
     }
 
-    private static List<string> ExtractSkills(string text)
+    public static List<string> ExtractSkills(string text)
     {
         var foundSkills = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 

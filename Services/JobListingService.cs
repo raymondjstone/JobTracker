@@ -989,6 +989,25 @@ public class JobListingService
                 job.Description = cleanedDescription;
                 job.LastChecked = DateTime.Now;
 
+                // Extract skills from description if not already populated
+                if ((job.Skills == null || job.Skills.Count == 0) && !string.IsNullOrWhiteSpace(cleanedDescription))
+                {
+                    var extractedSkills = LinkedInJobExtractor.ExtractSkills(cleanedDescription);
+                    if (extractedSkills.Count > 0)
+                    {
+                        job.Skills = extractedSkills;
+                        _logger.LogInformation("Extracted {Count} skills from description for '{Title}'", extractedSkills.Count, job.Title);
+                    }
+                }
+
+                // Parse salary from description if not already set
+                if (job.SalaryMin == null && job.SalaryMax == null && !string.IsNullOrWhiteSpace(job.Salary))
+                {
+                    var (salMin, salMax) = SalaryParser.Parse(job.Salary);
+                    job.SalaryMin = salMin;
+                    job.SalaryMax = salMax;
+                }
+
                 // Track description change for timeline
                 if (!string.IsNullOrEmpty(oldDescription) && oldDescription != cleanedDescription)
                 {
