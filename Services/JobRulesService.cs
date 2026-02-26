@@ -37,7 +37,23 @@ public class JobRulesService
 
     public List<JobRule> GetEnabledRules(Guid? forUserId = null)
     {
-        return GetAllRules(forUserId).Where(r => r.IsEnabled).ToList();
+        var rules = GetAllRules(forUserId).Where(r => r.IsEnabled).ToList();
+
+        // Auto-migrate: Noir agency rule should check Any field, not just Description,
+        // since CleanDescription strips recruiter info from the description body
+        foreach (var rule in rules)
+        {
+            if (rule.Field == RuleField.Description &&
+                rule.Operator == RuleOperator.Contains &&
+                string.Equals(rule.Value, "Noir", StringComparison.OrdinalIgnoreCase))
+            {
+                rule.Field = RuleField.Any;
+                UpdateRuleInternal(rule);
+                _logger.LogInformation("Auto-migrated Noir rule '{Name}' from Description to Any field", rule.Name);
+            }
+        }
+
+        return rules;
     }
 
     public JobRule? GetRule(Guid id)
@@ -145,19 +161,21 @@ public class JobRulesService
 
         foreach (var rule in enabledRules)
         {
+            Console.WriteLine($"[RULES] Testing rule '{rule.Name}' (Field: {rule.Field}, Op: {rule.Operator}, Value: '{rule.Value}', HasCompound: {rule.HasCompoundConditions})");
             if (EvaluateRule(rule, job))
             {
+                Console.WriteLine($"[RULES] >>> MATCHED: '{rule.Name}' => SetSuitability={rule.SetSuitability}, SetInterest={rule.SetInterest}");
                 _logger.LogInformation("Rule '{RuleName}' matched job: {Title}", rule.Name, job.Title);
                 result.MatchedRules.Add(rule);
 
-                if (rule.SetInterest.HasValue && !result.Interest.HasValue)
+                if (rule.SetInterest.HasValue)
                 {
                     result.Interest = rule.SetInterest;
                     result.InterestRuleName = rule.Name;
                     _logger.LogInformation("Rule '{RuleName}' set Interest to {Interest}", rule.Name, result.Interest);
                 }
 
-                if (rule.SetSuitability.HasValue && !result.Suitability.HasValue)
+                if (rule.SetSuitability.HasValue)
                 {
                     result.Suitability = rule.SetSuitability;
                     result.SuitabilityRuleName = rule.Name;
@@ -261,7 +279,18 @@ public class JobRulesService
         {
             // Search across all text fields
             var allFields = new[] { RuleField.Title, RuleField.Description, RuleField.Company, RuleField.Location, RuleField.Salary, RuleField.Source };
-            return allFields.Any(f => EvaluateCondition(GetFieldValue(f, job), op, value, caseSensitive));
+            foreach (var f in allFields)
+            {
+                var fv = GetFieldValue(f, job);
+                var matched = EvaluateCondition(fv, op, value, caseSensitive);
+                if (matched)
+                {
+                    Console.WriteLine($"[RULES]   Any field match: {f}='{Truncate(fv, 60)}' {op} '{value}' => TRUE");
+                    return true;
+                }
+            }
+            Console.WriteLine($"[RULES]   Any field: no match for {op} '{value}' (Company='{job.Company}', Title='{Truncate(job.Title, 40)}')");
+            return false;
         }
 
         if (field == RuleField.Skills)
@@ -272,8 +301,12 @@ public class JobRulesService
         }
 
         var fieldValue = GetFieldValue(field, job);
-        return EvaluateCondition(fieldValue, op, value, caseSensitive);
+        var result = EvaluateCondition(fieldValue, op, value, caseSensitive);
+        Console.WriteLine($"[RULES]   {field}='{Truncate(fieldValue, 60)}' {op} '{value}' => {result}");
+        return result;
     }
+
+    private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max] + "...";
 
     private string GetFieldValue(RuleField field, JobListing job)
     {
@@ -329,7 +362,7 @@ public class JobRulesService
             new JobRule
             {
                 Name = "Ignore agency jobs (Noir)",
-                Field = RuleField.Description,
+                Field = RuleField.Any,
                 Operator = RuleOperator.Contains,
                 Value = "Noir",
                 SetSuitability = SuitabilityStatus.Unsuitable

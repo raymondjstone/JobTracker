@@ -166,6 +166,7 @@ public class JobListingService
 
                 if (existingByUrl != null)
                 {
+                    Console.WriteLine($"[ADD] DUPLICATE by URL: '{jobListing.Title}' at '{jobListing.Company}' - existing job Suitability={existingByUrl.Suitability}, Company='{existingByUrl.Company}'");
                     _logger.LogInformation("Duplicate job skipped (URL match): {Title} at {Company}",
                         jobListing.Title, jobListing.Company);
                     return false;
@@ -211,6 +212,7 @@ public class JobListingService
             jobListing.SalaryMax = salaryMax;
 
             // Apply job rules
+            Console.WriteLine($"[ADD] Evaluating rules for '{jobListing.Title}' - Company='{jobListing.Company}', Source='{jobListing.Source}', Suitability={jobListing.Suitability}");
             RuleEvaluationResult? ruleResult = null;
             {
                 ruleResult = _rulesService.Value.EvaluateJob(jobListing);
@@ -230,6 +232,8 @@ public class JobListingService
                     _logger.LogInformation("Rule '{Rule}' applied: Set IsRemote to {IsRemote} for {Title}", ruleResult.IsRemoteRuleName, ruleResult.IsRemote, jobListing.Title);
                 }
             }
+
+            Console.WriteLine($"[ADD] After rules: Suitability={jobListing.Suitability}, Interest={jobListing.Interest}, MatchedRules={ruleResult?.MatchedRules.Count ?? 0}");
 
             // Calculate ML-based suitability score
             try
@@ -815,13 +819,15 @@ public class JobListingService
             var changed = false;
 
             if (!string.IsNullOrWhiteSpace(parsed.Description) &&
-                (string.IsNullOrWhiteSpace(job.Description) || parsed.Description.Length > job.Description.Length + 50))
+                (string.IsNullOrWhiteSpace(job.Description) || parsed.Description.Length > job.Description.Length + 50
+                 || (overwriteNonEmpty && !string.Equals(job.Description, parsed.Description, StringComparison.Ordinal))))
             {
                 var oldDescription = job.Description;
                 var oldLength = oldDescription?.Length ?? 0;
 
                 var cleaned = LinkedInJobExtractor.CleanDescription(parsed.Description);
-                if (cleaned.Length > (job.Description?.Length ?? 0))
+                if (cleaned.Length > (job.Description?.Length ?? 0)
+                    || (overwriteNonEmpty && !string.Equals(cleaned, job.Description, StringComparison.Ordinal)))
                 {
                     job.Description = cleaned;
                     changed = true;
@@ -928,24 +934,25 @@ public class JobListingService
                 job.LastChecked = DateTime.Now;
 
                 // Re-evaluate rules against updated data (description, skills, company, etc.)
+                // Since data has changed, allow rules to override previously rule-set values
                 var oldInterest = job.Interest;
                 var oldSuitability = job.Suitability;
                 var oldIsRemote = job.IsRemote;
 
                 var ruleResult = _rulesService.Value.EvaluateJob(job);
-                if (ruleResult.Interest.HasValue && job.Interest == InterestStatus.NotRated)
+                if (ruleResult.Interest.HasValue && ruleResult.Interest.Value != job.Interest)
                 {
                     job.Interest = ruleResult.Interest.Value;
                     _logger.LogInformation("Rule '{Rule}' applied after update: Set interest to {Interest} for {Title}",
                         ruleResult.InterestRuleName, ruleResult.Interest, job.Title);
                 }
-                if (ruleResult.Suitability.HasValue && job.Suitability == SuitabilityStatus.NotChecked)
+                if (ruleResult.Suitability.HasValue && ruleResult.Suitability.Value != job.Suitability)
                 {
                     job.Suitability = ruleResult.Suitability.Value;
                     _logger.LogInformation("Rule '{Rule}' applied after update: Set suitability to {Suitability} for {Title}",
                         ruleResult.SuitabilityRuleName, ruleResult.Suitability, job.Title);
                 }
-                if (ruleResult.IsRemote.HasValue && !job.IsRemote)
+                if (ruleResult.IsRemote.HasValue && ruleResult.IsRemote.Value != job.IsRemote)
                 {
                     job.IsRemote = ruleResult.IsRemote.Value;
                     _logger.LogInformation("Rule '{Rule}' applied after update: Set IsRemote to {IsRemote} for {Title}",
@@ -1098,24 +1105,24 @@ public class JobListingService
                     _historyService.Value.RecordCompanyUpdated(job, oldCompany, job.Company, HistoryChangeSource.AutoFetch);
                 }
 
-                // Re-evaluate rules now that we have description content
-                // Only apply to unclassified fields (don't override user's manual choices)
+                // Re-evaluate rules now that we have updated description content
+                // Allow rules to override previously rule-set values since data has changed
                 RuleEvaluationResult? ruleResult = null;
                 {
                     ruleResult = _rulesService.Value.EvaluateJob(job);
-                    if (ruleResult.Interest.HasValue && job.Interest == InterestStatus.NotRated)
+                    if (ruleResult.Interest.HasValue && ruleResult.Interest.Value != job.Interest)
                     {
                         job.Interest = ruleResult.Interest.Value;
                         _logger.LogInformation("Rule '{Rule}' applied after description update: Set interest to {Interest} for {Title}",
                             ruleResult.InterestRuleName, ruleResult.Interest, job.Title);
                     }
-                    if (ruleResult.Suitability.HasValue && job.Suitability == SuitabilityStatus.NotChecked)
+                    if (ruleResult.Suitability.HasValue && ruleResult.Suitability.Value != job.Suitability)
                     {
                         job.Suitability = ruleResult.Suitability.Value;
                         _logger.LogInformation("Rule '{Rule}' applied after description update: Set suitability to {Suitability} for {Title}",
                             ruleResult.SuitabilityRuleName, ruleResult.Suitability, job.Title);
                     }
-                    if (ruleResult.IsRemote.HasValue && !job.IsRemote)
+                    if (ruleResult.IsRemote.HasValue && ruleResult.IsRemote.Value != job.IsRemote)
                     {
                         job.IsRemote = ruleResult.IsRemote.Value;
                         _logger.LogInformation("Rule '{Rule}' applied after description update: Set IsRemote to {IsRemote} for {Title}",
@@ -1164,12 +1171,13 @@ public class JobListingService
                 _historyService.Value.RecordCompanyUpdated(job, oldCompany2, job.Company, HistoryChangeSource.AutoFetch);
 
                 // Re-evaluate rules now that we have company info
+                // Allow rules to override previously rule-set values since data has changed
                 var ruleResult = _rulesService.Value.EvaluateJob(job);
-                if (ruleResult.Interest.HasValue && job.Interest == InterestStatus.NotRated)
+                if (ruleResult.Interest.HasValue && ruleResult.Interest.Value != job.Interest)
                     job.Interest = ruleResult.Interest.Value;
-                if (ruleResult.Suitability.HasValue && job.Suitability == SuitabilityStatus.NotChecked)
+                if (ruleResult.Suitability.HasValue && ruleResult.Suitability.Value != job.Suitability)
                     job.Suitability = ruleResult.Suitability.Value;
-                if (ruleResult.IsRemote.HasValue && !job.IsRemote)
+                if (ruleResult.IsRemote.HasValue && ruleResult.IsRemote.Value != job.IsRemote)
                     job.IsRemote = ruleResult.IsRemote.Value;
 
                 _storage.SaveJob(job);
@@ -2206,29 +2214,20 @@ public class JobListingService
 
             foreach (var job in _jobListings.Where(j => j.UserId == userId))
             {
-                // Skip jobs that are fully classified (interest, suitability, and remote all set)
-                var hasUnsetInterest = job.Interest == InterestStatus.NotRated;
-                var hasUnsetSuitability = job.Suitability == SuitabilityStatus.NotChecked;
-                var couldChangeRemote = !job.IsRemote; // Remote flag defaults to false; rules could set it
-                if (!hasUnsetInterest && !hasUnsetSuitability && !couldChangeRemote)
-                {
-                    continue;
-                }
-
                 var ruleResult = _rulesService.Value.EvaluateJob(job);
                 bool modified = false;
 
-                if (ruleResult.Interest.HasValue && job.Interest == InterestStatus.NotRated)
+                if (ruleResult.Interest.HasValue && ruleResult.Interest.Value != job.Interest)
                 {
                     job.Interest = ruleResult.Interest.Value;
                     modified = true;
                 }
-                if (ruleResult.Suitability.HasValue && job.Suitability == SuitabilityStatus.NotChecked)
+                if (ruleResult.Suitability.HasValue && ruleResult.Suitability.Value != job.Suitability)
                 {
                     job.Suitability = ruleResult.Suitability.Value;
                     modified = true;
                 }
-                if (ruleResult.IsRemote.HasValue && job.IsRemote != ruleResult.IsRemote.Value)
+                if (ruleResult.IsRemote.HasValue && ruleResult.IsRemote.Value != job.IsRemote)
                 {
                     job.IsRemote = ruleResult.IsRemote.Value;
                     modified = true;
