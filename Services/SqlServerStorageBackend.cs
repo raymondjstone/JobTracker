@@ -237,6 +237,15 @@ public class SqlServerStorageBackend : IStorageBackend
             settings.EmailNotificationsEnabled = entity.EmailNotificationsEnabled;
             settings.EmailOnStaleApplications = entity.EmailOnStaleApplications;
             settings.EmailOnFollowUpDue = entity.EmailOnFollowUpDue;
+            settings.ImapHost = entity.ImapHost;
+            settings.ImapPort = entity.ImapPort;
+            settings.ImapUseSsl = entity.ImapUseSsl;
+            settings.ImapUsername = entity.ImapUsername;
+            settings.ImapPassword = entity.ImapPassword;
+            settings.ImapFolder = entity.ImapFolder;
+            settings.EmailCheckEnabled = entity.EmailCheckEnabled;
+            settings.EmailCheckAutoUpdateStage = entity.EmailCheckAutoUpdateStage;
+            settings.EmailCheckParseJobAlerts = entity.EmailCheckParseJobAlerts;
             settings.AutoArchiveEnabled = entity.AutoArchiveEnabled;
             settings.AutoArchiveDays = entity.AutoArchiveDays;
             settings.DarkMode = entity.DarkMode;
@@ -246,6 +255,12 @@ public class SqlServerStorageBackend : IStorageBackend
                     entity.CoverLetterTemplatesJson ?? "[]") ?? new();
             }
             catch { settings.CoverLetterTemplates = new(); }
+            try
+            {
+                settings.CrawlPages = JsonSerializer.Deserialize<List<CrawlPage>>(
+                    entity.CrawlPagesJson ?? "[]") ?? new();
+            }
+            catch { settings.CrawlPages = new(); }
         }
         else
         {
@@ -286,10 +301,20 @@ public class SqlServerStorageBackend : IStorageBackend
         entity.EmailNotificationsEnabled = settings.EmailNotificationsEnabled;
         entity.EmailOnStaleApplications = settings.EmailOnStaleApplications;
         entity.EmailOnFollowUpDue = settings.EmailOnFollowUpDue;
+        entity.ImapHost = settings.ImapHost;
+        entity.ImapPort = settings.ImapPort;
+        entity.ImapUseSsl = settings.ImapUseSsl;
+        entity.ImapUsername = settings.ImapUsername;
+        entity.ImapPassword = settings.ImapPassword;
+        entity.ImapFolder = settings.ImapFolder;
+        entity.EmailCheckEnabled = settings.EmailCheckEnabled;
+        entity.EmailCheckAutoUpdateStage = settings.EmailCheckAutoUpdateStage;
+        entity.EmailCheckParseJobAlerts = settings.EmailCheckParseJobAlerts;
         entity.AutoArchiveEnabled = settings.AutoArchiveEnabled;
         entity.AutoArchiveDays = settings.AutoArchiveDays;
         entity.DarkMode = settings.DarkMode;
         entity.CoverLetterTemplatesJson = JsonSerializer.Serialize(settings.CoverLetterTemplates ?? new());
+        entity.CrawlPagesJson = JsonSerializer.Serialize(settings.CrawlPages ?? new());
 
         // Sync rules for this user: diff-based
         var existingRules = db.JobRules.Where(r => r.UserId == userId).ToList();
@@ -421,6 +446,18 @@ public class SqlServerStorageBackend : IStorageBackend
         return db.JobListings.Any() || db.HistoryEntries.Any() || db.JobRules.Any();
     }
 
+    // Processed email operations — SQL Server mode stores in JSON file in Data directory for now
+    public List<ProcessedEmail> LoadProcessedEmails(Guid userId)
+    {
+        // Not yet implemented for SQL Server — return empty
+        return new List<ProcessedEmail>();
+    }
+
+    public void SaveProcessedEmails(List<ProcessedEmail> emails, Guid userId)
+    {
+        // Not yet implemented for SQL Server
+    }
+
     /// <summary>
     /// Migrate existing data (with empty UserId) to the specified user
     /// </summary>
@@ -517,10 +554,20 @@ public class SqlServerStorageBackend : IStorageBackend
             EmailNotificationsEnabled = settings.EmailNotificationsEnabled,
             EmailOnStaleApplications = settings.EmailOnStaleApplications,
             EmailOnFollowUpDue = settings.EmailOnFollowUpDue,
+            ImapHost = settings.ImapHost,
+            ImapPort = settings.ImapPort,
+            ImapUseSsl = settings.ImapUseSsl,
+            ImapUsername = settings.ImapUsername,
+            ImapPassword = settings.ImapPassword,
+            ImapFolder = settings.ImapFolder,
+            EmailCheckEnabled = settings.EmailCheckEnabled,
+            EmailCheckAutoUpdateStage = settings.EmailCheckAutoUpdateStage,
+            EmailCheckParseJobAlerts = settings.EmailCheckParseJobAlerts,
             AutoArchiveEnabled = settings.AutoArchiveEnabled,
             AutoArchiveDays = settings.AutoArchiveDays,
             DarkMode = settings.DarkMode,
-            CoverLetterTemplatesJson = JsonSerializer.Serialize(settings.CoverLetterTemplates ?? new())
+            CoverLetterTemplatesJson = JsonSerializer.Serialize(settings.CoverLetterTemplates ?? new()),
+            CrawlPagesJson = JsonSerializer.Serialize(settings.CrawlPages ?? new())
         };
         db.AppSettings.Add(entity);
 

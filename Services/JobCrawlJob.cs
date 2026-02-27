@@ -31,7 +31,7 @@ public class JobCrawlJob
                 var siteUrls = settings.JobSiteUrls;
 
                 _logger.LogInformation("[Hangfire] Crawling jobs for user {User}", user.Email);
-                var result = await crawlService.CrawlAllSitesAsync(siteUrls, user.Id, jobService);
+                var result = await crawlService.CrawlAllSitesAsync(siteUrls, user.Id, jobService, settings.CrawlPages);
 
                 _logger.LogInformation(
                     "[Hangfire] Job crawl complete for user {User}: {Found} found, {Added} added, {Pages} pages, {Errors} errors",

@@ -23,7 +23,20 @@ public class AppSettingsEntity
     public bool EmailNotificationsEnabled { get; set; }
     public bool EmailOnStaleApplications { get; set; } = true;
     public bool EmailOnFollowUpDue { get; set; } = true;
+
+    // IMAP settings
+    public string ImapHost { get; set; } = "";
+    public int ImapPort { get; set; } = 993;
+    public bool ImapUseSsl { get; set; } = true;
+    public string ImapUsername { get; set; } = "";
+    public string ImapPassword { get; set; } = "";
+    public string ImapFolder { get; set; } = "INBOX";
+    public bool EmailCheckEnabled { get; set; }
+    public bool EmailCheckAutoUpdateStage { get; set; } = true;
+    public bool EmailCheckParseJobAlerts { get; set; } = true;
+
     public bool AutoArchiveEnabled { get; set; }
     public int AutoArchiveDays { get; set; } = 30;
     public bool DarkMode { get; set; }
+    public string CrawlPagesJson { get; set; } = "[]";
 }

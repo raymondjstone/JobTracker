@@ -192,7 +192,10 @@ public class JobListingService
             jobListing.Id = Guid.NewGuid();
             jobListing.UserId = userId;
             jobListing.DateAdded = DateTime.Now;
-            jobListing.LastChecked = DateTime.Now;
+            // Only mark as checked if the job has real content; stub jobs (e.g., from email alerts)
+            // with no description should remain unchecked so the availability check fetches details.
+            if (!string.IsNullOrWhiteSpace(jobListing.Description))
+                jobListing.LastChecked = DateTime.Now;
             if (jobListing.Interest == default)
                 jobListing.Interest = InterestStatus.NotRated;
 
@@ -880,6 +883,16 @@ public class JobListingService
                 var (salMin, salMax) = SalaryParser.Parse(job.Salary);
                 job.SalaryMin = salMin;
                 job.SalaryMax = salMax;
+                changed = true;
+            }
+
+            // Update title if current is empty, a placeholder, or overwrite requested
+            if (!string.IsNullOrWhiteSpace(parsed.Title) &&
+                (string.IsNullOrWhiteSpace(job.Title)
+                 || job.Title.StartsWith("(From ", StringComparison.Ordinal)
+                 || (overwriteNonEmpty && !string.Equals(job.Title, parsed.Title, StringComparison.Ordinal))))
+            {
+                job.Title = parsed.Title;
                 changed = true;
             }
 

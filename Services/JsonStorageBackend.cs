@@ -669,6 +669,51 @@ public class JsonStorageBackend : IStorageBackend
         }
     }
 
+    // Processed email operations
+    private readonly object _processedEmailsLock = new();
+
+    public List<ProcessedEmail> LoadProcessedEmails(Guid userId)
+    {
+        lock (_processedEmailsLock)
+        {
+            var path = Path.Combine(_dataDirectory, $"processed-emails_{userId}.json");
+            try
+            {
+                if (File.Exists(path))
+                {
+                    var json = File.ReadAllText(path);
+                    return JsonSerializer.Deserialize<List<ProcessedEmail>>(json, ReadOptions) ?? new List<ProcessedEmail>();
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error loading processed emails from file");
+            }
+            return new List<ProcessedEmail>();
+        }
+    }
+
+    public void SaveProcessedEmails(List<ProcessedEmail> emails, Guid userId)
+    {
+        lock (_processedEmailsLock)
+        {
+            try
+            {
+                // Prune entries older than 90 days
+                var cutoff = DateTime.Now.AddDays(-90);
+                emails = emails.Where(e => e.ProcessedAt > cutoff).ToList();
+
+                var path = Path.Combine(_dataDirectory, $"processed-emails_{userId}.json");
+                var json = JsonSerializer.Serialize(emails, WriteOptions);
+                File.WriteAllText(path, json);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error saving processed emails to file");
+            }
+        }
+    }
+
     /// <summary>
     /// Migrate existing data to the specified user
     /// </summary>

@@ -1,0 +1,495 @@
+@page "/crawl-pages"
+@using JobTracker.Services
+@using JobTracker.Models
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Components.Authorization
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject AppSettingsService SettingsService
+@inject ILogger<CrawlPages> Logger
+@inject IJSRuntime JS
+@rendermode InteractiveServer
+
+<PageTitle>Crawl Pages - Job Tracker</PageTitle>
+
+<div class="container my-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-collection"></i> Crawl Pages</h2>
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-secondary" @onclick="RunCrawlPagesInBrowser" disabled="@isRunningBrowserCrawl" title="Opens each enabled crawl page in a new tab and closes it after its delay">
+                @if (isRunningBrowserCrawl)
+                {
+                    <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                    <span>Running...</span>
+                }
+                else
+                {
+                    <i class="bi bi-play"></i> <text>Run in Browser</text>
+                }
+            </button>
+            <button class="btn btn-primary" @onclick="ShowAddForm">
+                <i class="bi bi-plus-lg"></i> Add Page
+            </button>
+        </div>
+    </div>
+
+    <div class="alert alert-info mb-4">
+        <i class="bi bi-info-circle"></i> These URLs are crawled alongside the main site URLs configured in Settings.
+        Each crawl page runs during auto-crawl regardless of the per-site toggle in Settings.
+    </div>
+
+    @if (!string.IsNullOrEmpty(browserCrawlStatus))
+    {
+        <div class="alert @(browserCrawlIsError ? "alert-danger" : "alert-success") mb-4">
+            @browserCrawlStatus
+        </div>
+    }
+
+    @if (showForm)
+    {
+        <div class="card mb-4">
+            <div class="card-header">
+                <strong>@(editingItem != null ? "Edit" : "Add") Crawl Page</strong>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">URL</label>
+                        <input type="url" class="form-control @(urlError != null ? "is-invalid" : "")"
+                               @bind="formUrl" @bind:event="oninput" @bind:after="OnUrlChanged"
+                               placeholder="https://www.linkedin.com/jobs/search/?keywords=.net" />
+                        @if (urlError != null)
+                        {
+                            <div class="invalid-feedback">@urlError</div>
+                        }
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Label</label>
+                        <input type="text" class="form-control" @bind="formLabel"
+                               placeholder="e.g. LinkedIn .NET Remote" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Delay (sec)</label>
+                        <input type="number" class="form-control" min="0" step="1" @bind="formDelayAfterSeconds" />
+                        <small class="text-muted">Wait after crawl</small>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Site</label>
+                        <div class="form-control-plaintext">
+                            @if (!string.IsNullOrEmpty(detectedSite))
+                            {
+                                <span class="badge @GetSiteBadgeClass(detectedSite)">@detectedSite</span>
+                            }
+                            else
+                            {
+                                <span class="text-muted">Auto-detected</span>
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-3">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="useSubNumber" @bind="formUseSubstitutionNumber" />
+                        <label class="form-check-label" for="useSubNumber">Use substitution number</label>
+                        <small class="text-muted d-block">Replaces <code>{n}</code> in the URL with a number range</small>
+                    </div>
+
+                    @if (formUseSubstitutionNumber)
+                    {
+                        <div class="row g-3 mt-1">
+                            <div class="col-md-2">
+                                <label class="form-label">Start</label>
+                                <input type="number" class="form-control" step="1" @bind="formSubstitutionStart" />
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">End</label>
+                                <input type="number" class="form-control" step="1" @bind="formSubstitutionEnd" />
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Increment</label>
+                                <input type="number" class="form-control" step="1" min="1" @bind="formSubstitutionIncrement" />
+                            </div>
+                            <div class="col-md-6">
+                                <div class="alert alert-secondary py-2 mb-0">
+                                    <small>
+                                        Example: <code>...&page={n}</code> with <code>Start=1</code>, <code>End=5</code>, <code>Increment=1</code>
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+                <div class="form-check mt-3">
+                    <input class="form-check-input" type="checkbox" @bind="formEnabled" id="crawlPageEnabled" />
+                    <label class="form-check-label" for="crawlPageEnabled">Enabled</label>
+                </div>
+                <div class="mt-3">
+                    <button class="btn btn-success me-2" @onclick="SaveItem" disabled="@(!CanSave)">
+                        <i class="bi bi-check-lg"></i> Save
+                    </button>
+                    <button class="btn btn-secondary" @onclick="CancelForm">Cancel</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (crawlPages.Count == 0 && !showForm)
+    {
+        <div class="text-center text-muted py-5">
+            <i class="bi bi-collection" style="font-size: 3rem;"></i>
+            <p class="mt-3">No crawl pages configured. Click "Add Page" to add search URLs to crawl.</p>
+        </div>
+    }
+    else if (crawlPages.Count > 0)
+    {
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th>Label</th>
+                        <th>URL</th>
+                        <th>Site</th>
+                        <th>Delay</th>
+                        <th>Sub</th>
+                        <th>Enabled</th>
+                        <th style="width: 180px;"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in crawlPages)
+                    {
+                        <tr class="@(!item.Enabled ? "table-secondary" : "")">
+                            <td>@item.Label</td>
+                            <td>
+                                <a href="@item.Url" target="_blank" rel="noopener" class="text-truncate d-inline-block" style="max-width: 400px;" title="@item.Url">
+                                    @TruncateUrl(item.Url)
+                                </a>
+                            </td>
+                            <td><span class="badge @GetSiteBadgeClass(item.Site)">@item.Site</span></td>
+                            <td><span class="text-muted">@item.DelayAfterSeconds s</span></td>
+                            <td>
+                                @if (item.UseSubstitutionNumber)
+                                {
+                                    <span class="text-muted">@item.SubstitutionStart..@item.SubstitutionEnd (+@item.SubstitutionIncrement)</span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">-</span>
+                                }
+                            </td>
+                            <td>
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" checked="@item.Enabled"
+                                           @onchange="@((ChangeEventArgs e) => ToggleEnabled(item, (bool)(e.Value ?? false)))" />
+                                </div>
+                            </td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-secondary me-1" @onclick="() => MoveUp(item)" title="Move up" disabled="@(crawlPages.IndexOf(item) == 0)">
+                                    <i class="bi bi-arrow-up"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-secondary me-1" @onclick="() => MoveDown(item)" title="Move down" disabled="@(crawlPages.IndexOf(item) == crawlPages.Count - 1)">
+                                    <i class="bi bi-arrow-down"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => EditItem(item)" title="Edit">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteItem(item)" title="Delete">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    private List<CrawlPage> crawlPages = new();
+    private Guid userId;
+
+    private bool isRunningBrowserCrawl;
+    private string? browserCrawlStatus;
+    private bool browserCrawlIsError;
+
+    // Form state
+    private bool showForm;
+    private CrawlPage? editingItem;
+    private string formUrl = "";
+    private string formLabel = "";
+    private string detectedSite = "";
+    private bool formEnabled = true;
+    private int formDelayAfterSeconds = 90;
+    private bool formUseSubstitutionNumber;
+    private int formSubstitutionStart = 1;
+    private int formSubstitutionEnd = 1;
+    private int formSubstitutionIncrement = 1;
+    private string? urlError;
+
+    private bool CanSave => !string.IsNullOrWhiteSpace(formUrl) && !string.IsNullOrWhiteSpace(detectedSite) && urlError == null;
+
+    private static readonly Dictionary<string, string> SiteDomainMap = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["linkedin.com"] = "LinkedIn",
+        ["s1jobs.com"] = "S1Jobs",
+        ["welcometothejungle.com"] = "WTTJ",
+        ["energyjobsearch.com"] = "EnergyJobSearch",
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var claim = authState.User.FindFirst(ClaimTypes.NameIdentifier);
+        if (claim != null && Guid.TryParse(claim.Value, out var uid))
+            userId = uid;
+
+        LoadPages();
+    }
+
+    private void LoadPages()
+    {
+        var settings = SettingsService.GetSettings(userId);
+        crawlPages = settings.CrawlPages ?? new();
+    }
+
+    private async Task RunCrawlPagesInBrowser()
+    {
+        if (isRunningBrowserCrawl) return;
+
+        isRunningBrowserCrawl = true;
+        browserCrawlStatus = null;
+        browserCrawlIsError = false;
+        StateHasChanged();
+
+        try
+        {
+            var pages = crawlPages.Where(p => p.Enabled).ToList();
+            if (pages.Count == 0)
+            {
+                browserCrawlStatus = "No enabled crawl pages to run.";
+                browserCrawlIsError = true;
+                return;
+            }
+
+            foreach (var page in pages)
+            {
+                var delaySeconds = page.DelayAfterSeconds <= 0 ? 0 : page.DelayAfterSeconds;
+
+                if (!page.UseSubstitutionNumber)
+                {
+                    browserCrawlStatus = $"Running: {page.Label} ({delaySeconds}s)";
+                    StateHasChanged();
+
+                    var opened = await JS.InvokeAsync<bool>("crawlPagesRunner.openAndScheduleClose", page.Url, delaySeconds);
+                    if (!opened)
+                    {
+                        browserCrawlStatus = $"Popup blocked while opening '{page.Label}'. Please allow popups for this site and try again.";
+                        browserCrawlIsError = true;
+                        return;
+                    }
+
+                    if (delaySeconds > 0)
+                        await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
+                    continue;
+                }
+
+                var inc = page.SubstitutionIncrement <= 0 ? 1 : page.SubstitutionIncrement;
+                var start = page.SubstitutionStart;
+                var end = page.SubstitutionEnd;
+                if ((inc > 0 && start > end) || (inc < 0 && start < end))
+                {
+                    (start, end) = (end, start);
+                }
+
+                for (var n = start; inc > 0 ? n <= end : n >= end; n += inc)
+                {
+                    var url = (page.Url ?? "").Replace("{n}", n.ToString());
+                    var label = string.IsNullOrWhiteSpace(page.Label) ? url : page.Label;
+                    browserCrawlStatus = $"Running: {label} [n={n}] ({delaySeconds}s)";
+                    StateHasChanged();
+
+                    var opened = await JS.InvokeAsync<bool>("crawlPagesRunner.openAndScheduleClose", url, delaySeconds);
+                    if (!opened)
+                    {
+                        browserCrawlStatus = $"Popup blocked while opening '{label}'. Please allow popups for this site and try again.";
+                        browserCrawlIsError = true;
+                        return;
+                    }
+
+                    if (delaySeconds > 0)
+                        await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
+                }
+            }
+
+            browserCrawlStatus = $"Completed browser crawl for {pages.Count} page(s).";
+        }
+        catch (Exception ex)
+        {
+            browserCrawlStatus = $"Browser crawl failed: {ex.Message}";
+            browserCrawlIsError = true;
+        }
+        finally
+        {
+            isRunningBrowserCrawl = false;
+            StateHasChanged();
+        }
+    }
+
+    private void PersistSettings()
+    {
+        var settings = SettingsService.GetSettings(userId);
+        settings.CrawlPages = crawlPages;
+        SettingsService.Save();
+    }
+
+    private void ShowAddForm()
+    {
+        editingItem = null;
+        formUrl = "";
+        formLabel = "";
+        detectedSite = "";
+        formEnabled = true;
+        formDelayAfterSeconds = 90;
+        formUseSubstitutionNumber = false;
+        formSubstitutionStart = 1;
+        formSubstitutionEnd = 1;
+        formSubstitutionIncrement = 1;
+        urlError = null;
+        showForm = true;
+    }
+
+    private void EditItem(CrawlPage item)
+    {
+        editingItem = item;
+        formUrl = item.Url;
+        formLabel = item.Label;
+        detectedSite = item.Site;
+        formEnabled = item.Enabled;
+        formDelayAfterSeconds = item.DelayAfterSeconds;
+        formUseSubstitutionNumber = item.UseSubstitutionNumber;
+        formSubstitutionStart = item.SubstitutionStart;
+        formSubstitutionEnd = item.SubstitutionEnd;
+        formSubstitutionIncrement = item.SubstitutionIncrement;
+        urlError = null;
+        showForm = true;
+    }
+
+    private void CancelForm()
+    {
+        showForm = false;
+        editingItem = null;
+    }
+
+    private void OnUrlChanged()
+    {
+        detectedSite = "";
+        urlError = null;
+
+        if (string.IsNullOrWhiteSpace(formUrl)) return;
+
+        try
+        {
+            var uri = new Uri(formUrl);
+            var host = uri.Host.ToLower();
+
+            foreach (var (domain, site) in SiteDomainMap)
+            {
+                if (host.Contains(domain))
+                {
+                    detectedSite = site;
+                    return;
+                }
+            }
+
+            urlError = "Unsupported site. Supported: LinkedIn, S1Jobs, WTTJ, EnergyJobSearch.";
+        }
+        catch
+        {
+            urlError = "Please enter a valid URL.";
+        }
+    }
+
+    private void SaveItem()
+    {
+        if (!CanSave) return;
+
+        if (editingItem != null)
+        {
+            editingItem.Url = formUrl;
+            editingItem.Label = formLabel;
+            editingItem.Site = detectedSite;
+            editingItem.Enabled = formEnabled;
+            editingItem.DelayAfterSeconds = formDelayAfterSeconds;
+            editingItem.UseSubstitutionNumber = formUseSubstitutionNumber;
+            editingItem.SubstitutionStart = formSubstitutionStart;
+            editingItem.SubstitutionEnd = formSubstitutionEnd;
+            editingItem.SubstitutionIncrement = formSubstitutionIncrement;
+        }
+        else
+        {
+            crawlPages.Add(new CrawlPage
+            {
+                Url = formUrl,
+                Label = formLabel,
+                Site = detectedSite,
+                Enabled = formEnabled,
+                DelayAfterSeconds = formDelayAfterSeconds,
+                UseSubstitutionNumber = formUseSubstitutionNumber,
+                SubstitutionStart = formSubstitutionStart,
+                SubstitutionEnd = formSubstitutionEnd,
+                SubstitutionIncrement = formSubstitutionIncrement
+            });
+        }
+
+        PersistSettings();
+        showForm = false;
+        editingItem = null;
+    }
+
+    private void DeleteItem(CrawlPage item)
+    {
+        crawlPages.Remove(item);
+        PersistSettings();
+    }
+
+    private void ToggleEnabled(CrawlPage item, bool enabled)
+    {
+        item.Enabled = enabled;
+        PersistSettings();
+    }
+
+    private void MoveUp(CrawlPage item)
+    {
+        var index = crawlPages.IndexOf(item);
+        if (index <= 0) return;
+
+        crawlPages.RemoveAt(index);
+        crawlPages.Insert(index - 1, item);
+        PersistSettings();
+    }
+
+    private void MoveDown(CrawlPage item)
+    {
+        var index = crawlPages.IndexOf(item);
+        if (index < 0 || index >= crawlPages.Count - 1) return;
+
+        crawlPages.RemoveAt(index);
+        crawlPages.Insert(index + 1, item);
+        PersistSettings();
+    }
+
+    private static string TruncateUrl(string url)
+    {
+        return url.Length > 80 ? url[..77] + "..." : url;
+    }
+
+    private static string GetSiteBadgeClass(string site) => site switch
+    {
+        "LinkedIn" => "bg-primary",
+        "S1Jobs" => "bg-success",
+        "WTTJ" => "bg-warning text-dark",
+        "EnergyJobSearch" => "bg-info text-dark",
+        _ => "bg-secondary"
+    };
+}

@@ -150,6 +150,7 @@ public class JobSearchDbContext : DbContext
             entity.Property(s => s.IndeedUrl).HasColumnType("nvarchar(max)");
             entity.Property(s => s.WTTJUrl).HasColumnType("nvarchar(max)");
             entity.Property(s => s.CoverLetterTemplatesJson).HasColumnType("nvarchar(max)");
+            entity.Property(s => s.CrawlPagesJson).HasColumnType("nvarchar(max)");
         });
     }
 }

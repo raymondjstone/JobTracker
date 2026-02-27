@@ -29,7 +29,8 @@ public class JobCrawlService
     }
 
     public async Task<CrawlResult> CrawlAllSitesAsync(
-        JobSiteUrls siteUrls, Guid userId, JobListingService jobService, CancellationToken ct = default)
+        JobSiteUrls siteUrls, Guid userId, JobListingService jobService,
+        List<CrawlPage>? crawlPages = null, CancellationToken ct = default)
     {
         var combined = new CrawlResult();
 
@@ -70,7 +71,60 @@ public class JobCrawlService
             }
         }
 
+        // Crawl additional pages from the CrawlPages list
+        if (crawlPages != null)
+        {
+            foreach (var page in crawlPages)
+            {
+                if (ct.IsCancellationRequested) break;
+
+                if (!page.Enabled)
+                {
+                    _logger.LogInformation("[Crawl] Skipping crawl page '{Label}' (disabled)", page.Label);
+                    continue;
+                }
+
+                try
+                {
+                    _logger.LogInformation("[Crawl] Crawling page '{Label}' ({Site}) URL: {Url}", page.Label, page.Site, page.Url);
+                    var result = await CrawlUrlAsync(page.Url, page.Site, userId, jobService, ct);
+                    combined.JobsFound += result.JobsFound;
+                    combined.JobsAdded += result.JobsAdded;
+                    combined.PagesScanned += result.PagesScanned;
+                    combined.Errors.AddRange(result.Errors);
+                    _logger.LogInformation("[Crawl] Page '{Label}' complete: {Found} found, {Added} added",
+                        page.Label, result.JobsFound, result.JobsAdded);
+
+                    var delaySeconds = page.DelayAfterSeconds <= 0 ? 0 : page.DelayAfterSeconds;
+                    if (delaySeconds > 0)
+                    {
+                        _logger.LogInformation("[Crawl] Waiting {DelaySeconds}s after page '{Label}'", delaySeconds, page.Label);
+                        await Task.Delay(TimeSpan.FromSeconds(delaySeconds), ct);
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    var msg = $"CrawlPage '{page.Label}': {ex.Message}";
+                    combined.Errors.Add(msg);
+                    _logger.LogWarning(ex, "[Crawl] Error crawling page '{Label}'", page.Label);
+                }
+            }
+        }
+
         return combined;
+    }
+
+    public async Task<CrawlResult> CrawlUrlAsync(
+        string url, string site, Guid userId, JobListingService jobService, CancellationToken ct)
+    {
+        return site switch
+        {
+            "LinkedIn" => await CrawlLinkedInUrlAsync(url, userId, jobService, ct),
+            "S1Jobs" => await CrawlS1JobsUrlAsync(url, userId, jobService, ct),
+            "WTTJ" => await CrawlWttjUrlAsync(url, userId, jobService, ct),
+            "EnergyJobSearch" => await CrawlEnergyJobSearchUrlAsync(url, userId, jobService, ct),
+            _ => new CrawlResult { Errors = { $"Unsupported site: {site}" } }
+        };
     }
 
     // --- LinkedIn ---
@@ -78,8 +132,13 @@ public class JobCrawlService
     public async Task<CrawlResult> CrawlLinkedInAsync(
         JobSiteUrls siteUrls, Guid userId, JobListingService jobService, CancellationToken ct)
     {
+        return await CrawlLinkedInUrlAsync(siteUrls.LinkedIn, userId, jobService, ct);
+    }
+
+    public async Task<CrawlResult> CrawlLinkedInUrlAsync(
+        string baseUrl, Guid userId, JobListingService jobService, CancellationToken ct)
+    {
         var result = new CrawlResult();
-        var baseUrl = siteUrls.LinkedIn;
 
         if (string.IsNullOrWhiteSpace(baseUrl) || !baseUrl.Contains("linkedin.com"))
         {
@@ -87,14 +146,9 @@ public class JobCrawlService
             return result;
         }
 
-        // LinkedIn /jobs/collections/ and /jobs/view/ URLs require authentication and won't work
-        // for server-side crawling. Convert to the public /jobs/search/ endpoint.
         var searchUrl = ConvertToLinkedInSearchUrl(baseUrl);
         _logger.LogInformation("[Crawl] LinkedIn search URL: {Url}", searchUrl);
 
-        // LinkedIn public (unauthenticated) search always returns the same ~60 jobs
-        // regardless of the &start= parameter - pagination only works when logged in.
-        // So we fetch a single page only.
         ct.ThrowIfCancellationRequested();
 
         var html = await FetchPageAsync(searchUrl, ct);
@@ -293,8 +347,13 @@ public class JobCrawlService
     public async Task<CrawlResult> CrawlS1JobsAsync(
         JobSiteUrls siteUrls, Guid userId, JobListingService jobService, CancellationToken ct)
     {
+        return await CrawlS1JobsUrlAsync(siteUrls.S1Jobs, userId, jobService, ct);
+    }
+
+    public async Task<CrawlResult> CrawlS1JobsUrlAsync(
+        string baseUrl, Guid userId, JobListingService jobService, CancellationToken ct)
+    {
         var result = new CrawlResult();
-        var baseUrl = siteUrls.S1Jobs;
 
         if (string.IsNullOrWhiteSpace(baseUrl) || !baseUrl.Contains("s1jobs.com"))
         {
@@ -445,8 +504,13 @@ public class JobCrawlService
     public async Task<CrawlResult> CrawlWttjAsync(
         JobSiteUrls siteUrls, Guid userId, JobListingService jobService, CancellationToken ct)
     {
+        return await CrawlWttjUrlAsync(siteUrls.WTTJ, userId, jobService, ct);
+    }
+
+    public async Task<CrawlResult> CrawlWttjUrlAsync(
+        string baseUrl, Guid userId, JobListingService jobService, CancellationToken ct)
+    {
         var result = new CrawlResult();
-        var baseUrl = siteUrls.WTTJ;
 
         if (string.IsNullOrWhiteSpace(baseUrl) || !baseUrl.Contains("welcometothejungle"))
         {
@@ -743,8 +807,13 @@ public class JobCrawlService
     public async Task<CrawlResult> CrawlEnergyJobSearchAsync(
         JobSiteUrls siteUrls, Guid userId, JobListingService jobService, CancellationToken ct)
     {
+        return await CrawlEnergyJobSearchUrlAsync(siteUrls.EnergyJobSearch, userId, jobService, ct);
+    }
+
+    public async Task<CrawlResult> CrawlEnergyJobSearchUrlAsync(
+        string baseUrl, Guid userId, JobListingService jobService, CancellationToken ct)
+    {
         var result = new CrawlResult();
-        var baseUrl = siteUrls.EnergyJobSearch;
 
         if (string.IsNullOrWhiteSpace(baseUrl) || !baseUrl.Contains("energyjobsearch.com"))
         {
@@ -752,8 +821,6 @@ public class JobCrawlService
             return result;
         }
 
-        // EnergyJobSearch is a React SPA - server-side HTML may not contain rendered job data.
-        // Attempt to parse what we can from the HTML; fail gracefully if empty.
         for (int page = 1; page <= MaxPagesPerSite; page++)
         {
             ct.ThrowIfCancellationRequested();

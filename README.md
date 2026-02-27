@@ -179,6 +179,14 @@ A **comprehensive AI-powered** Blazor application with browser extensions that a
 - **History Export** - Export full or filtered history to CSV
 - **Direct Links** - Open original job postings with one click
 
+### Crawl Pages (NEW)
+- **Custom crawl URL list** (`/crawl-pages`) - Add additional search/listing URLs to be crawled alongside your main site URLs.
+- **Per-page delay** - Set how many seconds to wait after each crawl page (default: 90s) to be polite to job sites.
+- **Optional `{n}` substitution** - Define a start/end/increment range to expand a single URL template into multiple pages.
+  - Example: `...&page={n}` with Start=1, End=5, Increment=1.
+- **Run in Browser** - Opens each enabled crawl page in a new tab and automatically closes it after its delay (requires allowing popups for `https://localhost:7046`).
+- **Reorder pages** - Use up/down arrows to control crawl order.
+
 ## Prerequisites
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download) or later
@@ -313,6 +321,8 @@ Navigate to `https://localhost:7046` to access the dashboard.
 - Click WhatsApp icon to share
 - Click "View Full Description" for details
 - Click "Fetch Details" to refresh job information from the job page (description, salary/location if available; some sites may limit what can be fetched server-side)
+
+"Fetch Details" also re-applies your rules after updating the job so auto-classification stays consistent.
 
 ## Contacts
 

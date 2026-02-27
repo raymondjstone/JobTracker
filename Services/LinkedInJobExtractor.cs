@@ -857,8 +857,8 @@ public partial class LinkedInJobExtractor
             (@"\bR\b(?:\s+programming|\s+language)?", "R"),
             (@"(?<![.\w])C(?![\+#\w./-])(?=\s*[\(,;/]|\s+(?:programming|language|code|compiler|development))", "C"),  // C language only in technical context
             (@"\bC\+\+\b", "C++"),
-            (@"\bC#\b|C\s*Sharp", "C#"),
-            (@"\bF#\b", "F#"),
+            (@"\bC#(?!\w)|C\s*Sharp", "C#"),
+            (@"\bF#(?!\w)", "F#"),
             (@"\bSwift\b", "Swift"),
             (@"\bDart\b", "Dart"),
             (@"\bScala\b", "Scala"),

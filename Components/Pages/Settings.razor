@@ -13,6 +13,7 @@
 @inject IConfiguration Configuration
 @inject NavigationManager Navigation
 @inject IStorageBackend StorageBackend
+@inject EmailInboxService EmailInboxService
 @rendermode InteractiveServer
 
 <PageTitle>Settings - Job Tracker</PageTitle>
@@ -369,9 +370,76 @@
                         </div>
                     }
                 }
+                <hr class="my-4" />
+                <h6><i class="bi bi-inbox"></i> Inbound Email (IMAP)</h6>
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label">IMAP Host</label>
+                        <input type="text" class="form-control" placeholder="imap.example.com" @bind="editImapHost" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Port</label>
+                        <input type="number" class="form-control" @bind="editImapPort" />
+                    </div>
+                    <div class="col-md-3 d-flex align-items-end">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="imapUseSsl" @bind="editImapUseSsl" />
+                            <label class="form-check-label" for="imapUseSsl">SSL</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Username <span class="text-muted small">(blank = use SMTP)</span></label>
+                        <input type="text" class="form-control" placeholder="@(string.IsNullOrWhiteSpace(editSmtpUsername) ? "" : editSmtpUsername)" @bind="editImapUsername" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Password <span class="text-muted small">(blank = use SMTP)</span></label>
+                        <input type="password" class="form-control" placeholder="@(string.IsNullOrWhiteSpace(editSmtpPassword) ? "" : "(using SMTP password)")" @bind="editImapPassword" />
+                    </div>
+                </div>
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Folder</label>
+                        <input type="text" class="form-control" @bind="editImapFolder" />
+                    </div>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(editImapHost))
+                {
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="emailCheckEnabled" @bind="editEmailCheckEnabled" />
+                        <label class="form-check-label" for="emailCheckEnabled">Enable email checking</label>
+                    </div>
+                    @if (editEmailCheckEnabled)
+                    {
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="emailCheckAutoUpdateStage" @bind="editEmailCheckAutoUpdateStage" />
+                            <label class="form-check-label" for="emailCheckAutoUpdateStage">Auto-update job stages from replies</label>
+                        </div>
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" id="emailCheckParseJobAlerts" @bind="editEmailCheckParseJobAlerts" />
+                            <label class="form-check-label" for="emailCheckParseJobAlerts">Auto-add jobs from alert emails</label>
+                        </div>
+                    }
+                    <button type="button" class="btn btn-outline-secondary me-2" @onclick="TestImapConnection" disabled="@imapTestRunning">
+                        @if (imapTestRunning)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        <i class="bi bi-plug"></i> Test IMAP Connection
+                    </button>
+                    @if (!string.IsNullOrEmpty(imapTestResult))
+                    {
+                        <div class="alert @(imapTestSuccess ? "alert-success" : "alert-danger") mt-2 mb-3">
+                            @imapTestResult
+                        </div>
+                    }
+                }
+                <hr class="my-3" />
                 <button type="button" class="btn btn-primary" @onclick="SaveEmailSettings">
-                    <i class="bi bi-check-lg"></i> Save SMTP Settings
+                    <i class="bi bi-check-lg"></i> Save Email Settings
                 </button>
+                <span class="text-muted small ms-2">Saves both SMTP and IMAP settings</span>
             </div>
         </div>
 
@@ -825,6 +893,20 @@
     private bool editEmailNotificationsEnabled;
     private bool editEmailOnStaleApplications;
     private bool editEmailOnFollowUpDue;
+
+    // IMAP fields
+    private string editImapHost = "";
+    private int editImapPort = 993;
+    private bool editImapUseSsl = true;
+    private string editImapUsername = "";
+    private string editImapPassword = "";
+    private string editImapFolder = "INBOX";
+    private bool editEmailCheckEnabled;
+    private bool editEmailCheckAutoUpdateStage = true;
+    private bool editEmailCheckParseJobAlerts = true;
+    private bool imapTestRunning;
+    private bool imapTestSuccess;
+    private string? imapTestResult;
     private List<CoverLetterTemplate> coverLetterTemplates = new();
     private bool showTemplateManager = false;
 
@@ -918,6 +1000,15 @@
         editEmailNotificationsEnabled = settings.EmailNotificationsEnabled;
         editEmailOnStaleApplications = settings.EmailOnStaleApplications;
         editEmailOnFollowUpDue = settings.EmailOnFollowUpDue;
+        editImapHost = settings.ImapHost;
+        editImapPort = settings.ImapPort;
+        editImapUseSsl = settings.ImapUseSsl;
+        editImapUsername = settings.ImapUsername;
+        editImapPassword = settings.ImapPassword;
+        editImapFolder = settings.ImapFolder;
+        editEmailCheckEnabled = settings.EmailCheckEnabled;
+        editEmailCheckAutoUpdateStage = settings.EmailCheckAutoUpdateStage;
+        editEmailCheckParseJobAlerts = settings.EmailCheckParseJobAlerts;
         coverLetterTemplates = settings.CoverLetterTemplates;
 
         // Load scoring preferences
@@ -1007,7 +1098,53 @@
         settings.EmailNotificationsEnabled = editEmailNotificationsEnabled;
         settings.EmailOnStaleApplications = editEmailOnStaleApplications;
         settings.EmailOnFollowUpDue = editEmailOnFollowUpDue;
+        settings.ImapHost = editImapHost;
+        settings.ImapPort = editImapPort;
+        settings.ImapUseSsl = editImapUseSsl;
+        settings.ImapUsername = editImapUsername;
+        settings.ImapPassword = editImapPassword;
+        settings.ImapFolder = editImapFolder;
+        settings.EmailCheckEnabled = editEmailCheckEnabled;
+        settings.EmailCheckAutoUpdateStage = editEmailCheckAutoUpdateStage;
+        settings.EmailCheckParseJobAlerts = editEmailCheckParseJobAlerts;
         SettingsService.Save();
+    }
+
+    private async Task TestImapConnection()
+    {
+        imapTestRunning = true;
+        imapTestResult = null;
+        StateHasChanged();
+
+        try
+        {
+            // Build a temporary AppSettings with the current edit values
+            var testSettings = new AppSettings
+            {
+                ImapHost = editImapHost,
+                ImapPort = editImapPort,
+                ImapUseSsl = editImapUseSsl,
+                ImapUsername = editImapUsername,
+                ImapPassword = editImapPassword,
+                ImapFolder = editImapFolder,
+                SmtpUsername = editSmtpUsername,
+                SmtpPassword = editSmtpPassword
+            };
+
+            var (success, message) = await EmailInboxService.TestConnectionAsync(testSettings);
+            imapTestSuccess = success;
+            imapTestResult = message;
+        }
+        catch (Exception ex)
+        {
+            imapTestSuccess = false;
+            imapTestResult = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            imapTestRunning = false;
+            StateHasChanged();
+        }
     }
 
     private void StartNewTemplate()

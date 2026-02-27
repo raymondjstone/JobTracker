@@ -2966,7 +2966,8 @@ else
         try
         {
             var userId = CurrentUser.GetCurrentUserId();
-            var result = await CrawlService.CrawlAllSitesAsync(jobSiteUrls, userId, JobService);
+            var settings = SettingsService.GetSettings(userId);
+            var result = await CrawlService.CrawlAllSitesAsync(jobSiteUrls, userId, JobService, settings.CrawlPages);
 
             crawlStatusMessage = $"Crawl complete: {result.JobsFound} jobs found, {result.JobsAdded} new jobs added across {result.PagesScanned} pages.";
             if (result.Errors.Count > 0)

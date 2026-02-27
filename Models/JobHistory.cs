@@ -55,7 +55,8 @@ public enum HistoryChangeSource
     AutoFetch,        // Description fetched automatically
     BrowserExtension, // Added/updated via browser extension API
     Import,           // Bulk import from JSON
-    System            // System cleanup, deduplication, etc.
+    System,           // System cleanup, deduplication, etc.
+    Email             // Changed by inbound email processing
 }
 
 public class JobHistoryFilter

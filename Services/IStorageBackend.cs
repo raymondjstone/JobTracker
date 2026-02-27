@@ -44,6 +44,10 @@ public interface IStorageBackend
     Dictionary<Guid, int> GetJobLinkCountsForContacts(List<Guid> contactIds);
     List<Guid> GetLinkedJobIds(Guid contactId);
 
+    // Processed email operations (user-scoped)
+    List<ProcessedEmail> LoadProcessedEmails(Guid userId);
+    void SaveProcessedEmails(List<ProcessedEmail> emails, Guid userId);
+
     // Migration helpers
     void MigrateExistingDataToUser(Guid userId);
 }

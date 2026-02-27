@@ -17,6 +17,18 @@ public class AppSettings
     public bool EmailNotificationsEnabled { get; set; }
     public bool EmailOnStaleApplications { get; set; } = true;
     public bool EmailOnFollowUpDue { get; set; } = true;
+
+    // IMAP settings for inbound email processing
+    public string ImapHost { get; set; } = "";
+    public int ImapPort { get; set; } = 993;
+    public bool ImapUseSsl { get; set; } = true;
+    public string ImapUsername { get; set; } = "";
+    public string ImapPassword { get; set; } = "";
+    public string ImapFolder { get; set; } = "INBOX";
+    public bool EmailCheckEnabled { get; set; }
+    public bool EmailCheckAutoUpdateStage { get; set; } = true;
+    public bool EmailCheckParseJobAlerts { get; set; } = true;
+
     public bool AutoArchiveEnabled { get; set; }
     public int AutoArchiveDays { get; set; } = 30;
     public int DeleteUnsuitableAfterDays { get; set; } = 90;
@@ -26,6 +38,22 @@ public class AppSettings
     public AIAssistantSettings AIAssistant { get; set; } = new();
     public bool DarkMode { get; set; }
     public string BackupDirectory { get; set; } = "";
+    public List<CrawlPage> CrawlPages { get; set; } = new();
+}
+
+public class CrawlPage
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string Url { get; set; } = "";
+    public string Label { get; set; } = "";
+    public string Site { get; set; } = "";
+    public bool Enabled { get; set; } = true;
+    public int DelayAfterSeconds { get; set; } = 90;
+
+    public bool UseSubstitutionNumber { get; set; }
+    public int SubstitutionStart { get; set; } = 1;
+    public int SubstitutionEnd { get; set; } = 1;
+    public int SubstitutionIncrement { get; set; } = 1;
 }
 
 public class CoverLetterTemplate

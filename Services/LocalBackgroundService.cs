@@ -35,6 +35,7 @@ public class LocalBackgroundService : BackgroundService
         ["JobCleanup"] = ("Job Cleanup", TimeSpan.FromHours(24)),
         ["EmailNotifications"] = ("Email Notifications", TimeSpan.FromHours(24)),
         ["ScheduledBackup"] = ("Scheduled Backup", TimeSpan.FromHours(24)),
+        ["EmailCheck"] = ("Email Check (IMAP)", TimeSpan.FromHours(1)),
     };
 
     private readonly Dictionary<string, BackgroundJobStatus> _jobStatuses = new();
@@ -126,6 +127,7 @@ public class LocalBackgroundService : BackgroundService
             RunLoop("JobCleanup", RunJobCleanup, stoppingToken),
             RunLoop("EmailNotifications", RunEmailNotifications, stoppingToken),
             RunLoop("ScheduledBackup", RunScheduledBackup, stoppingToken),
+            RunLoop("EmailCheck", RunEmailCheck, stoppingToken),
         };
 
         await Task.WhenAll(tasks);
@@ -337,5 +339,12 @@ public class LocalBackgroundService : BackgroundService
         var job = scope.ServiceProvider.GetRequiredService<ScheduledBackupJob>();
         job.Run();
         return Task.CompletedTask;
+    }
+
+    private async Task RunEmailCheck()
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var job = scope.ServiceProvider.GetRequiredService<EmailCheckJob>();
+        await job.RunAsync();
     }
 }

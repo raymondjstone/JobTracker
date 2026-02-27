@@ -139,6 +139,11 @@ builder.Services.AddTransient<AutoArchiveJob>();
 builder.Services.AddTransient<JobCleanupJob>();
 builder.Services.AddTransient<EmailNotificationJob>();
 builder.Services.AddTransient<ScheduledBackupJob>();
+builder.Services.AddSingleton<EmailInboxService>();
+builder.Services.AddTransient<EmailProcessingService>();
+builder.Services.AddTransient<EmailReplyMatcher>();
+builder.Services.AddTransient<EmailJobAlertParser>();
+builder.Services.AddTransient<EmailCheckJob>();
 
 // In LocalMode, use a BackgroundService for recurring jobs
 if (localMode)
@@ -760,7 +765,7 @@ app.MapPost("/api/jobs/crawl", async (HttpContext context, JobCrawlService crawl
     var siteUrls = settings.JobSiteUrls;
 
     Console.WriteLine($"[API] Starting job crawl for user {userId}");
-    var result = await crawlService.CrawlAllSitesAsync(siteUrls, userId.Value, jobService);
+    var result = await crawlService.CrawlAllSitesAsync(siteUrls, userId.Value, jobService, settings.CrawlPages);
     Console.WriteLine($"[API] Crawl complete: {result.JobsFound} found, {result.JobsAdded} added, {result.PagesScanned} pages");
 
     return Results.Ok(result);
@@ -810,6 +815,11 @@ if (!localMode && string.Equals(storageProvider, "SqlServer", StringComparison.O
         "job-cleanup",
         job => job.Run(),
         "0 6 * * *"); // 6:00 AM daily
+
+    RecurringJob.AddOrUpdate<EmailCheckJob>(
+        "email-check",
+        job => job.RunAsync(),
+        "0 */1 * * *"); // Every hour
 }
 
 app.Run();
