@@ -3,9 +3,19 @@ using JobTracker.Models;
 
 namespace JobTracker.Services;
 
+public enum JobCategory
+{
+    JobAvailability,
+    JobDiscovery,
+    PipelineAutomation,
+    EmailIntegration,
+    Maintenance
+}
+
 public class BackgroundJobStatus
 {
     public string Name { get; set; } = "";
+    public JobCategory Category { get; set; }
     public TimeSpan Interval { get; set; }
     public DateTime? LastRun { get; set; }
     public DateTime? NextRun { get; set; }
@@ -24,22 +34,51 @@ public class LocalBackgroundService : BackgroundService
 
     private static readonly TimeSpan InitialDelay = TimeSpan.FromMinutes(2);
 
-    private static readonly Dictionary<string, (string Name, TimeSpan DefaultInterval)> JobDefaults = new()
+    private static readonly Dictionary<string, (string Name, JobCategory Category, TimeSpan DefaultInterval)> JobDefaults = new()
     {
-        ["AvailabilityCheck-NotChecked"] = ("Availability Check (NotChecked)", TimeSpan.FromHours(6)),
-        ["AvailabilityCheck-Possible"] = ("Availability Check (Possible)", TimeSpan.FromHours(12)),
-        ["GhostedCheck"] = ("Ghosted Check", TimeSpan.FromHours(24)),
-        ["NoReplyCheck"] = ("No Reply Check", TimeSpan.FromHours(24)),
-        ["JobCrawl"] = ("Job Crawl", TimeSpan.FromHours(48)),
-        ["AutoArchive"] = ("Auto Archive", TimeSpan.FromHours(24)),
-        ["JobCleanup"] = ("Job Cleanup", TimeSpan.FromHours(24)),
-        ["EmailNotifications"] = ("Email Notifications", TimeSpan.FromHours(24)),
-        ["ScheduledBackup"] = ("Scheduled Backup", TimeSpan.FromHours(24)),
-        ["EmailCheck"] = ("Email Check (IMAP)", TimeSpan.FromHours(1)),
+        // Job Availability (checking if jobs are still open)
+        ["AvailabilityCheck-NotChecked"] = ("Availability Check (Not Checked)", JobCategory.JobAvailability, TimeSpan.FromHours(6)),
+        ["AvailabilityCheck-Possible"] = ("Availability Check (Possible)", JobCategory.JobAvailability, TimeSpan.FromHours(12)),
+
+        // Job Discovery (finding new jobs)
+        ["JobCrawl"] = ("Job Crawl", JobCategory.JobDiscovery, TimeSpan.FromHours(48)),
+
+        // Pipeline Automation (status updates)
+        ["AutoArchive"] = ("Auto Archive", JobCategory.PipelineAutomation, TimeSpan.FromHours(24)),
+        ["GhostedCheck"] = ("Ghosted Check", JobCategory.PipelineAutomation, TimeSpan.FromHours(24)),
+        ["JobCleanup"] = ("Job Cleanup", JobCategory.PipelineAutomation, TimeSpan.FromHours(24)),
+        ["NoReplyCheck"] = ("No Reply Check", JobCategory.PipelineAutomation, TimeSpan.FromHours(24)),
+
+        // Email Integration
+        ["EmailCheck"] = ("Email Check (IMAP)", JobCategory.EmailIntegration, TimeSpan.FromHours(1)),
+        ["EmailNotifications"] = ("Email Notifications", JobCategory.EmailIntegration, TimeSpan.FromHours(24)),
+
+        // Maintenance
+        ["ScheduledBackup"] = ("Scheduled Backup", JobCategory.Maintenance, TimeSpan.FromHours(24)),
     };
 
     private readonly Dictionary<string, BackgroundJobStatus> _jobStatuses = new();
     private DateTime? _startedAt;
+
+    public static string GetCategoryDisplayName(JobCategory category) => category switch
+    {
+        JobCategory.JobAvailability => "Job Availability",
+        JobCategory.JobDiscovery => "Job Discovery",
+        JobCategory.PipelineAutomation => "Pipeline Automation",
+        JobCategory.EmailIntegration => "Email Integration",
+        JobCategory.Maintenance => "Maintenance",
+        _ => category.ToString()
+    };
+
+    public static string GetCategoryDescription(JobCategory category) => category switch
+    {
+        JobCategory.JobAvailability => "Check if job postings are still open and available",
+        JobCategory.JobDiscovery => "Find and add new job listings automatically",
+        JobCategory.PipelineAutomation => "Automatically update job statuses based on rules",
+        JobCategory.EmailIntegration => "Process incoming emails and send notifications",
+        JobCategory.Maintenance => "System maintenance and data backup tasks",
+        _ => ""
+    };
 
     public LocalBackgroundService(IServiceScopeFactory scopeFactory, ILogger<LocalBackgroundService> logger, IWebHostEnvironment env)
     {
@@ -49,11 +88,12 @@ public class LocalBackgroundService : BackgroundService
 
         // Initialize defaults (disabled until user enables them)
         var hasConfig = File.Exists(_configPath);
-        foreach (var (key, (name, interval)) in JobDefaults)
+        foreach (var (key, (name, category, interval)) in JobDefaults)
         {
             _jobStatuses[key] = new BackgroundJobStatus
             {
                 Name = name,
+                Category = category,
                 Interval = interval,
                 Enabled = false
             };
@@ -68,6 +108,17 @@ public class LocalBackgroundService : BackgroundService
 
     public IReadOnlyDictionary<string, BackgroundJobStatus> JobStatuses => _jobStatuses;
     public DateTime? StartedAt => _startedAt;
+
+    /// <summary>
+    /// Returns job statuses grouped by category, with jobs sorted alphabetically within each category.
+    /// </summary>
+    public IEnumerable<IGrouping<JobCategory, KeyValuePair<string, BackgroundJobStatus>>> GetJobsByCategory()
+    {
+        return _jobStatuses
+            .OrderBy(kvp => kvp.Value.Category)
+            .ThenBy(kvp => kvp.Value.Name)
+            .GroupBy(kvp => kvp.Value.Category);
+    }
 
     public void SetEnabled(string key, bool enabled)
     {

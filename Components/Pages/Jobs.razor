@@ -3018,6 +3018,23 @@ else
                 if (result.ParsedJob != null)
                     JobService.UpdateJobIfBetter(job.Id, result.ParsedJob, overwriteNonEmpty: true);
 
+                // LinkedIn often returns login/2FA interstitials to server-side fetches.
+                // If we still don't have core fields, open in browser so the extension can capture details.
+                var refreshed = JobService.GetJobById(job.Id);
+                if (refreshed != null &&
+                    string.Equals(refreshed.Source, "LinkedIn", StringComparison.OrdinalIgnoreCase) &&
+                    (string.IsNullOrWhiteSpace(refreshed.Title) ||
+                     refreshed.Title.StartsWith("(From LinkedIn alert)", StringComparison.OrdinalIgnoreCase) ||
+                     string.IsNullOrWhiteSpace(refreshed.Description)))
+                {
+                    if (!string.IsNullOrEmpty(refreshed.Url))
+                    {
+                        await JSRuntime.InvokeVoidAsync("open", refreshed.Url, "_blank");
+                        await JSRuntime.InvokeVoidAsync("alert",
+                            "LinkedIn blocked server-side detail fetch. The job page was opened in a new tab so the browser extension can capture the full details.\\n\\nRefresh this page after a moment to see updates.");
+                    }
+                }
+
                 JobService.SetLastChecked(job.Id);
                 JobService.ApplyRulesToExistingJobs(job.Id);
                 RefreshData();

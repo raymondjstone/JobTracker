@@ -139,11 +139,13 @@ builder.Services.AddTransient<AutoArchiveJob>();
 builder.Services.AddTransient<JobCleanupJob>();
 builder.Services.AddTransient<EmailNotificationJob>();
 builder.Services.AddTransient<ScheduledBackupJob>();
+builder.Services.AddHostedService<StartupBackupHostedService>();
 builder.Services.AddSingleton<EmailInboxService>();
 builder.Services.AddTransient<EmailProcessingService>();
 builder.Services.AddTransient<EmailReplyMatcher>();
 builder.Services.AddTransient<EmailJobAlertParser>();
 builder.Services.AddTransient<EmailCheckJob>();
+builder.Services.AddSingleton<AppShutdownService>();
 
 // In LocalMode, use a BackgroundService for recurring jobs
 if (localMode)

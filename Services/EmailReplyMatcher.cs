@@ -42,6 +42,8 @@ public class EmailReplyMatcher
         (new Regex(@"(decided to )?proceed with other candidates", RegexOptions.IgnoreCase | RegexOptions.Compiled), ApplicationStage.Rejected),
         (new Regex(@"position has been filled", RegexOptions.IgnoreCase | RegexOptions.Compiled), ApplicationStage.Rejected),
         (new Regex(@"not (progressing|moving forward) with your application", RegexOptions.IgnoreCase | RegexOptions.Compiled), ApplicationStage.Rejected),
+        (new Regex(@"experience.{0,30}(does not|doesn't) (fulfil|fulfill|meet)", RegexOptions.IgnoreCase | RegexOptions.Compiled), ApplicationStage.Rejected),
+        (new Regex(@"not a match (today|at this time|for this role)", RegexOptions.IgnoreCase | RegexOptions.Compiled), ApplicationStage.Rejected),
 
         // Pending — only when currently Applied
         (new Regex(@"received your application", RegexOptions.IgnoreCase | RegexOptions.Compiled), ApplicationStage.Pending),

@@ -778,6 +778,16 @@
                         </div>
                     </div>
 
+                    <div class="mb-4">
+                        <h6>Startup Backup</h6>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="backupOnStartup" @bind="editBackupOnStartup" />
+                            <label class="form-check-label" for="backupOnStartup">Take a backup on initial app start</label>
+                        </div>
+                        <p class="text-muted small mb-0">Creates a ZIP backup when the app starts (useful before debugging sessions).</p>
+                        <button class="btn btn-primary btn-sm mt-2" @onclick="SaveBackupOnStartup">Save</button>
+                    </div>
+
                     <hr />
 
                     <div class="mb-4">
@@ -927,6 +937,7 @@
 
     // Backup directory
     private string editBackupDirectory = "";
+    private bool editBackupOnStartup;
 
     // Backup & Restore state
     private bool isBackingUp = false;
@@ -991,6 +1002,7 @@
         editDeleteRejectedAfterDays = settings.DeleteRejectedAfterDays;
         editDeleteGhostedAfterDays = settings.DeleteGhostedAfterDays;
         editBackupDirectory = settings.BackupDirectory;
+        editBackupOnStartup = settings.BackupOnStartup;
         editSmtpHost = settings.SmtpHost;
         editSmtpPort = settings.SmtpPort;
         editSmtpUsername = settings.SmtpUsername;
@@ -1581,6 +1593,13 @@
     {
         var settings = SettingsService.GetSettings();
         settings.BackupDirectory = editBackupDirectory?.Trim() ?? "";
+        SettingsService.Save();
+    }
+
+    private void SaveBackupOnStartup()
+    {
+        var settings = SettingsService.GetSettings();
+        settings.BackupOnStartup = editBackupOnStartup;
         SettingsService.Save();
     }
 

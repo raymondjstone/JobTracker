@@ -141,7 +141,7 @@ public class JsonStorageBackend : IStorageBackend
         try
         {
             var json = JsonSerializer.Serialize(users, WriteOptions);
-            File.WriteAllText(_usersFilePath, json);
+            WriteAtomic(_usersFilePath, json);
         }
         catch (Exception ex)
         {
@@ -277,7 +277,29 @@ public class JsonStorageBackend : IStorageBackend
     private void WriteAllJobsUnsafe(List<JobListing> allJobs)
     {
         var json = JsonSerializer.Serialize(allJobs, WriteOptions);
-        File.WriteAllText(_jobsFilePath, json);
+        WriteAtomic(_jobsFilePath, json);
+    }
+
+    private static void WriteAtomic(string path, string contents)
+    {
+        var dir = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(dir))
+            Directory.CreateDirectory(dir);
+
+        var tempPath = path + ".tmp";
+        File.WriteAllText(tempPath, contents);
+
+        // Replace is atomic on Windows; fall back to Move if needed.
+        if (OperatingSystem.IsWindows() && File.Exists(path))
+        {
+            File.Replace(tempPath, path, destinationBackupFileName: null);
+        }
+        else
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+            File.Move(tempPath, path);
+        }
     }
 
     public void AddHistoryEntry(JobHistoryEntry entry)
@@ -360,7 +382,7 @@ public class JsonStorageBackend : IStorageBackend
             }
 
             var json = JsonSerializer.Serialize(history, WriteOptions);
-            File.WriteAllText(_historyFilePath, json);
+            WriteAtomic(_historyFilePath, json);
         }
         catch (Exception ex)
         {
@@ -418,7 +440,7 @@ public class JsonStorageBackend : IStorageBackend
             {
                 var userSettingsPath = Path.Combine(_dataDirectory, $"settings_{userId}.json");
                 var json = JsonSerializer.Serialize(settings, WriteOptions);
-                File.WriteAllText(userSettingsPath, json);
+                WriteAtomic(userSettingsPath, json);
                 _logger.LogDebug("Settings saved to {Path} for user {UserId}", userSettingsPath, userId);
             }
             catch (Exception ex)

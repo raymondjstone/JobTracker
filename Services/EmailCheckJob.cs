@@ -108,15 +108,25 @@ public class EmailCheckJob
                 }
 
                 // Add new jobs from alerts
-                foreach (var (url, source) in result.NewJobDetails)
+                foreach (var (url, source, extractedTitle, extractedCompany, extractedLocation, extractedSalary) in result.NewJobDetails)
                 {
+                    var normalizedUrl = url;
+                    if (string.Equals(source, "LinkedIn", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Canonicalize LinkedIn comm links so other fetchers/normalizers match.
+                        normalizedUrl = normalizedUrl.Replace("linkedin.com/comm/jobs/view/", "linkedin.com/jobs/view/", StringComparison.OrdinalIgnoreCase);
+                        normalizedUrl = normalizedUrl.TrimEnd('.');
+                    }
+
                     var newJob = new JobListing
                     {
                         UserId = user.Id,
-                        Url = url,
+                        Url = normalizedUrl,
                         Source = source,
-                        Title = $"(From {source} alert)",
-                        Company = "",
+                        Title = !string.IsNullOrWhiteSpace(extractedTitle) ? extractedTitle.Trim() : $"(From {source} alert)",
+                        Company = !string.IsNullOrWhiteSpace(extractedCompany) ? extractedCompany.Trim() : source,
+                        Location = extractedLocation?.Trim() ?? "",
+                        Salary = extractedSalary?.Trim() ?? "",
                         Description = "",
                         DateAdded = DateTime.Now,
                         LastChecked = null, // Leave null so availability check fetches details immediately

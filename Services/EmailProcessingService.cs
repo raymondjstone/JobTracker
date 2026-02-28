@@ -12,7 +12,7 @@ public class EmailProcessingResult
 
     public List<ProcessedEmail> ProcessedEmails { get; set; } = new();
     public List<(Guid JobId, ApplicationStage NewStage, string Reason)> StageUpdateDetails { get; set; } = new();
-    public List<(string Url, string Source)> NewJobDetails { get; set; } = new();
+    public List<(string Url, string Source, string? Title, string? Company, string? Location, string? Salary)> NewJobDetails { get; set; } = new();
 }
 
 public class EmailProcessingService
@@ -69,21 +69,45 @@ public class EmailProcessingService
                     var alertResult = _alertParser.Parse(email);
                     if (alertResult.IsJobAlert && alertResult.JobUrls.Count > 0)
                     {
-                        foreach (var url in alertResult.JobUrls)
+                        // Use detailed per-job info if available (LinkedIn multi-job alerts)
+                        if (alertResult.Jobs.Count > 0)
                         {
-                            // Skip URLs that already exist in the user's jobs
-                            if (userJobs.Any(j => !string.IsNullOrWhiteSpace(j.Url) &&
-                                j.Url.Equals(url, StringComparison.OrdinalIgnoreCase)))
-                                continue;
+                            foreach (var job in alertResult.Jobs)
+                            {
+                                // Normalize URL for duplicate check
+                                var normalizedUrl = job.Url
+                                    .Replace("linkedin.com/comm/jobs/view/", "linkedin.com/jobs/view/", StringComparison.OrdinalIgnoreCase)
+                                    .TrimEnd('.');
 
-                            result.JobsAdded++;
-                            result.NewJobDetails.Add((url, alertResult.Source));
+                                // Skip URLs that already exist in the user's jobs
+                                if (userJobs.Any(j => !string.IsNullOrWhiteSpace(j.Url) &&
+                                    (j.Url.Equals(job.Url, StringComparison.OrdinalIgnoreCase) ||
+                                     j.Url.Equals(normalizedUrl, StringComparison.OrdinalIgnoreCase))))
+                                    continue;
+
+                                result.JobsAdded++;
+                                result.NewJobDetails.Add((job.Url, alertResult.Source, job.Title, job.Company, job.Location, job.Salary));
+                            }
+                        }
+                        else
+                        {
+                            // Fallback to simple URL list with single title/company
+                            foreach (var url in alertResult.JobUrls)
+                            {
+                                // Skip URLs that already exist in the user's jobs
+                                if (userJobs.Any(j => !string.IsNullOrWhiteSpace(j.Url) &&
+                                    j.Url.Equals(url, StringComparison.OrdinalIgnoreCase)))
+                                    continue;
+
+                                result.JobsAdded++;
+                                result.NewJobDetails.Add((url, alertResult.Source, alertResult.Title, alertResult.Company, null, null));
+                            }
                         }
 
                         result.ProcessedEmails.Add(new ProcessedEmail
                         {
                             MessageId = email.MessageId,
-                            Action = alertResult.JobUrls.Count > 0 ? "JobAdded" : "Ignored"
+                            Action = result.JobsAdded > 0 ? "JobAdded" : "Ignored"
                         });
                         continue;
                     }

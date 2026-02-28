@@ -25,105 +25,120 @@ else
         &mdash; Auto-refreshes every 10 seconds
     </div>
 
-    <table class="table table-striped">
-        <thead>
-            <tr>
-                <th>Job</th>
-                <th>Enabled</th>
-                <th>Status</th>
-                <th>Last Run</th>
-                <th>Duration</th>
-                <th>Next Run</th>
-                <th>Interval (hours)</th>
-                <th></th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var (key, status) in _service.JobStatuses)
-            {
-                <tr class="@(!status.Enabled ? "opacity-50" : "")">
-                    <td title="@GetJobDescription(key)">@status.Name <i class="bi bi-info-circle text-muted" style="font-size: 0.8rem;"></i></td>
-                    <td>
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" checked="@status.Enabled"
-                                @onchange="e => ToggleEnabled(key, (bool)(e.Value ?? false))" />
-                        </div>
-                    </td>
-                    <td>
-                        @if (!status.Enabled)
+    @foreach (var categoryGroup in _service.GetJobsByCategory())
+    {
+        var category = categoryGroup.Key;
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="bi @GetCategoryIcon(category) me-2"></i>
+                    @LocalBackgroundService.GetCategoryDisplayName(category)
+                </h5>
+                <small class="text-muted">@LocalBackgroundService.GetCategoryDescription(category)</small>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-striped mb-0" style="table-layout: fixed;">
+                    <thead>
+                        <tr>
+                            <th style="width: 22%">Job</th>
+                            <th style="width: 7%">Enabled</th>
+                            <th style="width: 8%">Status</th>
+                            <th style="width: 18%">Last Run</th>
+                            <th style="width: 8%">Duration</th>
+                            <th style="width: 18%">Next Run</th>
+                            <th style="width: 10%">Interval (hrs)</th>
+                            <th style="width: 9%"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var (key, status) in categoryGroup)
                         {
-                            <span class="badge bg-secondary">Disabled</span>
+                            <tr class="@(!status.Enabled ? "opacity-50" : "")">
+                                <td title="@GetJobDescription(key)">@status.Name <i class="bi bi-info-circle text-muted" style="font-size: 0.8rem;"></i></td>
+                                <td>
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" checked="@status.Enabled"
+                                            @onchange="e => ToggleEnabled(key, (bool)(e.Value ?? false))" />
+                                    </div>
+                                </td>
+                                <td>
+                                    @if (!status.Enabled)
+                                    {
+                                        <span class="badge bg-secondary">Disabled</span>
+                                    }
+                                    else if (status.IsRunning)
+                                    {
+                                        <span class="badge bg-primary">Running</span>
+                                    }
+                                    else if (status.LastError != null)
+                                    {
+                                        <span class="badge bg-danger" title="@status.LastError">Error</span>
+                                    }
+                                    else if (status.LastRun.HasValue)
+                                    {
+                                        <span class="badge bg-success">OK</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-secondary">Pending</span>
+                                    }
+                                </td>
+                                <td>
+                                    @if (status.LastRun.HasValue)
+                                    {
+                                        @status.LastRun.Value.ToString("g")
+                                        <span class="text-muted">(@FormatTimeAgo(status.LastRun.Value))</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">Never</span>
+                                    }
+                                </td>
+                                <td>
+                                    @if (status.LastDuration.HasValue)
+                                    {
+                                        @FormatDuration(status.LastDuration.Value)
+                                    }
+                                </td>
+                                <td>
+                                    @if (status.IsRunning)
+                                    {
+                                        <span class="text-muted">Running now...</span>
+                                    }
+                                    else if (status.NextRun.HasValue)
+                                    {
+                                        @status.NextRun.Value.ToString("g")
+                                        <span class="text-muted">(@FormatTimeUntil(status.NextRun.Value))</span>
+                                    }
+                                    else if (!status.Enabled)
+                                    {
+                                        <span class="text-muted">&mdash;</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">After startup delay</span>
+                                    }
+                                </td>
+                                <td>
+                                    <input type="number" class="form-control form-control-sm" style="width: 80px"
+                                        value="@status.Interval.TotalHours"
+                                        step="0.5" min="0.1"
+                                        @onchange="e => ChangeInterval(key, e.Value)" />
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-primary"
+                                        disabled="@status.IsRunning"
+                                        @onclick="() => _service!.RunNow(key)">
+                                        Run Now
+                                    </button>
+                                </td>
+                            </tr>
                         }
-                        else if (status.IsRunning)
-                        {
-                            <span class="badge bg-primary">Running</span>
-                        }
-                        else if (status.LastError != null)
-                        {
-                            <span class="badge bg-danger" title="@status.LastError">Error</span>
-                        }
-                        else if (status.LastRun.HasValue)
-                        {
-                            <span class="badge bg-success">OK</span>
-                        }
-                        else
-                        {
-                            <span class="badge bg-secondary">Pending</span>
-                        }
-                    </td>
-                    <td>
-                        @if (status.LastRun.HasValue)
-                        {
-                            @status.LastRun.Value.ToString("g")
-                            <span class="text-muted">(@FormatTimeAgo(status.LastRun.Value))</span>
-                        }
-                        else
-                        {
-                            <span class="text-muted">Never</span>
-                        }
-                    </td>
-                    <td>
-                        @if (status.LastDuration.HasValue)
-                        {
-                            @FormatDuration(status.LastDuration.Value)
-                        }
-                    </td>
-                    <td>
-                        @if (status.IsRunning)
-                        {
-                            <span class="text-muted">Running now...</span>
-                        }
-                        else if (status.NextRun.HasValue)
-                        {
-                            @status.NextRun.Value.ToString("g")
-                            <span class="text-muted">(@FormatTimeUntil(status.NextRun.Value))</span>
-                        }
-                        else if (!status.Enabled)
-                        {
-                            <span class="text-muted">&mdash;</span>
-                        }
-                        else
-                        {
-                            <span class="text-muted">After startup delay</span>
-                        }
-                    </td>
-                    <td>
-                        <input type="number" class="form-control form-control-sm" style="width: 80px"
-                            value="@status.Interval.TotalHours"
-                            step="0.5" min="0.1"
-                            @onchange="e => ChangeInterval(key, e.Value)" />
-                    </td>
-                    <td>
-                        <button class="btn btn-sm btn-outline-primary"
-                            disabled="@status.IsRunning"
-                            @onclick="() => _service!.RunNow(key)">
-                            Run Now
-                        </button>
-                    </td>
-                </tr>
-            }
-        </tbody>
-    </table>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
 
     @foreach (var errJob in _service.JobStatuses.Values.Where(s => s.LastError != null))
     {
@@ -159,15 +174,27 @@ else
         }
     }
 
+    private static string GetCategoryIcon(JobCategory category) => category switch
+    {
+        JobCategory.JobAvailability => "bi-check-circle",
+        JobCategory.JobDiscovery => "bi-search",
+        JobCategory.PipelineAutomation => "bi-arrow-repeat",
+        JobCategory.EmailIntegration => "bi-envelope",
+        JobCategory.Maintenance => "bi-wrench",
+        _ => "bi-gear"
+    };
+
     private static string GetJobDescription(string key) => key switch
     {
         "AvailabilityCheck-NotChecked" => "Visits LinkedIn job URLs for listings not yet checked to detect if the posting has been closed or removed.",
         "AvailabilityCheck-Possible" => "Re-checks LinkedIn job URLs for listings previously marked as available to detect if they have since been closed.",
-        "GhostedCheck" => "Marks applied jobs as 'Ghosted' if no status change has occurred within the configured ghosted days threshold (Settings > Pipeline).",
-        "NoReplyCheck" => "Marks applied jobs as 'No reply' if no status change has occurred within the configured no-reply days threshold (Settings > Pipeline).",
-        "JobCrawl" => "Searches LinkedIn for new job listings matching your saved search queries and adds them automatically.",
         "AutoArchive" => "Automatically archives rejected/ghosted jobs after the configured number of days (Settings > Auto-Archive).",
+        "EmailCheck" => "Connects to your email inbox via IMAP to detect replies from companies and job alert emails.",
         "EmailNotifications" => "Sends a daily digest email with follow-ups due and stale applications (Settings > Email Notifications).",
+        "GhostedCheck" => "Marks applied jobs as 'Ghosted' if no status change has occurred within the configured ghosted days threshold (Settings > Pipeline).",
+        "JobCleanup" => "Permanently deletes old unsuitable, rejected, and ghosted jobs based on your auto-delete settings (Settings > Auto-Archive).",
+        "JobCrawl" => "Searches LinkedIn for new job listings matching your saved search queries and adds them automatically.",
+        "NoReplyCheck" => "Marks applied jobs as 'No reply' if no status change has occurred within the configured no-reply days threshold (Settings > Pipeline).",
         "ScheduledBackup" => "Creates a ZIP backup of all JSON data files in the Data/Backups/ folder. Old backups are pruned to keep the most recent 10.",
         _ => ""
     };
