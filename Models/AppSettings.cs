@@ -6,6 +6,9 @@ public class AppSettings
     public JobRulesSettings JobRules { get; set; } = new();
     public List<SavedFilterPreset> FilterPresets { get; set; } = new();
     public List<string> HighlightKeywords { get; set; } = new();
+    public bool HighlightPrioritizedSkills { get; set; } = true;
+    public bool HighlightPrioritizedSkillsInDescription { get; set; } = true;
+    public int SkillsToShowOnCard { get; set; } = 5;
     public PipelineSettings Pipeline { get; set; } = new();
     public List<CoverLetterTemplate> CoverLetterTemplates { get; set; } = new();
     public string SmtpHost { get; set; } = "";
@@ -39,6 +42,7 @@ public class AppSettings
     public bool DarkMode { get; set; }
     public string BackupDirectory { get; set; } = "";
     public bool BackupOnStartup { get; set; }
+    public int BackupsToKeep { get; set; } = 10;
     public List<CrawlPage> CrawlPages { get; set; } = new();
 }
 

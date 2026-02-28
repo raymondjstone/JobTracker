@@ -56,14 +56,15 @@ public class ScheduledBackupJob
 
         _logger.LogInformation("[Background] Scheduled backup created: {ZipPath} ({FileCount} files)", zipPath, jsonFiles.Length);
 
-        // Prune old backups, keep most recent 10
+        // Prune old backups, keep most recent N (default 10)
+        var backupsToKeep = settings.BackupsToKeep > 0 ? settings.BackupsToKeep : 10;
         var existingBackups = Directory.GetFiles(backupDir, "jobtracker-backup-*.zip")
             .OrderByDescending(f => f)
             .ToList();
 
-        if (existingBackups.Count > 10)
+        if (existingBackups.Count > backupsToKeep)
         {
-            var toDelete = existingBackups.Skip(10).ToList();
+            var toDelete = existingBackups.Skip(backupsToKeep).ToList();
             foreach (var old in toDelete)
             {
                 try
@@ -79,6 +80,6 @@ public class ScheduledBackupJob
         }
 
         _logger.LogInformation("[Background] Scheduled backup complete: {FileCount} files backed up, {BackupCount} backups retained",
-            jsonFiles.Length, Math.Min(existingBackups.Count, 10));
+            jsonFiles.Length, Math.Min(existingBackups.Count, backupsToKeep));
     }
 }

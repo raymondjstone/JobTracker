@@ -305,6 +305,11 @@
                             <option value="@SortOption.CompanyDesc">Company (Z-A)</option>
                             <option value="@SortOption.SalaryDesc">Salary (Highest)</option>
                             <option value="@SortOption.SalaryAsc">Salary (Lowest)</option>
+                            @if (scoringEnabled)
+                            {
+                                <option value="@SortOption.ScoreDesc">ML Score (Highest)</option>
+                                <option value="@SortOption.ScoreAsc">ML Score (Lowest)</option>
+                            }
                         </select>
                     </div>
                     <div class="col-md-2">
@@ -678,13 +683,17 @@ else
                         @if (job.Skills.Any())
                         {
                             <div class="mb-2">
-                                @foreach (var skill in OrderSkills(job.Skills, skillPriorities).Take(5))
+                                @foreach (var skill in OrderSkills(job.Skills, skillPriorities).Take(skillsToShowOnCard))
                                 {
-                                    <span class="badge bg-secondary me-1">@skill</span>
+                                    var isPrioritized = highlightPrioritizedSkills && skillPriorities.Any(p => p.Equals(skill, StringComparison.OrdinalIgnoreCase));
+                                    <span class="badge @(isPrioritized ? "bg-warning text-dark" : "bg-secondary") me-1">
+                                        @if (isPrioritized) { <i class="bi bi-star-fill"></i> }
+                                        @skill
+                                    </span>
                                 }
-                                @if (job.Skills.Count > 5)
+                                @if (job.Skills.Count > skillsToShowOnCard)
                                 {
-                                    <span class="badge bg-light text-dark">+@(job.Skills.Count - 5) more</span>
+                                    <span class="badge bg-light text-dark">+@(job.Skills.Count - skillsToShowOnCard) more</span>
                                 }
                             </div>
                         }
@@ -974,7 +983,11 @@ else
                             <div class="mt-1">
                                 @foreach (var skill in OrderSkills(selectedJob.Skills, skillPriorities))
                                 {
-                                    <span class="badge bg-primary me-1 mb-1">@skill</span>
+                                    var isPrioritized = highlightPrioritizedSkills && skillPriorities.Any(p => p.Equals(skill, StringComparison.OrdinalIgnoreCase));
+                                    <span class="badge @(isPrioritized ? "bg-warning text-dark" : "bg-primary") me-1 mb-1">
+                                        @if (isPrioritized) { <i class="bi bi-star-fill"></i> }
+                                        @skill
+                                    </span>
                                 }
                             </div>
                         </div>
@@ -2427,6 +2440,10 @@ else
 
     // Highlight keywords
     private List<string> highlightKeywords = new();
+    private bool highlightPrioritizedSkills = true;
+    private bool highlightPrioritizedSkillsInDescription = true;
+    private int skillsToShowOnCard = 5;
+    private bool scoringEnabled = true;
 
     // Pipeline settings
     private PipelineSettings pipelineSettings = new();
@@ -2449,6 +2466,10 @@ else
         filterPresets = SettingsService.GetFilterPresets();
         highlightKeywords = SettingsService.GetHighlightKeywords();
         var initSettings = SettingsService.GetSettings();
+        highlightPrioritizedSkills = initSettings.HighlightPrioritizedSkills;
+        highlightPrioritizedSkillsInDescription = initSettings.HighlightPrioritizedSkillsInDescription;
+        skillsToShowOnCard = initSettings.SkillsToShowOnCard > 0 ? initSettings.SkillsToShowOnCard : 5;
+        scoringEnabled = initSettings.ScoringPreferences.EnableScoring;
         pipelineSettings = initSettings.Pipeline;
         coverLetterTemplates = initSettings.CoverLetterTemplates;
         aiSettings = initSettings.AIAssistant;
@@ -3269,6 +3290,12 @@ else
         jobSiteUrls = SettingsService.GetJobSiteUrls();
         filterPresets = SettingsService.GetFilterPresets();
         highlightKeywords = SettingsService.GetHighlightKeywords();
+        var settings = SettingsService.GetSettings();
+        highlightPrioritizedSkills = settings.HighlightPrioritizedSkills;
+        highlightPrioritizedSkillsInDescription = settings.HighlightPrioritizedSkillsInDescription;
+        skillsToShowOnCard = settings.SkillsToShowOnCard > 0 ? settings.SkillsToShowOnCard : 5;
+        scoringEnabled = settings.ScoringPreferences.EnableScoring;
+        skillPriorities = settings.ScoringPreferences.SkillPriorities;
         InvokeAsync(StateHasChanged);
     }
 
@@ -3381,14 +3408,30 @@ else
     // --- Keyword Highlighting ---
     private string HighlightKeywords(string text)
     {
-        if (highlightKeywords.Count == 0 || string.IsNullOrEmpty(text))
+        if (string.IsNullOrEmpty(text))
+            return System.Net.WebUtility.HtmlEncode(text);
+
+        // Combine highlight keywords with prioritized skills if enabled
+        var allKeywords = highlightKeywords.ToList();
+        if (highlightPrioritizedSkillsInDescription && skillPriorities.Count > 0)
+        {
+            foreach (var skill in skillPriorities)
+            {
+                if (!allKeywords.Any(k => k.Equals(skill, StringComparison.OrdinalIgnoreCase)))
+                {
+                    allKeywords.Add(skill);
+                }
+            }
+        }
+
+        if (allKeywords.Count == 0)
             return System.Net.WebUtility.HtmlEncode(text);
 
         // Escape HTML first
         var encoded = System.Net.WebUtility.HtmlEncode(text);
 
         // Build regex pattern from keywords (escaped for regex)
-        var pattern = string.Join("|", highlightKeywords
+        var pattern = string.Join("|", allKeywords
             .Select(k => System.Text.RegularExpressions.Regex.Escape(System.Net.WebUtility.HtmlEncode(k))));
 
         return System.Text.RegularExpressions.Regex.Replace(

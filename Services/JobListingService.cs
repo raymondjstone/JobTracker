@@ -1821,6 +1821,8 @@ public class JobListingService
                 SortOption.CompanyDesc => sorted.ThenByDescending(j => j.Company),
                 SortOption.SalaryDesc => sorted.ThenByDescending(j => j.SalaryMax ?? 0),
                 SortOption.SalaryAsc => sorted.ThenBy(j => j.SalaryMin ?? decimal.MaxValue),
+                SortOption.ScoreDesc => sorted.ThenByDescending(j => j.SuitabilityScore),
+                SortOption.ScoreAsc => sorted.ThenBy(j => j.SuitabilityScore),
                 _ => sorted.ThenByDescending(j => j.DateAdded)
             };
 
@@ -2405,7 +2407,9 @@ public enum SortOption
     CompanyAsc,
     CompanyDesc,
     SalaryDesc,
-    SalaryAsc
+    SalaryAsc,
+    ScoreDesc,
+    ScoreAsc
 }
 
 public class JobStats
