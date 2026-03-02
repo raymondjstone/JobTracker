@@ -480,12 +480,20 @@
                             </div>
 
                             <div class="row g-3 mb-3">
-                                <div class="col-md-3">
-                                    <label class="form-label">Min Salary (£)</label>
+                                <div class="col-md-2">
+                                    <label class="form-label">Local Currency</label>
+                                    <select class="form-select" @bind="editLocalCurrency">
+                                        <option value="GBP">GBP (£)</option>
+                                        <option value="USD">USD ($)</option>
+                                        <option value="EUR">EUR (€)</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label">Min Salary (@editLocalCurrency)</label>
                                     <input type="number" class="form-control" @bind="editMinDesiredSalary" />
                                 </div>
-                                <div class="col-md-3">
-                                    <label class="form-label">Max Salary (£)</label>
+                                <div class="col-md-2">
+                                    <label class="form-label">Max Salary (@editLocalCurrency)</label>
                                     <input type="number" class="form-control" @bind="editMaxDesiredSalary" />
                                 </div>
                                 <div class="col-md-3 d-flex align-items-end">
@@ -1010,6 +1018,7 @@
     private string editPreferredSkills = "";
     private decimal editMinDesiredSalary = 0;
     private decimal editMaxDesiredSalary = 0;
+    private string editLocalCurrency = "GBP";
     private bool editPreferRemote = true;
     private string editPreferredLocations = "";
     private string editMustHaveKeywords = "";
@@ -1175,6 +1184,7 @@
         editPreferredSkills = string.Join(", ", scoring.PreferredSkills);
         editMinDesiredSalary = scoring.MinDesiredSalary;
         editMaxDesiredSalary = scoring.MaxDesiredSalary;
+        editLocalCurrency = settings.LocalCurrency;
         editPreferRemote = scoring.PreferRemote;
         editPreferredLocations = string.Join(", ", scoring.PreferredLocations);
         editMustHaveKeywords = string.Join(", ", scoring.MustHaveKeywords);
@@ -1385,6 +1395,7 @@
 
         settings.ScoringPreferences.MinDesiredSalary = editMinDesiredSalary;
         settings.ScoringPreferences.MaxDesiredSalary = editMaxDesiredSalary;
+        settings.LocalCurrency = editLocalCurrency;
         settings.ScoringPreferences.PreferRemote = editPreferRemote;
 
         settings.ScoringPreferences.PreferredLocations = editPreferredLocations

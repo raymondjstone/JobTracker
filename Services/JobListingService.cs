@@ -69,26 +69,126 @@ public class JobListingService
     }
 
     /// <summary>
-    /// Backfills SalaryMin/SalaryMax for jobs that have a Salary string but no parsed values.
+    /// Backfills SalaryMin/SalaryMax/SalaryCurrency/SalaryPeriod for jobs that have a Salary string but missing parsed values.
     /// Called once when jobs are loaded.
     /// </summary>
     private void BackfillSalaryData(Guid userId)
     {
+        // Jobs that have salary text but missing parsed min/max or currency
         var jobsToBackfill = _jobListings
-            .Where(j => j.UserId == userId && !string.IsNullOrWhiteSpace(j.Salary) && !j.SalaryMin.HasValue && !j.SalaryMax.HasValue)
+            .Where(j => j.UserId == userId && !string.IsNullOrWhiteSpace(j.Salary) &&
+                   (!j.SalaryMin.HasValue && !j.SalaryMax.HasValue || string.IsNullOrEmpty(j.SalaryCurrency)))
             .ToList();
+
+        // Jobs with no salary at all — try extracting from stored description only
+        var jobsMissingSalary = _jobListings
+            .Where(j => j.UserId == userId && string.IsNullOrWhiteSpace(j.Salary) &&
+                   !j.SalaryMin.HasValue && !j.SalaryMax.HasValue)
+            .ToList();
+
+        foreach (var job in jobsMissingSalary)
+        {
+            var extracted = SalaryParser.ExtractFromText(job.Description);
+            if (extracted != null)
+            {
+                job.Salary = extracted;
+                if (string.IsNullOrEmpty(job.SalarySource)) job.SalarySource = "parsed";
+                jobsToBackfill.Add(job);
+            }
+        }
 
         if (jobsToBackfill.Count == 0) return;
 
         foreach (var job in jobsToBackfill)
         {
-            var (min, max) = SalaryParser.Parse(job.Salary);
-            job.SalaryMin = min;
-            job.SalaryMax = max;
+            var result = SalaryParser.ParseFull(job.Salary);
+            job.SalaryMin = result.Min;
+            job.SalaryMax = result.Max;
+            if (!string.IsNullOrEmpty(result.Currency)) job.SalaryCurrency = result.Currency;
+            if (!string.IsNullOrEmpty(result.Period)) job.SalaryPeriod = result.Period;
         }
 
         _storage.SaveJobs(_jobListings.Where(j => j.UserId == userId).ToList(), userId);
         _logger.LogInformation("Backfilled salary data for {Count} jobs", jobsToBackfill.Count);
+    }
+
+    /// <summary>
+    /// Ensures salary fields are populated for a job by extracting from existing description/title.
+    /// Call this whenever a job should have salary data but SalaryMin/Max are still null.
+    /// Returns true if salary was extracted and saved.
+    /// </summary>
+    public bool EnsureSalaryPopulated(Guid jobId)
+    {
+        lock (_lock)
+        {
+            var job = _jobListings.FirstOrDefault(j => j.Id == jobId);
+            if (job == null) return false;
+            if (job.SalaryMin.HasValue || job.SalaryMax.HasValue) return false;
+
+            // Source 1: parse the job's own Salary field
+            if (!string.IsNullOrWhiteSpace(job.Salary))
+            {
+                var result = SalaryParser.ParseFull(job.Salary);
+                if (result.Min.HasValue || result.Max.HasValue)
+                {
+                    job.SalaryMin = result.Min;
+                    job.SalaryMax = result.Max;
+                    if (!string.IsNullOrEmpty(result.Currency)) job.SalaryCurrency = result.Currency;
+                    if (!string.IsNullOrEmpty(result.Period)) job.SalaryPeriod = result.Period;
+                    _storage.SaveJob(job);
+                    return true;
+                }
+            }
+
+            // Source 2: extract from the job's stored description only
+            var extracted = SalaryParser.ExtractFromText(job.Description);
+            if (extracted != null)
+            {
+                job.Salary = extracted;
+                var result = SalaryParser.ParseFull(extracted);
+                job.SalaryMin = result.Min;
+                job.SalaryMax = result.Max;
+                if (!string.IsNullOrEmpty(result.Currency)) job.SalaryCurrency = result.Currency;
+                if (!string.IsNullOrEmpty(result.Period)) job.SalaryPeriod = result.Period;
+                if (string.IsNullOrEmpty(job.SalarySource)) job.SalarySource = "parsed";
+                _storage.SaveJob(job);
+                return true;
+            }
+
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Clears a job's salary if it wasn't manually set and the description doesn't contain one.
+    /// Called when a re-fetch returns no parsed job (generic sites) to remove stale platform salaries.
+    /// </summary>
+    public void ClearStaleSalary(Guid jobId)
+    {
+        lock (_lock)
+        {
+            var job = _jobListings.FirstOrDefault(j => j.Id == jobId);
+            if (job == null) return;
+            if (string.IsNullOrWhiteSpace(job.Salary)) return;
+            if (job.SalarySource == "manual") return;
+
+            // If description has a salary, keep it (it's reliable)
+            var descSalary = SalaryParser.ExtractFromText(job.Description);
+            if (descSalary != null) return;
+
+            var oldSalary = job.Salary;
+            job.Salary = "";
+            job.SalaryMin = null;
+            job.SalaryMax = null;
+            job.SalaryCurrency = "";
+            job.SalaryPeriod = "";
+            job.SalarySource = "";
+            _historyService.Value.RecordChange(job.Id, job.UserId, "Salary",
+                oldSalary, "(cleared)", "Salary cleared — not found on re-fetch",
+                job.Title, job.Company, job.Url);
+            _storage.SaveJob(job);
+            NotifyStateChanged();
+        }
     }
 
     /// <summary>
@@ -209,10 +309,23 @@ public class JobListingService
                 jobListing.Source = InferSourceFromUrl(jobListing.Url);
             }
 
-            // Parse salary into min/max
-            var (salaryMin, salaryMax) = SalaryParser.Parse(jobListing.Salary);
-            jobListing.SalaryMin = salaryMin;
-            jobListing.SalaryMax = salaryMax;
+            // If salary is empty, try extracting from stored description only
+            if (string.IsNullOrWhiteSpace(jobListing.Salary) && !string.IsNullOrWhiteSpace(jobListing.Description))
+            {
+                var extracted = SalaryParser.ExtractFromText(jobListing.Description);
+                if (extracted != null)
+                {
+                    jobListing.Salary = extracted;
+                    if (string.IsNullOrEmpty(jobListing.SalarySource)) jobListing.SalarySource = "parsed";
+                }
+            }
+
+            // Parse salary into min/max with currency and period
+            var salaryResult = SalaryParser.ParseFull(jobListing.Salary);
+            jobListing.SalaryMin = salaryResult.Min;
+            jobListing.SalaryMax = salaryResult.Max;
+            if (!string.IsNullOrEmpty(salaryResult.Currency)) jobListing.SalaryCurrency = salaryResult.Currency;
+            if (!string.IsNullOrEmpty(salaryResult.Period)) jobListing.SalaryPeriod = salaryResult.Period;
 
             // Apply job rules
             Console.WriteLine($"[ADD] Evaluating rules for '{jobListing.Title}' - Company='{jobListing.Company}', Source='{jobListing.Source}', Suitability={jobListing.Suitability}");
@@ -345,10 +458,12 @@ public class JobListingService
                     job.Source = InferSourceFromUrl(job.Url);
                 }
 
-                // Parse salary into min/max
-                var (salMin, salMax) = SalaryParser.Parse(job.Salary);
-                job.SalaryMin = salMin;
-                job.SalaryMax = salMax;
+                // Parse salary into min/max with currency and period
+                var salResult = SalaryParser.ParseFull(job.Salary);
+                job.SalaryMin = salResult.Min;
+                job.SalaryMax = salResult.Max;
+                if (!string.IsNullOrEmpty(salResult.Currency)) job.SalaryCurrency = salResult.Currency;
+                if (!string.IsNullOrEmpty(salResult.Period)) job.SalaryPeriod = salResult.Period;
 
                 // Apply job rules
                 {
@@ -876,13 +991,73 @@ public class JobListingService
                 }
             }
 
-            if (!string.IsNullOrWhiteSpace(parsed.Salary) &&
-                (string.IsNullOrWhiteSpace(job.Salary) || (overwriteNonEmpty && !string.Equals(job.Salary, parsed.Salary, StringComparison.Ordinal))))
+            // --- Salary resolution ---
+            // Only two sources: 1) parsed.Salary (the job's own salary field), 2) description text.
+            // Never estimate or guess. If re-fetch finds neither, clear stale salary.
+            var oldSalary = job.Salary;
+            string? bestSalary = null;
+            string bestSalarySource = "";
+
+            // Source 1: the parsed job's own Salary field (set by clipboard paste or job board data)
+            if (!string.IsNullOrWhiteSpace(parsed.Salary))
             {
-                job.Salary = parsed.Salary;
-                var (salMin, salMax) = SalaryParser.Parse(job.Salary);
-                job.SalaryMin = salMin;
-                job.SalaryMax = salMax;
+                bestSalary = parsed.Salary;
+                bestSalarySource = !string.IsNullOrEmpty(parsed.SalarySource) ? parsed.SalarySource : "posted";
+            }
+
+            // Source 2: extract from description (employer-stated text in the job listing)
+            if (bestSalary == null)
+            {
+                var descSalary = SalaryParser.ExtractFromText(parsed.Description)
+                                 ?? SalaryParser.ExtractFromText(job.Description);
+                if (descSalary != null)
+                {
+                    bestSalary = descSalary;
+                    bestSalarySource = "parsed";
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(bestSalary) &&
+                (string.IsNullOrWhiteSpace(job.Salary) || (overwriteNonEmpty && !string.Equals(job.Salary, bestSalary, StringComparison.Ordinal))))
+            {
+                // Record salary change in history
+                if (!string.IsNullOrWhiteSpace(oldSalary) && !string.Equals(oldSalary, bestSalary, StringComparison.Ordinal))
+                {
+                    _historyService.Value.RecordChange(job.Id, job.UserId, "Salary",
+                        oldSalary, bestSalary, "Salary updated",
+                        job.Title, job.Company, job.Url);
+                }
+                else if (string.IsNullOrWhiteSpace(oldSalary))
+                {
+                    _historyService.Value.RecordChange(job.Id, job.UserId, "Salary",
+                        "(none)", bestSalary, "Salary detected",
+                        job.Title, job.Company, job.Url);
+                }
+
+                job.Salary = bestSalary;
+                var salResult = SalaryParser.ParseFull(job.Salary);
+                job.SalaryMin = salResult.Min;
+                job.SalaryMax = salResult.Max;
+                if (!string.IsNullOrEmpty(salResult.Currency)) job.SalaryCurrency = salResult.Currency;
+                if (!string.IsNullOrEmpty(salResult.Period)) job.SalaryPeriod = salResult.Period;
+                job.SalarySource = bestSalarySource;
+                changed = true;
+            }
+            else if (bestSalary == null && overwriteNonEmpty && !string.IsNullOrWhiteSpace(job.Salary) && job.SalarySource != "manual")
+            {
+                // Re-fetch found no salary in either source — clear stale salary
+                job.Salary = "";
+                job.SalaryMin = null;
+                job.SalaryMax = null;
+                job.SalaryCurrency = "";
+                job.SalaryPeriod = "";
+                job.SalarySource = "";
+                if (!string.IsNullOrWhiteSpace(oldSalary))
+                {
+                    _historyService.Value.RecordChange(job.Id, job.UserId, "Salary",
+                        oldSalary, "(cleared)", "Salary cleared — not found on re-fetch",
+                        job.Title, job.Company, job.Url);
+                }
                 changed = true;
             }
 
@@ -1070,12 +1245,29 @@ public class JobListingService
                     }
                 }
 
-                // Parse salary from description if not already set
-                if (job.SalaryMin == null && job.SalaryMax == null && !string.IsNullOrWhiteSpace(job.Salary))
+                // Extract salary from description if not already set
+                if (string.IsNullOrWhiteSpace(job.Salary))
                 {
-                    var (salMin, salMax) = SalaryParser.Parse(job.Salary);
-                    job.SalaryMin = salMin;
-                    job.SalaryMax = salMax;
+                    var extracted = SalaryParser.ExtractFromText(cleanedDescription);
+                    if (extracted != null)
+                    {
+                        job.Salary = extracted;
+                        var salResult = SalaryParser.ParseFull(extracted);
+                        job.SalaryMin = salResult.Min;
+                        job.SalaryMax = salResult.Max;
+                        if (!string.IsNullOrEmpty(salResult.Currency)) job.SalaryCurrency = salResult.Currency;
+                        if (!string.IsNullOrEmpty(salResult.Period)) job.SalaryPeriod = salResult.Period;
+                        if (string.IsNullOrEmpty(job.SalarySource)) job.SalarySource = "parsed";
+                        _logger.LogInformation("Extracted salary '{Salary}' from description for '{Title}'", extracted, job.Title);
+                    }
+                }
+                else if (job.SalaryMin == null && job.SalaryMax == null)
+                {
+                    var salResult = SalaryParser.ParseFull(job.Salary);
+                    job.SalaryMin = salResult.Min;
+                    job.SalaryMax = salResult.Max;
+                    if (!string.IsNullOrEmpty(salResult.Currency)) job.SalaryCurrency = salResult.Currency;
+                    if (!string.IsNullOrEmpty(salResult.Period)) job.SalaryPeriod = salResult.Period;
                 }
 
                 // Track description change for timeline
@@ -1489,10 +1681,12 @@ public class JobListingService
     {
         lock (_lock)
         {
-            // Parse salary into min/max
-            var (salaryMin, salaryMax) = SalaryParser.Parse(jobListing.Salary);
-            jobListing.SalaryMin = salaryMin;
-            jobListing.SalaryMax = salaryMax;
+            // Parse salary into min/max with currency and period
+            var salaryResult = SalaryParser.ParseFull(jobListing.Salary);
+            jobListing.SalaryMin = salaryResult.Min;
+            jobListing.SalaryMax = salaryResult.Max;
+            if (!string.IsNullOrEmpty(salaryResult.Currency)) jobListing.SalaryCurrency = salaryResult.Currency;
+            if (!string.IsNullOrEmpty(salaryResult.Period)) jobListing.SalaryPeriod = salaryResult.Period;
 
             var existingJob = _jobListings.FirstOrDefault(j => j.Id == jobListing.Id);
             if (existingJob != null)
@@ -1755,18 +1949,51 @@ public class JobListingService
                 query = query.Where(j => string.IsNullOrWhiteSpace(j.Salary));
             }
 
+            // Salary source filter
+            if (!string.IsNullOrEmpty(filter.SalarySourceFilter))
+            {
+                if (filter.SalarySourceFilter == "posted")
+                    query = query.Where(j => j.SalarySource == "posted");
+                else if (filter.SalarySourceFilter == "estimated")
+                    query = query.Where(j => j.SalarySource == "estimated");
+                else if (filter.SalarySourceFilter == "not-estimated")
+                    query = query.Where(j => !string.IsNullOrWhiteSpace(j.Salary) && j.SalarySource != "estimated");
+            }
+
             // Salary text search
             if (!string.IsNullOrWhiteSpace(filter.SalarySearch))
             query = query.Where(j => j.Salary.Contains(filter.SalarySearch, StringComparison.OrdinalIgnoreCase));
+
+            // Salary type filter (annual / day rate)
+            if (!string.IsNullOrEmpty(filter.SalaryType))
+            {
+                if (filter.SalaryType == "annual")
+                    query = query.Where(j => j.SalaryPeriod == "year" || string.IsNullOrEmpty(j.SalaryPeriod));
+                else if (filter.SalaryType == "day")
+                    query = query.Where(j => j.SalaryPeriod == "day");
+            }
 
             // Salary target range filter
             if (filter.SalaryTarget.HasValue)
             {
                 var target = filter.SalaryTarget.Value;
-                query = query.Where(j =>
-                    (j.SalaryMin.HasValue || j.SalaryMax.HasValue) &&
-                    (!j.SalaryMin.HasValue || j.SalaryMin.Value <= target) &&
-                    (!j.SalaryMax.HasValue || j.SalaryMax.Value >= target));
+
+                if (filter.SalaryType == "day")
+                {
+                    // For day rate filtering, divide annual values by 230 to get day rate
+                    query = query.Where(j =>
+                        (j.SalaryMin.HasValue || j.SalaryMax.HasValue) &&
+                        (!j.SalaryMin.HasValue || (j.SalaryMin.Value / 230m) <= target) &&
+                        (!j.SalaryMax.HasValue || (j.SalaryMax.Value / 230m) >= target));
+                }
+                else
+                {
+                    // Annual or all — compare against annualised values
+                    query = query.Where(j =>
+                        (j.SalaryMin.HasValue || j.SalaryMax.HasValue) &&
+                        (!j.SalaryMin.HasValue || j.SalaryMin.Value <= target) &&
+                        (!j.SalaryMax.HasValue || j.SalaryMax.Value >= target));
+                }
             }
 
             // Applied status filter
@@ -2387,6 +2614,8 @@ public class JobListingFilter
     public bool? HasSalary { get; set; }
     public string? SalarySearch { get; set; }
     public decimal? SalaryTarget { get; set; }
+    public string? SalaryType { get; set; } // "annual", "day", or null (all)
+    public string? SalarySourceFilter { get; set; } // "posted", "estimated", "not-estimated", or null (all)
     public bool? HasApplied { get; set; }
     public ApplicationStage? ApplicationStage { get; set; }
     public SuitabilityStatus? Suitability { get; set; }

@@ -25,6 +25,7 @@ public class EmailCheckJob
         var storage = scope.ServiceProvider.GetRequiredService<IStorageBackend>();
         var inboxService = scope.ServiceProvider.GetRequiredService<EmailInboxService>();
         var processingService = scope.ServiceProvider.GetRequiredService<EmailProcessingService>();
+        var availabilityService = scope.ServiceProvider.GetRequiredService<JobAvailabilityService>();
 
         var users = authService.GetAllUsers();
 
@@ -85,6 +86,14 @@ public class EmailCheckJob
                     });
                     job.LastUpdated = DateTime.Now;
 
+                    // If the email proves the user applied (stage moving to Pending or beyond),
+                    // ensure HasApplied is set even if the user didn't mark it manually.
+                    if (!job.HasApplied && newStage >= ApplicationStage.Pending)
+                    {
+                        job.HasApplied = true;
+                        job.DateApplied ??= DateTime.Now;
+                    }
+
                     storage.SaveJob(job);
 
                     // Record history
@@ -127,6 +136,7 @@ public class EmailCheckJob
                         Company = !string.IsNullOrWhiteSpace(extractedCompany) ? extractedCompany.Trim() : source,
                         Location = extractedLocation?.Trim() ?? "",
                         Salary = extractedSalary?.Trim() ?? "",
+                        SalarySource = !string.IsNullOrWhiteSpace(extractedSalary) ? "posted" : "",
                         Description = "",
                         DateAdded = DateTime.Now,
                         LastChecked = null, // Leave null so availability check fetches details immediately
@@ -148,6 +158,36 @@ public class EmailCheckJob
                     });
 
                     _logger.LogInformation("[EmailCheck] Added job from {Source} alert: {Url}", source, url);
+
+                    // Fetch full details (same as the "Fetch Details" button)
+                    try
+                    {
+                        var checkResult = await availabilityService.CheckJobAvailabilityAsync(newJob);
+
+                        if (checkResult.Result == JobAvailabilityResult.Unavailable)
+                        {
+                            jobService.SetSuitabilityStatus(newJob.Id, SuitabilityStatus.Unsuitable,
+                                HistoryChangeSource.System, checkResult.Reason ?? "Job no longer available");
+                            jobService.SetLastChecked(newJob.Id, user.Id);
+                            _logger.LogInformation("[EmailCheck] Job from alert marked unavailable: {Url}", url);
+                        }
+                        else if (checkResult.Result == JobAvailabilityResult.Available && checkResult.ParsedJob != null)
+                        {
+                            jobService.UpdateJobIfBetter(newJob.Id, checkResult.ParsedJob, overwriteNonEmpty: true);
+                            jobService.SetLastChecked(newJob.Id, user.Id);
+                            jobService.ApplyRulesToExistingJobs(newJob.Id);
+                            _logger.LogInformation("[EmailCheck] Fetched details for email-imported job: {Url}", url);
+                        }
+                        else
+                        {
+                            // Mark as checked even if details couldn't be fetched
+                            jobService.SetLastChecked(newJob.Id, user.Id);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "[EmailCheck] Failed to fetch details for email-imported job: {Url}", url);
+                    }
                 }
 
                 // Save processed emails

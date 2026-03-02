@@ -40,6 +40,7 @@ public class AppSettings
     public ScoringPreferences ScoringPreferences { get; set; } = new();
     public AIAssistantSettings AIAssistant { get; set; } = new();
     public bool DarkMode { get; set; }
+    public string LocalCurrency { get; set; } = "GBP"; // User's local currency — assumed when no currency detected
     public string BackupDirectory { get; set; } = "";
     public bool BackupOnStartup { get; set; }
     public int BackupsToKeep { get; set; } = 10;
@@ -91,6 +92,7 @@ public class SavedFilterPreset
     public string? Source { get; set; }
     public string? SkillSearch { get; set; }
     public string? ApplicationStage { get; set; }
+    public string? SalaryType { get; set; }
     public string? SortBy { get; set; }
 }
 

@@ -1181,7 +1181,10 @@ public class JobAvailabilityService
             salary = System.Net.WebUtility.HtmlDecode(salary).Trim();
             salary = System.Text.RegularExpressions.Regex.Replace(salary, @"\s+", " ");
             if (!string.IsNullOrWhiteSpace(salary))
+            {
                 job.Salary = salary;
+                job.SalarySource = "posted";
+            }
         }
 
         // Description: <div class="jobDescription">...</div> (greedy to end of section)

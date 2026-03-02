@@ -264,6 +264,9 @@
                             <option value="">All</option>
                             <option value="true">Has Salary</option>
                             <option value="false">No Salary Listed</option>
+                            <option value="posted">Posted Only</option>
+                            <option value="estimated">Estimated Only</option>
+                            <option value="not-estimated">Exclude Estimated</option>
                         </select>
                     </div>
                     <div class="col-md-2">
@@ -328,9 +331,17 @@
                         <input type="text" class="form-control" placeholder="e.g. 100K"
                                @bind="filter.SalarySearch" @bind:event="oninput" @onkeyup="ApplyFilter" />
                     </div>
+                    <div class="col-md-1">
+                        <label class="form-label">Salary Type</label>
+                        <select class="form-select" @bind="selectedSalaryType" @bind:after="ApplyFilter">
+                            <option value="">All</option>
+                            <option value="annual">Annual</option>
+                            <option value="day">Day Rate</option>
+                        </select>
+                    </div>
                     <div class="col-md-2">
-                        <label class="form-label">Min Salary</label>
-                        <input type="number" class="form-control" placeholder="e.g. 50000"
+                        <label class="form-label">@(selectedSalaryType == "day" ? "Min Day Rate" : "Min Salary")</label>
+                        <input type="number" class="form-control" placeholder="@(selectedSalaryType == "day" ? "e.g. 500" : "e.g. 50000")"
                                @bind="selectedSalaryTarget" @bind:event="oninput" @bind:after="ApplyFilter" />
                     </div>
                     <div class="col-md-2">
@@ -655,28 +666,25 @@ else
                             </p>
                             @if (!string.IsNullOrEmpty(job.Salary))
                             {
-                                <p class="card-text mb-1"><strong class="text-success"><i class="bi bi-currency-dollar"></i> @job.Salary</strong></p>
+                                <p class="card-text mb-1">
+                                    <strong class="text-success"><i class="bi bi-cash-stack"></i> @job.Salary</strong>
+                                    @if (job.SalarySource == "estimated")
+                                    {
+                                        <span class="badge bg-warning text-dark ms-1" title="Salary estimated by the platform, not posted by employer">Est.</span>
+                                    }
+                                    else if (job.SalarySource == "parsed")
+                                    {
+                                        <span class="badge bg-secondary ms-1" title="Salary extracted from job description or title">Parsed</span>
+                                    }
+                                </p>
                                 @if (job.SalaryMin.HasValue || job.SalaryMax.HasValue)
                                 {
-                                    <p class="card-text mb-1"><small class="text-muted">
-                                        @if (job.SalaryMin.HasValue && job.SalaryMax.HasValue)
-                                        {
-                                            @($"~{job.SalaryMin.Value:N0} - {job.SalaryMax.Value:N0} /yr")
-                                        }
-                                        else if (job.SalaryMin.HasValue)
-                                        {
-                                            @($"From ~{job.SalaryMin.Value:N0} /yr")
-                                        }
-                                        else
-                                        {
-                                            @($"Up to ~{job.SalaryMax!.Value:N0} /yr")
-                                        }
-                                    </small></p>
+                                    @RenderSalaryAnnotation(job)
                                 }
                             }
                             else
                             {
-                                <p class="card-text mb-1 text-muted"><i class="bi bi-currency-dollar"></i> Not specified</p>
+                                <p class="card-text mb-1 text-muted"><i class="bi bi-cash-stack"></i> Not specified</p>
                             }
                             <p class="card-text description-preview">@TruncateDescription(job.Description, 150)</p>
                         </div>
@@ -897,7 +905,15 @@ else
                     @if (!string.IsNullOrEmpty(selectedJob.Salary))
                     {
                         <div class="alert alert-success py-2">
-                            <strong><i class="bi bi-currency-dollar"></i> Salary:</strong> @selectedJob.Salary
+                            <strong><i class="bi bi-cash-stack"></i> Rate:</strong> @selectedJob.Salary
+                            @if (selectedJob.SalarySource == "estimated")
+                            {
+                                <span class="badge bg-warning text-dark ms-1">Estimated</span>
+                            }
+                            else if (selectedJob.SalarySource == "parsed")
+                            {
+                                <span class="badge bg-secondary ms-1">Parsed</span>
+                            }
                         </div>
                     }
                     
@@ -2367,6 +2383,7 @@ else
     private string selectedApplicationStage = "";
     private string selectedSource = "";
     private string selectedSalaryTarget = "";
+    private string selectedSalaryType = "";
     private string selectedSkill = "";
     private List<string> availableSkills = new();
     private JobListing? selectedJob = null;
@@ -2444,6 +2461,7 @@ else
     private bool highlightPrioritizedSkillsInDescription = true;
     private int skillsToShowOnCard = 5;
     private bool scoringEnabled = true;
+    private string localCurrency = "GBP";
 
     // Pipeline settings
     private PipelineSettings pipelineSettings = new();
@@ -2474,6 +2492,7 @@ else
         coverLetterTemplates = initSettings.CoverLetterTemplates;
         aiSettings = initSettings.AIAssistant;
         skillPriorities = initSettings.ScoringPreferences.SkillPriorities;
+        localCurrency = initSettings.LocalCurrency;
         RefreshData();
         
         // Auto-refresh every 5 seconds to pick up changes from extensions
@@ -2547,10 +2566,12 @@ else
         filter.JobType = string.IsNullOrEmpty(selectedJobType) ? null : Enum.Parse<JobType>(selectedJobType);
         filter.IsRemote = string.IsNullOrEmpty(selectedRemote) ? null : bool.Parse(selectedRemote);
         filter.Interest = string.IsNullOrEmpty(selectedInterest) ? null : Enum.Parse<InterestStatus>(selectedInterest);
-        filter.HasSalary = string.IsNullOrEmpty(selectedHasSalary) ? null : bool.Parse(selectedHasSalary);
+        filter.HasSalary = selectedHasSalary == "true" ? true : selectedHasSalary == "false" ? false : null;
+        filter.SalarySourceFilter = selectedHasSalary == "posted" || selectedHasSalary == "estimated" || selectedHasSalary == "not-estimated" ? selectedHasSalary : null;
         filter.ApplicationStage = string.IsNullOrEmpty(selectedApplicationStage) ? null : Enum.Parse<ApplicationStage>(selectedApplicationStage);
         filter.Source = string.IsNullOrEmpty(selectedSource) ? null : selectedSource;
         filter.SalaryTarget = decimal.TryParse(selectedSalaryTarget, out var salTarget) && salTarget > 0 ? salTarget : null;
+        filter.SalaryType = string.IsNullOrEmpty(selectedSalaryType) ? null : selectedSalaryType;
         filter.SkillSearch = string.IsNullOrEmpty(selectedSkill) ? null : selectedSkill;
         filter.PrioritizeJobId = lastViewedJobId;
         
@@ -2596,6 +2617,7 @@ else
         selectedApplicationStage = "";
         selectedSource = "";
         selectedSalaryTarget = "";
+        selectedSalaryType = "";
         selectedSkill = "";
         ApplyFilter();
     }
@@ -3038,6 +3060,9 @@ else
                 // Update job details (description, salary, location, contacts, etc.)
                 if (result.ParsedJob != null)
                     JobService.UpdateJobIfBetter(job.Id, result.ParsedJob, overwriteNonEmpty: true);
+                else
+                    // No parsed job (generic site) — still clear stale salary if description has none
+                    JobService.ClearStaleSalary(job.Id);
 
                 // LinkedIn often returns login/2FA interstitials to server-side fetches.
                 // If we still don't have core fields, open in browser so the extension can capture details.
@@ -3094,6 +3119,9 @@ else
         }
         finally
         {
+            // Always try to extract salary from existing job data if still missing
+            JobService.EnsureSalaryPopulated(job.Id);
+
             fetchingDetailsJobId = null;
             await InvokeAsync(StateHasChanged);
         }
@@ -3228,6 +3256,69 @@ else
         _ => "bi bi-question-circle"
     };
 
+    private RenderFragment RenderSalaryAnnotation(JobListing job) => __builder =>
+    {
+        var effectiveCurrency = !string.IsNullOrEmpty(job.SalaryCurrency) ? job.SalaryCurrency : localCurrency;
+        var localSym = JobTracker.Services.SalaryParser.GetCurrencySymbol(localCurrency);
+        var isDayRate = job.SalaryPeriod == "day";
+        var isNonAnnual = isDayRate || job.SalaryPeriod == "hour" || job.SalaryPeriod == "month";
+
+        // Convert annualised values to local currency for display
+        var annMin = job.SalaryMin.HasValue ? JobTracker.Services.SalaryParser.Convert(job.SalaryMin.Value, effectiveCurrency, localCurrency) : (decimal?)null;
+        var annMax = job.SalaryMax.HasValue ? JobTracker.Services.SalaryParser.Convert(job.SalaryMax.Value, effectiveCurrency, localCurrency) : (decimal?)null;
+
+        // Suppress annualised display when it's redundant:
+        // same currency as local, annual period — the raw Salary string already shows the same info
+        var isAnnualSameCurrency = !isNonAnnual && string.Equals(effectiveCurrency, localCurrency, StringComparison.OrdinalIgnoreCase);
+        if (isAnnualSameCurrency) return;
+
+        __builder.OpenElement(0, "p");
+        __builder.AddAttribute(1, "class", "card-text mb-1");
+        __builder.OpenElement(2, "small");
+        __builder.AddAttribute(3, "class", "text-muted");
+
+        if (isDayRate && annMin.HasValue)
+        {
+            var dayMin = Math.Round(annMin.Value / 230m, 0);
+            var dayMax = annMax.HasValue ? Math.Round(annMax.Value / 230m, 0) : (decimal?)null;
+            if (dayMax.HasValue && dayMax != dayMin)
+                __builder.AddContent(4, $"{localSym}{dayMin:N0} - {localSym}{dayMax.Value:N0} /day ");
+            else
+                __builder.AddContent(4, $"{localSym}{dayMin:N0} /day ");
+
+            __builder.OpenElement(5, "span");
+            __builder.AddAttribute(6, "class", "text-muted");
+            __builder.AddAttribute(7, "style", "font-size: 0.75em;");
+            __builder.AddContent(8, $"~{localSym}{annMin.Value:N0}/yr");
+            __builder.CloseElement();
+        }
+        else if (annMin.HasValue && annMax.HasValue)
+        {
+            __builder.AddContent(4, $"~{localSym}{annMin.Value:N0} - {localSym}{annMax.Value:N0} /yr");
+        }
+        else if (annMin.HasValue)
+        {
+            __builder.AddContent(4, $"From ~{localSym}{annMin.Value:N0} /yr");
+        }
+        else if (annMax.HasValue)
+        {
+            __builder.AddContent(4, $"Up to ~{localSym}{annMax.Value:N0} /yr");
+        }
+
+        if (!string.Equals(effectiveCurrency, localCurrency, StringComparison.OrdinalIgnoreCase))
+        {
+            __builder.AddContent(9, " ");
+            __builder.OpenElement(10, "span");
+            __builder.AddAttribute(11, "class", "badge bg-secondary");
+            __builder.AddAttribute(12, "style", "font-size: 0.65em;");
+            __builder.AddContent(13, effectiveCurrency);
+            __builder.CloseElement();
+        }
+
+        __builder.CloseElement(); // small
+        __builder.CloseElement(); // p
+    };
+
     private string GetSuitabilityBadgeClass(SuitabilityStatus status) => status switch
     {
         SuitabilityStatus.Possible => "badge-suitability-possible",
@@ -3296,6 +3387,7 @@ else
         skillsToShowOnCard = settings.SkillsToShowOnCard > 0 ? settings.SkillsToShowOnCard : 5;
         scoringEnabled = settings.ScoringPreferences.EnableScoring;
         skillPriorities = settings.ScoringPreferences.SkillPriorities;
+        localCurrency = settings.LocalCurrency;
         InvokeAsync(StateHasChanged);
     }
 
@@ -3352,6 +3444,7 @@ else
             HasSalary = selectedHasSalary,
             SalarySearch = filter.SalarySearch,
             SalaryTarget = selectedSalaryTarget,
+            SalaryType = selectedSalaryType,
             Source = selectedSource,
             SkillSearch = selectedSkill,
             ApplicationStage = selectedApplicationStage,
@@ -3386,6 +3479,7 @@ else
         selectedScoreBand = preset.ScoreBand ?? "";
         selectedHasSalary = preset.HasSalary ?? "";
         selectedSalaryTarget = preset.SalaryTarget ?? "";
+        selectedSalaryType = preset.SalaryType ?? "";
         selectedSource = preset.Source ?? "";
         selectedSkill = preset.SkillSearch ?? "";
         selectedApplicationStage = preset.ApplicationStage ?? "";

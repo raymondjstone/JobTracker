@@ -41,6 +41,9 @@ public class JobListing
     public DateTime? LastChecked { get; set; }
     public decimal? SalaryMin { get; set; }
     public decimal? SalaryMax { get; set; }
+    public string SalaryCurrency { get; set; } = "";   // "GBP", "USD", "EUR", or ""
+    public string SalaryPeriod { get; set; } = "";      // "year", "day", "hour", "month", or ""
+    public string SalarySource { get; set; } = "";      // "posted", "estimated", "parsed", "manual", or ""
     public DateTime? FollowUpDate { get; set; }
     public string Notes { get; set; } = string.Empty;
     public string CoverLetter { get; set; } = string.Empty;

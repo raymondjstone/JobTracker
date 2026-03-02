@@ -210,13 +210,16 @@ public class EmailReplyMatcher
         if (domainName.Length < 3)
             return null;
 
-        // Find applied jobs where the company name or URL matches the sender domain
-        var appliedJobs = jobs
-            .Where(j => j.HasApplied && !j.IsArchived)
-            .OrderByDescending(j => j.DateApplied)
+        // Find jobs where the company name or URL matches the sender domain.
+        // Prefer applied jobs first, then fall back to non-applied (the email itself
+        // may be proof the user applied outside the tracker).
+        var candidateJobs = jobs
+            .Where(j => !j.IsArchived)
+            .OrderByDescending(j => j.HasApplied)
+            .ThenByDescending(j => j.DateApplied ?? j.DateAdded)
             .ToList();
 
-        foreach (var job in appliedJobs)
+        foreach (var job in candidateJobs)
         {
             // Check if company URL contains the base domain
             if (!string.IsNullOrWhiteSpace(job.Url) &&
@@ -268,8 +271,11 @@ public class EmailReplyMatcher
         {
             if (pattern.IsMatch(text))
             {
-                // "Pending" only applies if currently at Applied
-                if (stage == ApplicationStage.Pending && currentStage != ApplicationStage.Applied)
+                // "Pending" only applies if currently at None or Applied
+                // (an "application received" email is proof the user applied)
+                if (stage == ApplicationStage.Pending &&
+                    currentStage != ApplicationStage.Applied &&
+                    currentStage != ApplicationStage.None)
                     continue;
 
                 return stage;

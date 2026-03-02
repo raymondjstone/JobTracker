@@ -292,7 +292,25 @@ public class JsonStorageBackend : IStorageBackend
         // Replace is atomic on Windows; fall back to Move if needed.
         if (OperatingSystem.IsWindows() && File.Exists(path))
         {
-            File.Replace(tempPath, path, destinationBackupFileName: null);
+            try
+            {
+                File.Replace(tempPath, path, destinationBackupFileName: null);
+            }
+            catch (IOException)
+            {
+                // File.Replace can fail if another process holds a handle.
+                // Retry after a brief pause, then fall back to delete+move.
+                Thread.Sleep(50);
+                try
+                {
+                    File.Replace(tempPath, path, destinationBackupFileName: null);
+                }
+                catch (IOException)
+                {
+                    File.Delete(path);
+                    File.Move(tempPath, path);
+                }
+            }
         }
         else
         {

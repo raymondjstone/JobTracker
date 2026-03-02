@@ -127,6 +127,7 @@ public partial class LinkedInJobExtractor
             if (salaryMatch.Success)
             {
                 job.Salary = salaryMatch.Value;
+                job.SalarySource = "posted";
             }
 
             // Look for date posted
@@ -231,10 +232,9 @@ public partial class LinkedInJobExtractor
                         job.DatePosted = parsedDate;
                 }
 
-                if (root.TryGetProperty("baseSalary", out var salary))
-                {
-                    job.Salary = ExtractSalaryFromJson(salary);
-                }
+                // Salary: do NOT extract from HTML/JSON-LD (unreliable — often LinkedIn estimates).
+                // Salary is only set from the job's own Salary field or extracted from Description.
+                // The Salary field may already be set by the clipboard parser above.
 
                 job.Skills = ExtractSkills(job.Description ?? "");
                 job.IsRemote = job.Location.Contains("Remote", StringComparison.OrdinalIgnoreCase) ||
@@ -280,6 +280,9 @@ public partial class LinkedInJobExtractor
         var fallbackPosterCompany = ExtractPosterCompany(html);
         if (!string.IsNullOrWhiteSpace(fallbackPosterCompany))
             job.Company = fallbackPosterCompany;
+
+        // Salary: do NOT extract from HTML (unreliable — often LinkedIn estimates).
+        // Salary only comes from the job's own Salary field or Description.
 
         job.Skills = ExtractSkills(job.Description);
 
@@ -735,6 +738,67 @@ public partial class LinkedInJobExtractor
         {
             return "";
         }
+    }
+
+    /// <summary>
+    /// Extracts salary from LinkedIn HTML elements (salary badge, compensation section, etc.)
+    /// when JSON-LD baseSalary is not available.
+    /// </summary>
+    private static string? ExtractSalaryFromHtml(string html)
+    {
+        // LinkedIn job detail pages use various elements for salary display:
+        // - <span class="...salary-info..."> on search cards
+        // - <div class="...salary..."> or compensation section on detail pages
+        // - Salary info shown near the job criteria (seniority level, employment type, etc.)
+        var patterns = new[]
+        {
+            // Salary info span (search cards and some detail pages)
+            @"<span[^>]*class=""[^""]*salary[^""]*""[^>]*>(.*?)</span>",
+            // Compensation/salary section div
+            @"<div[^>]*class=""[^""]*salary[^""]*""[^>]*>(.*?)</div>",
+            // Job insight salary (newer LinkedIn layout)
+            @"<li[^>]*class=""[^""]*job-criteria[^""]*""[^>]*>.*?salary.*?<span[^>]*>(.*?)</span>",
+            // Salary mentioned in a standalone span near job details
+            @"<span[^>]*>[^<]*(?:£|€|\$)\s*[\d,]+(?:\s*[-–]\s*(?:£|€|\$)?\s*[\d,]+)?[^<]*(?:per\s+(?:year|annum|month|hour|day))?[^<]*</span>",
+        };
+
+        foreach (var pattern in patterns)
+        {
+            var match = Regex.Match(html, pattern, RegexOptions.IgnoreCase | RegexOptions.Singleline);
+            if (match.Success)
+            {
+                var raw = match.Groups.Count > 1 ? match.Groups[1].Value : match.Value;
+                // Strip inner HTML tags and decode
+                raw = Regex.Replace(raw, @"<[^>]+>", " ");
+                raw = WebUtility.HtmlDecode(raw).Trim();
+                raw = Regex.Replace(raw, @"\s+", " ");
+                if (!string.IsNullOrWhiteSpace(raw) && raw.Length >= 4 &&
+                    Regex.IsMatch(raw, @"[£$€]\s*\d|^\d[\d,]*\s*[-–]"))
+                {
+                    return raw;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Detects whether LinkedIn's salary display is an estimate rather than employer-posted.
+    /// LinkedIn shows "Estimated" near the salary when it's their own prediction.
+    /// Also checks for LinkedIn-specific estimation markers in JSON-LD and HTML.
+    /// </summary>
+    private static bool IsEstimatedSalary(string html)
+    {
+        // LinkedIn uses various patterns to indicate estimated salary:
+        // "Estimated salary", "Estimated:", "Salary estimate", "Estimated by LinkedIn", etc.
+        // Also check for "estimatedSalary" in JSON-LD (LinkedIn's structured data field)
+        return Regex.IsMatch(html,
+            @"(?:estimated\s+(?:salary|compensation|pay|range))" +
+            @"|(?:salary\s+estimate)" +
+            @"|""estimatedSalary""" +
+            @"|(?:Estimated\s+by\s+LinkedIn)",
+            RegexOptions.IgnoreCase);
     }
 
     private static string StripHtml(string html)
