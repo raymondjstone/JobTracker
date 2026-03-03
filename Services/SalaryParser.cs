@@ -70,16 +70,32 @@ public static class SalaryParser
 
         foreach (var pattern in patterns)
         {
-            var match = Regex.Match(text, pattern, RegexOptions.IgnoreCase);
-            if (match.Success && match.Length >= 4)
+            foreach (Match match in Regex.Matches(text, pattern, RegexOptions.IgnoreCase))
             {
                 var result = match.Value.Trim();
                 // Strip leading label prefix if present — we just want the value
                 var prefixMatch = Regex.Match(result, @"^(?:salary|pay|compensation|remuneration|package)\s*[:;]?\s*", RegexOptions.IgnoreCase);
                 if (prefixMatch.Success)
                     result = result[prefixMatch.Length..];
-                if (!string.IsNullOrWhiteSpace(result))
-                    return result;
+
+                if (string.IsNullOrWhiteSpace(result) || result.Length < 4)
+                    continue;
+
+                // Reject if followed by million/billion indicators (e.g. "£300m revenue")
+                int matchEnd = match.Index + match.Length;
+                if (matchEnd < text.Length)
+                {
+                    var afterMatch = text[matchEnd..];
+                    if (Regex.IsMatch(afterMatch, @"^[\s/]*(?:m(?:illion|n)?|b(?:illion|n)?)\b", RegexOptions.IgnoreCase))
+                        continue;
+                }
+
+                // Validate plausibility — parse and check annual GBP >= 15k (hourly exempt)
+                var parsed = ParseFull(result);
+                if (parsed.Min == null && parsed.Max == null)
+                    continue;
+
+                return result;
             }
         }
 
@@ -115,6 +131,16 @@ public static class SalaryParser
 
         if (numbers.Count == 0)
             return new SalaryParseResult(null, null, currency, period);
+
+        // 15k GBP annual threshold — reject implausibly low values (hourly rates exempt)
+        if (period != "hour" && numbers.Count > 0)
+        {
+            decimal toGBP = !string.IsNullOrEmpty(currency) ? GetConversionRate(currency, "GBP") : 1m;
+            decimal highestRaw = numbers.Max();
+            decimal gbpAnnual = highestRaw * multiplier * toGBP;
+            if (gbpAnnual < 15000m)
+                return new SalaryParseResult(null, null, "", "");
+        }
 
         // Calculate conversion rate to preferred currency
         decimal conversionRate = GetConversionRate(currency, preferredCurrency);
@@ -212,10 +238,11 @@ public static class SalaryParser
 
     private static (decimal Multiplier, string Period) GetPeriodAndMultiplier(string text)
     {
+        // 40-hour working week, 8 hours per day, 52 weeks per year
         if (Regex.IsMatch(text, @"(?i)\b(a\s+day|daily|per\s+day|\/day|p/?d)\b"))
-            return (230m, "day");
+            return (260m, "day");  // 5 days × 52 weeks
         if (Regex.IsMatch(text, @"(?i)\b(an?\s+hour|hourly|per\s+hour|\/hour|\/hr|p/h)\b"))
-            return (1840m, "hour");
+            return (2080m, "hour"); // 40 hours × 52 weeks
         if (Regex.IsMatch(text, @"(?i)\b(a\s+month|monthly|per\s+month|\/month|pcm)\b"))
             return (12m, "month");
         // yearly / annual / per annum / default

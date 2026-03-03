@@ -53,19 +53,19 @@ public class SalaryParserTests
     }
 
     [Fact]
-    public void Parse_DailyRate_MultipliesBy230()
+    public void Parse_DailyRate_MultipliesBy260()
     {
         var (min, max) = SalaryParser.Parse("£500 a day");
-        Assert.Equal(115000m, min);
-        Assert.Equal(115000m, max);
+        Assert.Equal(130000m, min);
+        Assert.Equal(130000m, max);
     }
 
     [Fact]
-    public void Parse_HourlyRate_MultipliesBy1840()
+    public void Parse_HourlyRate_MultipliesBy2080()
     {
         var (min, max) = SalaryParser.Parse("$50 an hour");
-        Assert.Equal(92000m, min);
-        Assert.Equal(92000m, max);
+        Assert.Equal(104000m, min);
+        Assert.Equal(104000m, max);
     }
 
     [Fact]
@@ -146,7 +146,7 @@ public class SalaryParserTests
         var result = SalaryParser.ParseFull("£500 per day");
         Assert.Equal("day", result.Period);
         Assert.Equal("GBP", result.Currency);
-        Assert.Equal(115000m, result.Min);
+        Assert.Equal(130000m, result.Min);
     }
 
     [Fact]
@@ -197,6 +197,17 @@ public class SalaryParserTests
         Assert.Equal(expected, result);
     }
 
+    [Theory]
+    [InlineData("3300+ strong, €350/£300m revenue business")]
+    [InlineData("generating more than $10 billion in lifetime revenue")]
+    [InlineData("outbid energy generators and earn potentially >£50 in an afternoon ")]
+    public void ExtractFromText_TextCurrency_Null(string input)
+    {
+        var result = SalaryParser.ExtractFromText(input);
+        Assert.Null(result);
+    }
+
+
     [Fact]
     public void ExtractFromText_SalaryInTitle_Matches()
     {
@@ -214,6 +225,27 @@ public class SalaryParserTests
         Assert.NotNull(result);
         Assert.Contains("60,000", result);
         Assert.Contains("70,000", result);
+    }
+
+    [Fact]
+    public void ExtractFromText_SkipsFalsePositive_FindsRealSalaryLater()
+    {
+        // €350 revenue figure should be skipped, real salary found later in text
+        var desc = "We are a €350m revenue business. Salary: £65,000 - £75,000 per annum";
+        var result = SalaryParser.ExtractFromText(desc);
+        Assert.NotNull(result);
+        Assert.Contains("65,000", result);
+        Assert.Contains("75,000", result);
+    }
+
+    [Fact]
+    public void ExtractFromText_SkipsMultipleFalsePositives_FindsRealSalary()
+    {
+        // Multiple sub-threshold values before the real salary
+        var desc = "3300+ strong, €350/£300m revenue business. The role pays £55,000 - £65,000";
+        var result = SalaryParser.ExtractFromText(desc);
+        Assert.NotNull(result);
+        Assert.Contains("55,000", result);
     }
 
     [Fact]
@@ -238,6 +270,7 @@ public class SalaryParserTests
         var result = SalaryParser.ExtractFromText("Comp: Competitive salary + options (depending on role/scope)");
         Assert.Null(result);
     }
+
 
     [Fact]
     public void Parse_CompetitiveSalary_ReturnsNulls()
