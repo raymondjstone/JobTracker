@@ -1214,6 +1214,15 @@ public class JobListingService
                 changed = true;
             }
 
+            // Update JobType if the parsed job has a specific type and the stored job is still the default.
+            // Also update if overwriteNonEmpty is set and the parsed type differs.
+            if (parsed.JobType != JobType.FullTime &&
+                (job.JobType == JobType.FullTime || (overwriteNonEmpty && job.JobType != parsed.JobType)))
+            {
+                job.JobType = parsed.JobType;
+                changed = true;
+            }
+
             // Merge any contacts extracted from the job page
             if (parsed.Contacts?.Count > 0)
             {
@@ -1303,7 +1312,7 @@ public class JobListingService
     /// Updates the description of an existing job by URL
     /// Also re-evaluates rules since description content may trigger new matches
     /// </summary>
-    public bool UpdateJobDescription(string url, string description, Guid? forUserId = null, string? company = null, List<ContactEntry>? contacts = null)
+    public bool UpdateJobDescription(string url, string description, Guid? forUserId = null, string? company = null, List<ContactEntry>? contacts = null, JobType? jobType = null)
     {
         if (string.IsNullOrWhiteSpace(url)) return false;
 
@@ -1416,6 +1425,23 @@ public class JobListingService
                         job.IsAgency = true;
                 }
 
+                // Update job type if extension detected a specific (non-default) type
+                if (jobType.HasValue && jobType.Value != JobType.FullTime && job.JobType == JobType.FullTime)
+                {
+                    job.JobType = jobType.Value;
+                    _logger.LogInformation("Updated job type to {JobType} for '{Title}'", job.JobType, job.Title);
+                }
+                // Also try detecting from the description text if still default
+                if (job.JobType == JobType.FullTime && !string.IsNullOrWhiteSpace(cleanedDescription))
+                {
+                    var detected = LinkedInJobExtractor.DetectJobType(cleanedDescription);
+                    if (detected != JobType.FullTime)
+                    {
+                        job.JobType = detected;
+                        _logger.LogInformation("Detected job type {JobType} from description for '{Title}'", job.JobType, job.Title);
+                    }
+                }
+
                 // Re-evaluate rules now that we have updated description content
                 // Allow rules to override previously rule-set values since data has changed
                 RuleEvaluationResult? ruleResult = null;
@@ -1505,6 +1531,16 @@ public class JobListingService
                         _historyService.Value.RecordRemoteStatusChanged(job, oldIsRemote, job.IsRemote, HistoryChangeSource.Rule, ruleResult.IsRemoteRuleName);
                 }
 
+                return true;
+            }
+
+            // Even if description didn't change, update job type if still default
+            if (jobType.HasValue && jobType.Value != JobType.FullTime && job.JobType == JobType.FullTime)
+            {
+                job.JobType = jobType.Value;
+                _storage.SaveJob(job);
+                NotifyStateChanged();
+                _logger.LogInformation("Updated job type to {JobType} for '{Title}' (no desc change)", job.JobType, job.Title);
                 return true;
             }
 

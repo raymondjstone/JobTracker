@@ -226,6 +226,22 @@ public partial class LinkedInJobExtractor
                 if (root.TryGetProperty("employmentType", out var empType))
                     job.JobType = ParseEmploymentType(empType.GetString() ?? "");
 
+                // JSON-LD employmentType is often wrong or missing on LinkedIn.
+                // The visible "Employment type" criteria section is more reliable, but is often
+                // JavaScript-rendered and absent from server-side fetches. Check HTML first,
+                // then fall back to description text which IS available from JSON-LD.
+                var htmlDetected = DetectJobType(html);
+                if (htmlDetected != JobType.FullTime)
+                {
+                    job.JobType = htmlDetected;
+                }
+                else if (job.JobType == JobType.FullTime && !string.IsNullOrWhiteSpace(job.Description))
+                {
+                    var descDetected = DetectJobType(job.Description);
+                    if (descDetected != JobType.FullTime)
+                        job.JobType = descDetected;
+                }
+
                 if (root.TryGetProperty("datePosted", out var datePosted))
                 {
                     if (DateTime.TryParse(datePosted.GetString(), out var parsedDate))
@@ -283,6 +299,17 @@ public partial class LinkedInJobExtractor
 
         // Salary: do NOT extract from HTML (unreliable — often LinkedIn estimates).
         // Salary only comes from the job's own Salary field or Description.
+
+        // Detect job type — try HTML first, then description
+        var fallbackHtmlType = DetectJobType(html);
+        if (fallbackHtmlType != JobType.FullTime)
+            job.JobType = fallbackHtmlType;
+        else if (!string.IsNullOrWhiteSpace(job.Description))
+        {
+            var fallbackDescType = DetectJobType(job.Description);
+            if (fallbackDescType != JobType.FullTime)
+                job.JobType = fallbackDescType;
+        }
 
         job.Skills = ExtractSkills(job.Description);
 
@@ -661,24 +688,76 @@ public partial class LinkedInJobExtractor
         return cleaned.Trim();
     }
 
-    private static JobType DetectJobType(string text)
+    /// <summary>
+    /// Detects job type from text or HTML. Three-tier approach:
+    ///   1. Structured labels ("Employment type: Contract") — works on any text size
+    ///   2. Unambiguous contract indicators (IR35, day rate, "N month contract") — works on any text size
+    ///   3. Generic keyword matching — only on shorter text to avoid false positives on full HTML
+    /// </summary>
+    public static JobType DetectJobType(string text)
     {
-        var lowerText = text.ToLowerInvariant();
+        // Strip HTML tags but preserve whitespace structure for label matching
+        var stripped = Regex.Replace(text, @"<[^>]+>", " ");
+        var lowerText = stripped.ToLowerInvariant();
 
-        if (lowerText.Contains("full-time") || lowerText.Contains("full time"))
-            return JobType.FullTime;
-        if (lowerText.Contains("part-time") || lowerText.Contains("part time"))
-            return JobType.PartTime;
-        if (lowerText.Contains("contract"))
-            return JobType.Contract;
-        if (lowerText.Contains("temporary") || lowerText.Contains("temp "))
-            return JobType.Temporary;
-        if (lowerText.Contains("internship") || lowerText.Contains("intern "))
-            return JobType.Internship;
-        if (lowerText.Contains("volunteer"))
-            return JobType.Volunteer;
+        // --- Tier 1: Structured employment type labels ---
+        // These are the most reliable — an explicit label states the type.
+        var labelPatterns = new[]
+        {
+            @"employment\s*type\s*[:.\-]?\s{0,50}(contract(?:or)?|part[\s-]?time|full[\s-]?time|temporary|internship|volunteer|freelance)",
+            @"job\s*type\s*[:.\-]?\s{0,50}(contract(?:or)?|part[\s-]?time|full[\s-]?time|temporary|internship|volunteer|freelance)",
+            @"contract\s*type\s*[:.\-]?\s{0,50}(contract(?:or)?|part[\s-]?time|full[\s-]?time|temporary|internship|volunteer|freelance)"
+        };
+
+        foreach (var pattern in labelPatterns)
+        {
+            var match = Regex.Match(lowerText, pattern);
+            if (match.Success)
+                return ClassifyTypeText(match.Groups[1].Value.Trim());
+        }
+
+        // --- Tier 2: Unambiguous indicators that cannot false-positive ---
+        // These are safe to check even on full HTML pages.
+        if (Regex.IsMatch(lowerText, @"\b(inside|outside)\s+ir35\b")) return JobType.Contract;
+        if (Regex.IsMatch(lowerText, @"\bir35\b")) return JobType.Contract;
+        if (Regex.IsMatch(lowerText, @"\b\d+\s*(month|week|year)s?\s+contract\b")) return JobType.Contract;
+        if (Regex.IsMatch(lowerText, @"\bfixed[\s-]?term\s+contract\b")) return JobType.Contract;
+        if (Regex.IsMatch(lowerText, @"\b(day|daily)\s+rate\b")) return JobType.Contract;
+        if (Regex.IsMatch(lowerText, @"\bftc\b")) return JobType.Contract;
+        if (Regex.IsMatch(lowerText, @"\bumbrella\s+(company|contract)\b")) return JobType.Contract;
+        if (Regex.IsMatch(lowerText, @"\blimited\s+company\b")) return JobType.Contract;
+        if (Regex.IsMatch(lowerText, @"\bcontract(?:or)?\s+role\b")) return JobType.Contract;
+        if (Regex.IsMatch(lowerText, @"\bcontract\s+position\b")) return JobType.Contract;
+        if (Regex.IsMatch(lowerText, @"\bfreelance\b")) return JobType.Contract;
+
+        // --- Tier 3: Generic keyword matching — only for shorter text ---
+        if (lowerText.Length < 15000)
+        {
+            if (Regex.IsMatch(lowerText, @"\bcontract(?:or)?\b(?!\s+(?:us|you|the|with|for|management|law|manager|administration|negotiation|of|between|under|to\b))"))
+                return JobType.Contract;
+            if (Regex.IsMatch(lowerText, @"\bpart[\s-]?time\b"))
+                return JobType.PartTime;
+            if (Regex.IsMatch(lowerText, @"\btemporary\b") || Regex.IsMatch(lowerText, @"\btemp\b"))
+                return JobType.Temporary;
+            if (Regex.IsMatch(lowerText, @"\binternship\b") || Regex.IsMatch(lowerText, @"\bintern\b"))
+                return JobType.Internship;
+            if (Regex.IsMatch(lowerText, @"\bvolunteer\b"))
+                return JobType.Volunteer;
+            if (Regex.IsMatch(lowerText, @"\bfull[\s-]?time\b"))
+                return JobType.FullTime;
+        }
 
         return JobType.FullTime; // Default
+    }
+
+    private static JobType ClassifyTypeText(string typeText)
+    {
+        if (typeText.Contains("contract") || typeText.Contains("freelance")) return JobType.Contract;
+        if (typeText.Contains("part")) return JobType.PartTime;
+        if (typeText.Contains("temporary")) return JobType.Temporary;
+        if (typeText.Contains("internship")) return JobType.Internship;
+        if (typeText.Contains("volunteer")) return JobType.Volunteer;
+        return JobType.FullTime;
     }
 
     private static JobType ParseEmploymentType(string type)

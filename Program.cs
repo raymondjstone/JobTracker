@@ -541,7 +541,9 @@ app.MapPut("/api/jobs/description", async (HttpContext context, JobListingServic
             return Results.BadRequest("Invalid request - URL required");
         }
 
-        var updated = jobService.UpdateJobDescription(body.Url, body.Description ?? "", userId.Value, body.Company, body.Contacts);
+        JobType? parsedJobType = body.JobType.HasValue && Enum.IsDefined(typeof(JobType), body.JobType.Value)
+            ? (JobType)body.JobType.Value : null;
+        var updated = jobService.UpdateJobDescription(body.Url, body.Description ?? "", userId.Value, body.Company, body.Contacts, parsedJobType);
         return updated ? Results.Ok(new { updated = true }) : Results.Ok(new { updated = false, message = "Job not found or description unchanged" });
     }
     catch (Exception ex)
@@ -970,7 +972,7 @@ record MarkUnavailableRequest(string? Reason);
 record MarkUnavailableByUrlRequest(string Url, string? Reason);
 
 // Request model for description update (accepts both ProfileUrl and LinkedInUrl for backward compat)
-record DescriptionUpdateRequest(string Url, string? Description, string? Company = null, List<ContactEntry>? Contacts = null);
+record DescriptionUpdateRequest(string Url, string? Description, string? Company = null, List<ContactEntry>? Contacts = null, int? JobType = null);
 
 // Hangfire dashboard authorization filter — requires authenticated user
 class HangfireAuthorizationFilter : Hangfire.Dashboard.IDashboardAuthorizationFilter

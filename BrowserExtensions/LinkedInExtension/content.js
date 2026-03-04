@@ -145,6 +145,60 @@
     return text.trim();
   }
 
+  // Detect job type from the LinkedIn page - checks job criteria section, JSON-LD, and page text
+  // Returns numeric JobType enum: 0=FullTime, 1=PartTime, 2=Contract, 3=Temporary, 4=Internship, 5=Volunteer
+  function detectJobType() {
+    try {
+      // 1. Check LinkedIn's job criteria / description section for employment type labels
+      var criteriaEls = document.querySelectorAll(
+        '.description__job-criteria-text, .job-criteria-text, ' +
+        '[class*="job-criteria"] li, [class*="description__job-criteria"] li, ' +
+        '.jobs-description-content .jobs-box__group span'
+      );
+      for (var i = 0; i < criteriaEls.length; i++) {
+        var t = criteriaEls[i].textContent.trim().toLowerCase();
+        if (t === 'contract' || t === 'contractor') return 2;
+        if (t === 'part-time' || t === 'part time') return 1;
+        if (t === 'temporary' || t === 'temp') return 3;
+        if (t === 'internship' || t === 'intern') return 4;
+        if (t === 'volunteer') return 5;
+        if (t === 'full-time' || t === 'full time') return 0;
+      }
+
+      // 2. Check JSON-LD structured data
+      var scripts = document.querySelectorAll('script[type="application/ld+json"]');
+      for (var s = 0; s < scripts.length; s++) {
+        try {
+          var data = JSON.parse(scripts[s].textContent);
+          if (data.employmentType) {
+            var et = data.employmentType.toUpperCase();
+            if (et === 'CONTRACTOR' || et === 'CONTRACT') return 2;
+            if (et === 'PART_TIME') return 1;
+            if (et === 'TEMPORARY') return 3;
+            if (et === 'INTERN' || et === 'INTERNSHIP') return 4;
+            if (et === 'VOLUNTEER') return 5;
+            if (et === 'FULL_TIME') return 0;
+          }
+        } catch (e) { /* ignore parse errors */ }
+      }
+
+      // 3. Check page text near "Employment type" heading
+      var allText = document.body ? document.body.innerText : '';
+      var empMatch = allText.match(/employment\s*type\s*[\n:.\-]?\s*(contract(?:or)?|part[\s-]?time|full[\s-]?time|temporary|internship|volunteer)/i);
+      if (empMatch) {
+        var val = empMatch[1].toLowerCase();
+        if (val.indexOf('contract') !== -1) return 2;
+        if (val.indexOf('part') !== -1) return 1;
+        if (val.indexOf('temporary') !== -1) return 3;
+        if (val.indexOf('internship') !== -1) return 4;
+        if (val.indexOf('volunteer') !== -1) return 5;
+      }
+    } catch (e) {
+      console.log('[LJE] Error detecting job type:', e);
+    }
+    return 0; // Default: FullTime
+  }
+
   function getPosterCompany() {
     // LinkedIn shows "Direct message the job poster from {Company}" on job detail pages
     try {
@@ -539,6 +593,10 @@
     var body = { Url: url, Description: description };
     if (company) body.Company = company;
 
+    // Detect and include job type from the current page
+    var jobType = detectJobType();
+    if (jobType !== 0) body.JobType = jobType; // Only send if not default FullTime
+
     // Try to extract recruiter info from the current detail page
     var recruiter = getRecruiterInfo();
     if (recruiter) {
@@ -808,7 +866,7 @@
             Company: detailCompany,
             Location: locEl ? cleanText(locEl.textContent) : '',
             Description: currentDesc || '',
-            JobType: 0,
+            JobType: detectJobType(),
             Salary: '',
             Url: currentUrl,
             DatePosted: new Date().toISOString(),
