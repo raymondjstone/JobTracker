@@ -64,6 +64,9 @@ public class JobListingService
 
                 // Backfill parsed salary data for existing jobs
                 BackfillSalaryData(userId);
+
+                // Normalise company names for existing jobs
+                NormalizeExistingCompanyNames(userId);
             }
         }
     }
@@ -110,6 +113,25 @@ public class JobListingService
 
         _storage.SaveJobs(_jobListings.Where(j => j.UserId == userId).ToList(), userId);
         _logger.LogInformation("Backfilled salary data for {Count} jobs", jobsToBackfill.Count);
+    }
+
+    private void NormalizeExistingCompanyNames(Guid userId)
+    {
+        int changed = 0;
+        foreach (var job in _jobListings.Where(j => j.UserId == userId))
+        {
+            var normalized = NormalizeCompanyName(job.Company);
+            if (normalized != job.Company)
+            {
+                job.Company = normalized;
+                changed++;
+            }
+        }
+        if (changed > 0)
+        {
+            _storage.SaveJobs(_jobListings.Where(j => j.UserId == userId).ToList(), userId);
+            _logger.LogInformation("Normalised company names for {Count} jobs", changed);
+        }
     }
 
     /// <summary>
@@ -274,12 +296,14 @@ public class JobListingService
             }
 
             // Secondary check: title + company combination (for jobs without URLs) - for this user only
+            // Uses normalised company names so "Accenture plc" matches "Accenture"
             if (!string.IsNullOrWhiteSpace(jobListing.Title) && !string.IsNullOrWhiteSpace(jobListing.Company))
             {
+                var normCompany = NormalizeCompanyName(jobListing.Company);
                 var existingByTitleCompany = _jobListings.FirstOrDefault(j =>
                     j.UserId == userId &&
                     string.Equals(j.Title?.Trim(), jobListing.Title?.Trim(), StringComparison.OrdinalIgnoreCase) &&
-                    string.Equals(j.Company?.Trim(), jobListing.Company?.Trim(), StringComparison.OrdinalIgnoreCase));
+                    string.Equals(NormalizeCompanyName(j.Company), normCompany, StringComparison.OrdinalIgnoreCase));
 
                 if (existingByTitleCompany != null)
                 {
@@ -307,6 +331,12 @@ public class JobListingService
             if (string.IsNullOrWhiteSpace(jobListing.Source))
             {
                 jobListing.Source = InferSourceFromUrl(jobListing.Url);
+            }
+
+            // Auto-detect agency from company name
+            if (!jobListing.IsAgency && !string.IsNullOrWhiteSpace(jobListing.Company))
+            {
+                jobListing.IsAgency = DetectAgency(jobListing.Company);
             }
 
             // If salary is empty, try extracting from stored description only
@@ -921,6 +951,79 @@ public class JobListingService
         }
     }
 
+    public void SetIsAgency(Guid id, bool isAgency)
+    {
+        EnsureJobsLoaded();
+        lock (_lock)
+        {
+            var job = _jobListings.FirstOrDefault(j => j.Id == id);
+            if (job != null && job.IsAgency != isAgency)
+            {
+                var old = job.IsAgency;
+                job.IsAgency = isAgency;
+                _storage.SaveJob(job);
+                NotifyStateChanged();
+                _historyService.Value.RecordChange(job.Id, job.UserId, "IsAgency",
+                    old ? "Agency" : "Direct", isAgency ? "Agency" : "Direct",
+                    $"Marked as {(isAgency ? "agency" : "direct employer")}",
+                    job.Title, job.Company, job.Url);
+            }
+        }
+    }
+
+    public static bool DetectAgency(string company)
+    {
+        if (string.IsNullOrWhiteSpace(company)) return false;
+        var lower = company.ToLowerInvariant();
+
+        // Known agency names
+        var knownAgencies = new[]
+        {
+            "hays", "noir", "reed", "adecco", "manpower", "randstad", "modis",
+            "michael page", "robert half", "robert walters", "harvey nash",
+            "capita", "experis", "page group", "pagegroup", "spencer ogden",
+            "frank recruitment", "tenth revolution", "nigel frank", "anderson frank",
+            "jefferson frank", "mason frank", "washington frank",
+            "search consultancy", "eden scott", "cathcart associates",
+            "computer futures", "progressive", "lorien", "sthree"
+        };
+        if (knownAgencies.Any(a => lower.Contains(a))) return true;
+
+        // Agency keyword patterns
+        var patterns = new[]
+        {
+            "recruitment", "recruiter", "recruiting", "staffing", "talent",
+            "consulting group", "search & selection", "personnel",
+            "employment agency", "resourcing"
+        };
+        return patterns.Any(p => lower.Contains(p));
+    }
+
+    public List<AgencyStats> GetAgencyStats(Guid? forUserId = null)
+    {
+        var userId = forUserId ?? CurrentUserId;
+        EnsureJobsLoaded(userId);
+        lock (_lock)
+        {
+            return _jobListings
+                .Where(j => j.UserId == userId && j.IsAgency && !j.IsArchived)
+                .GroupBy(j => j.Company, StringComparer.OrdinalIgnoreCase)
+                .Select(g => new AgencyStats
+                {
+                    CompanyName = g.Key,
+                    TotalJobs = g.Count(),
+                    AppliedCount = g.Count(j => j.HasApplied),
+                    InterviewCount = g.Count(j => j.ApplicationStage >= ApplicationStage.Interview),
+                    OfferCount = g.Count(j => j.ApplicationStage == ApplicationStage.Offer),
+                    GhostedCount = g.Count(j => j.ApplicationStage == ApplicationStage.Ghosted),
+                    RejectedCount = g.Count(j => j.ApplicationStage == ApplicationStage.Rejected)
+                })
+                .OrderByDescending(a => a.TotalJobs)
+                .Take(15)
+                .ToList();
+        }
+    }
+
     /// <summary>
     /// Updates job fields if the parsed data is better than what's stored.
     /// "Better" means: non-empty where stored is empty, or longer description.
@@ -1308,6 +1411,9 @@ public class JobListingService
                     job.Company = company.Trim();
                     _logger.LogInformation("Set company to '{Company}' for job: {Title}", job.Company, job.Title);
                     _historyService.Value.RecordCompanyUpdated(job, oldCompany, job.Company, HistoryChangeSource.AutoFetch);
+                    // Auto-detect agency on company change (only set true, never auto-unset)
+                    if (!job.IsAgency && DetectAgency(job.Company))
+                        job.IsAgency = true;
                 }
 
                 // Re-evaluate rules now that we have updated description content
@@ -2018,6 +2124,10 @@ public class JobListingService
             if (!string.IsNullOrWhiteSpace(filter.Source))
             query = query.Where(j => string.Equals(j.Source, filter.Source, StringComparison.OrdinalIgnoreCase));
 
+            // Agency filter
+            if (filter.IsAgency.HasValue)
+                query = query.Where(j => j.IsAgency == filter.IsAgency.Value);
+
             // Skill filter
             if (!string.IsNullOrWhiteSpace(filter.SkillSearch))
             {
@@ -2302,6 +2412,137 @@ public class JobListingService
         }
     }
 
+    public SalaryInsights GetSalaryInsights(Guid? forUserId = null)
+    {
+        var userId = forUserId ?? CurrentUserId;
+        EnsureJobsLoaded(userId);
+        lock (_lock)
+        {
+            var jobsWithSalary = _jobListings
+                .Where(j => j.UserId == userId && !j.IsArchived && j.SalaryMin.HasValue)
+                .ToList();
+
+            if (jobsWithSalary.Count == 0)
+                return new SalaryInsights();
+
+            var salaries = jobsWithSalary.Select(j => j.SalaryMin!.Value).OrderBy(s => s).ToList();
+
+            var insights = new SalaryInsights
+            {
+                JobsWithSalary = jobsWithSalary.Count,
+                OverallAverage = Math.Round(salaries.Average(), 0),
+                OverallMedian = GetMedian(salaries),
+                OverallMin = salaries.First(),
+                OverallMax = salaries.Last()
+            };
+
+            // Distribution in 10k bands
+            var maxBand = (int)(salaries.Last() / 10000m) + 1;
+            maxBand = Math.Min(maxBand, 20); // cap at 200k+
+            for (int i = 0; i <= maxBand; i++)
+            {
+                var lower = i * 10000m;
+                var upper = (i + 1) * 10000m;
+                var label = i >= 20 ? "200k+" : $"{i * 10}-{(i + 1) * 10}k";
+                var count = i >= 20
+                    ? jobsWithSalary.Count(j => j.SalaryMin >= 200000m)
+                    : jobsWithSalary.Count(j => j.SalaryMin >= lower && j.SalaryMin < upper);
+                if (count > 0)
+                    insights.Distribution.Add(new SalaryBand { Label = label, Count = count });
+            }
+
+            // By title — normalise by removing seniority prefixes
+            var titleStopWords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "senior", "junior", "lead", "principal", "staff", "head", "chief",
+                "mid", "graduate", "intern", "trainee", "associate", "the", "a", "an", "-", "|", "/"
+            };
+
+            insights.ByTitle = jobsWithSalary
+                .Select(j => new
+                {
+                    NormTitle = string.Join(" ", j.Title.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                        .Where(w => !titleStopWords.Contains(w))
+                        .Take(4)).Trim(),
+                    Salary = j.SalaryMin!.Value
+                })
+                .Where(x => !string.IsNullOrWhiteSpace(x.NormTitle))
+                .GroupBy(x => x.NormTitle, StringComparer.OrdinalIgnoreCase)
+                .Where(g => g.Count() >= 2)
+                .Select(g =>
+                {
+                    var sorted = g.Select(x => x.Salary).OrderBy(s => s).ToList();
+                    return new SalaryStat
+                    {
+                        Label = g.Key,
+                        Count = g.Count(),
+                        Average = Math.Round(sorted.Average(), 0),
+                        Median = GetMedian(sorted),
+                        Min = sorted.First(),
+                        Max = sorted.Last()
+                    };
+                })
+                .OrderByDescending(s => s.Count)
+                .Take(10)
+                .ToList();
+
+            // By location
+            insights.ByLocation = jobsWithSalary
+                .Where(j => !string.IsNullOrWhiteSpace(j.Location))
+                .GroupBy(j => j.Location.Trim(), StringComparer.OrdinalIgnoreCase)
+                .Where(g => g.Count() >= 2)
+                .Select(g =>
+                {
+                    var sorted = g.Select(j => j.SalaryMin!.Value).OrderBy(s => s).ToList();
+                    return new SalaryStat
+                    {
+                        Label = g.Key,
+                        Count = g.Count(),
+                        Average = Math.Round(sorted.Average(), 0),
+                        Median = GetMedian(sorted),
+                        Min = sorted.First(),
+                        Max = sorted.Last()
+                    };
+                })
+                .OrderByDescending(s => s.Count)
+                .Take(10)
+                .ToList();
+
+            // By skill
+            insights.BySkill = jobsWithSalary
+                .SelectMany(j => (j.Skills ?? new()).Select(s => new { Skill = s, Salary = j.SalaryMin!.Value }))
+                .GroupBy(x => x.Skill, StringComparer.OrdinalIgnoreCase)
+                .Where(g => g.Count() >= 3)
+                .Select(g =>
+                {
+                    var sorted = g.Select(x => x.Salary).OrderBy(s => s).ToList();
+                    return new SalaryStat
+                    {
+                        Label = g.Key,
+                        Count = g.Count(),
+                        Average = Math.Round(sorted.Average(), 0),
+                        Median = GetMedian(sorted),
+                        Min = sorted.First(),
+                        Max = sorted.Last()
+                    };
+                })
+                .OrderByDescending(s => s.Count)
+                .Take(10)
+                .ToList();
+
+            return insights;
+        }
+    }
+
+    private static decimal GetMedian(List<decimal> sorted)
+    {
+        if (sorted.Count == 0) return 0;
+        int mid = sorted.Count / 2;
+        return sorted.Count % 2 == 0
+            ? Math.Round((sorted[mid - 1] + sorted[mid]) / 2, 0)
+            : sorted[mid];
+    }
+
     /// <summary>
     /// Gets jobs that need descriptions (have no description or very short one)
     /// Excludes jobs marked as Unsuitable (no point fetching descriptions for those)
@@ -2376,8 +2617,55 @@ public class JobListingService
     private static void CleanJobData(JobListing job)
     {
         job.Title = CleanText(job.Title);
-        job.Company = CleanText(job.Company);
+        job.Company = NormalizeCompanyName(CleanText(job.Company));
         job.Location = CleanText(job.Location);
+    }
+
+    /// <summary>
+    /// Normalises a company name by stripping common legal suffixes (Ltd, PLC, Inc, etc.),
+    /// trailing punctuation, and extra whitespace. Preserves original casing for display.
+    /// </summary>
+    public static string NormalizeCompanyName(string company)
+    {
+        if (string.IsNullOrWhiteSpace(company)) return string.Empty;
+
+        var result = company.Trim();
+
+        // Iteratively strip known suffixes from the end (case-insensitive)
+        // Loop because a name might have multiple: "Foo Group Ltd."
+        bool changed = true;
+        while (changed)
+        {
+            changed = false;
+            // Strip trailing punctuation first (dots, commas)
+            var trimmed = result.TrimEnd('.', ',', ' ');
+            if (trimmed.Length != result.Length) { result = trimmed; changed = true; }
+
+            // Legal entity suffixes — ordered longest-first to avoid partial matches
+            string[] suffixes = {
+                "incorporated", "corporation", "limited", "company",
+                "ltd", "plc", "inc", "corp", "llc", "l.l.c", "llp", "l.l.p",
+                "gmbh", "ag", "s.a", "sa", "se"
+            };
+
+            foreach (var suffix in suffixes)
+            {
+                if (result.Length <= suffix.Length + 1) continue;
+                // Check if the name ends with the suffix (possibly preceded by a space or comma)
+                var lower = result.ToLowerInvariant();
+                if (lower.EndsWith(suffix) &&
+                    (result.Length == suffix.Length || result[result.Length - suffix.Length - 1] is ' ' or ',' or '.'))
+                {
+                    result = result[..^suffix.Length].TrimEnd(' ', ',', '.');
+                    changed = true;
+                    break; // restart the loop in case there's another suffix
+                }
+            }
+        }
+
+        // Normalise whitespace
+        result = Regex.Replace(result, @"\s+", " ").Trim();
+        return result;
     }
 
     /// <summary>
@@ -2564,7 +2852,7 @@ public class JobListingService
             foreach (var job in _jobListings.Where(j => j.UserId == userId))
             {
                 string urlKey = NormalizeUrl(job.Url);
-                string titleCompanyKey = (job.Title?.Trim().ToLowerInvariant() ?? "") + "|" + (job.Company?.Trim().ToLowerInvariant() ?? "");
+                string titleCompanyKey = (job.Title?.Trim().ToLowerInvariant() ?? "") + "|" + NormalizeCompanyName(job.Company).ToLowerInvariant();
 
                 if (!string.IsNullOrWhiteSpace(urlKey))
                 {
@@ -2622,6 +2910,7 @@ public class JobListingFilter
     public Guid? PrioritizeJobId { get; set; }
     public string? Source { get; set; }
     public string? SkillSearch { get; set; }
+    public bool? IsAgency { get; set; }
     public bool ShowArchived { get; set; }
 }
 
@@ -2672,4 +2961,45 @@ public class PipelineStats
     public Dictionary<string, int> JobsAddedPerWeek { get; set; } = new();
     public Dictionary<string, int> ApplicationsPerWeek { get; set; } = new();
     public Dictionary<string, int> StageBreakdown { get; set; } = new();
+}
+
+public class SalaryInsights
+{
+    public int JobsWithSalary { get; set; }
+    public decimal OverallMedian { get; set; }
+    public decimal OverallAverage { get; set; }
+    public decimal OverallMin { get; set; }
+    public decimal OverallMax { get; set; }
+    public string Currency { get; set; } = "GBP";
+    public List<SalaryBand> Distribution { get; set; } = new();
+    public List<SalaryStat> ByTitle { get; set; } = new();
+    public List<SalaryStat> ByLocation { get; set; } = new();
+    public List<SalaryStat> BySkill { get; set; } = new();
+}
+
+public class SalaryStat
+{
+    public string Label { get; set; } = "";
+    public int Count { get; set; }
+    public decimal Average { get; set; }
+    public decimal Median { get; set; }
+    public decimal Min { get; set; }
+    public decimal Max { get; set; }
+}
+
+public class SalaryBand
+{
+    public string Label { get; set; } = "";
+    public int Count { get; set; }
+}
+
+public class AgencyStats
+{
+    public string CompanyName { get; set; } = "";
+    public int TotalJobs { get; set; }
+    public int AppliedCount { get; set; }
+    public int InterviewCount { get; set; }
+    public int OfferCount { get; set; }
+    public int GhostedCount { get; set; }
+    public int RejectedCount { get; set; }
 }

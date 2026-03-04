@@ -45,6 +45,15 @@ public class AppSettings
     public bool BackupOnStartup { get; set; }
     public int BackupsToKeep { get; set; } = 10;
     public List<CrawlPage> CrawlPages { get; set; } = new();
+    public List<JobSearchQuery> SearchQueries { get; set; } = new();
+}
+
+public class JobSearchQuery
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string Keywords { get; set; } = "";
+    public string Location { get; set; } = "";
+    public bool Enabled { get; set; } = true;
 }
 
 public class CrawlPage
@@ -93,6 +102,7 @@ public class SavedFilterPreset
     public string? SkillSearch { get; set; }
     public string? ApplicationStage { get; set; }
     public string? SalaryType { get; set; }
+    public string? IsAgency { get; set; }
     public string? SortBy { get; set; }
 }
 

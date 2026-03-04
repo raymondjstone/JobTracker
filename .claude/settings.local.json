@@ -32,7 +32,9 @@
       "Bash(cd:)",
       "Bash(cd:*)",
       "Bash(xargs grep:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(dotnet test:*)",
+      "Bash(grep:*)"
     ]
   }
 }

@@ -13,6 +13,7 @@
 @inject JobCrawlService CrawlService
 @inject CurrentUserService CurrentUser
 @inject IConfiguration Configuration
+@inject JobSimilarityService SimilarityService
 @implements IDisposable
 @rendermode InteractiveServer
 
@@ -256,6 +257,14 @@
                             <option value="S1Jobs">S1Jobs</option>
                             <option value="WTTJ">WTTJ</option>
                             <option value="EnergyJobSearch">EnergyJobSearch</option>
+                        </select>
+                    </div>
+                    <div class="col-md-1">
+                        <label class="form-label">Source Type</label>
+                        <select class="form-select" @bind="selectedIsAgency" @bind:after="ApplyFilter">
+                            <option value="">All</option>
+                            <option value="true">Agency</option>
+                            <option value="false">Direct</option>
                         </select>
                     </div>
                     <div class="col-md-2">
@@ -621,7 +630,13 @@ else
                                 <span class="source-icon me-1" title="@GetSourceDisplayName(job.Source)">@((MarkupString)GetSourceIcon(job.Source))</span>
                                 @job.Title
                             </h5>
-                            <h6 class="card-subtitle text-muted">@job.Company</h6>
+                            <h6 class="card-subtitle text-muted">
+                                @job.Company
+                                @if (job.IsAgency)
+                                {
+                                    <span class="badge bg-warning text-dark ms-1" style="font-size: 0.65em;">Agency</span>
+                                }
+                            </h6>
                         </div>
                         <div class="d-flex flex-column align-items-end gap-1">
                             <span class="badge @GetJobTypeBadgeClass(job.JobType)">@job.JobType</span>
@@ -874,7 +889,13 @@ else
                             <span class="source-icon me-1" title="@GetSourceDisplayName(selectedJob.Source)">@((MarkupString)GetSourceIcon(selectedJob.Source))</span>
                             @selectedJob.Title
                         </h5>
-                        <h6 class="text-muted mb-0">@selectedJob.Company</h6>
+                        <h6 class="text-muted mb-0">
+                            @selectedJob.Company
+                            <button class="btn btn-sm ms-2 @(selectedJob.IsAgency ? "btn-warning" : "btn-outline-secondary")"
+                                    @onclick="() => ToggleAgency(selectedJob)" title="Toggle agency/direct employer" style="font-size: 0.7em; padding: 1px 6px;">
+                                @(selectedJob.IsAgency ? "Agency" : "Direct")
+                            </button>
+                        </h6>
                     </div>
                     <button type="button" class="btn-close" @onclick="CloseJobDetails"></button>
                 </div>
@@ -1008,9 +1029,35 @@ else
                             </div>
                         </div>
                     }
-                    
+
+                    @if (detailSimilarJobs.Any())
+                    {
+                        <div class="mb-3">
+                            <div style="cursor: pointer; user-select: none;" @onclick="() => showSimilarInDetail = !showSimilarInDetail">
+                                <strong><i class="bi bi-collection"></i> Similar Jobs (@detailSimilarJobs.Count)</strong>
+                                <i class="bi @(showSimilarInDetail ? "bi-chevron-up" : "bi-chevron-down") ms-1"></i>
+                            </div>
+                            @if (showSimilarInDetail)
+                            {
+                                <div class="mt-2">
+                                    @foreach (var sim in detailSimilarJobs)
+                                    {
+                                        <div class="d-flex align-items-center mb-2 p-2 border rounded bg-light" style="cursor: pointer;" @onclick="() => NavigateToSimilarJob(sim.JobId)">
+                                            <span class="badge bg-info me-2">@sim.Score%</span>
+                                            <div class="flex-grow-1 text-truncate">
+                                                <strong class="small">@sim.Title</strong>
+                                                <br /><span class="text-muted small">@sim.Company</span>
+                                            </div>
+                                            <i class="bi bi-arrow-right text-muted"></i>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+
                     <hr />
-                    
+
                     <h6>About the Job</h6>
                     <div class="job-description">
                         @if (!string.IsNullOrEmpty(selectedJob.Description))
@@ -2382,12 +2429,15 @@ else
     private string selectedHasSalary = "";
     private string selectedApplicationStage = "";
     private string selectedSource = "";
+    private string selectedIsAgency = "";
     private string selectedSalaryTarget = "";
     private string selectedSalaryType = "";
     private string selectedSkill = "";
     private List<string> availableSkills = new();
     private JobListing? selectedJob = null;
     private JobListing? jobToDelete = null;
+    private List<SimilarJob> detailSimilarJobs = new();
+    private bool showSimilarInDetail = false;
     private Guid? lastViewedJobId = null;
     private System.Threading.Timer? refreshTimer;
 
@@ -2570,6 +2620,7 @@ else
         filter.SalarySourceFilter = selectedHasSalary == "posted" || selectedHasSalary == "estimated" || selectedHasSalary == "not-estimated" ? selectedHasSalary : null;
         filter.ApplicationStage = string.IsNullOrEmpty(selectedApplicationStage) ? null : Enum.Parse<ApplicationStage>(selectedApplicationStage);
         filter.Source = string.IsNullOrEmpty(selectedSource) ? null : selectedSource;
+        filter.IsAgency = string.IsNullOrEmpty(selectedIsAgency) ? null : bool.Parse(selectedIsAgency);
         filter.SalaryTarget = decimal.TryParse(selectedSalaryTarget, out var salTarget) && salTarget > 0 ? salTarget : null;
         filter.SalaryType = string.IsNullOrEmpty(selectedSalaryType) ? null : selectedSalaryType;
         filter.SkillSearch = string.IsNullOrEmpty(selectedSkill) ? null : selectedSkill;
@@ -2616,6 +2667,7 @@ else
         selectedHasSalary = "";
         selectedApplicationStage = "";
         selectedSource = "";
+        selectedIsAgency = "";
         selectedSalaryTarget = "";
         selectedSalaryType = "";
         selectedSkill = "";
@@ -2794,6 +2846,22 @@ else
         addingContact = false;
         editingContactId = null;
         addingInteractionForContactId = null;
+        var allJobsList = JobService.FilterJobListings(new JobListingFilter()).ToList();
+        detailSimilarJobs = SimilarityService.FindSimilarJobs(job, allJobsList);
+        showSimilarInDetail = detailSimilarJobs.Any();
+    }
+
+    private void NavigateToSimilarJob(Guid jobId)
+    {
+        var job = JobService.GetJobById(jobId);
+        if (job != null)
+            ShowJobDetails(job);
+    }
+
+    private void ToggleAgency(JobListing job)
+    {
+        JobService.SetIsAgency(job.Id, !job.IsAgency);
+        job.IsAgency = !job.IsAgency;
     }
 
     private void CloseJobDetails()
@@ -3010,7 +3078,7 @@ else
         {
             var userId = CurrentUser.GetCurrentUserId();
             var settings = SettingsService.GetSettings(userId);
-            var result = await CrawlService.CrawlAllSitesAsync(jobSiteUrls, userId, JobService, settings.CrawlPages);
+            var result = await CrawlService.CrawlAllSitesAsync(jobSiteUrls, userId, JobService, settings.CrawlPages, settings.SearchQueries);
 
             crawlStatusMessage = $"Crawl complete: {result.JobsFound} jobs found, {result.JobsAdded} new jobs added across {result.PagesScanned} pages.";
             if (result.Errors.Count > 0)
@@ -3446,6 +3514,7 @@ else
             SalaryTarget = selectedSalaryTarget,
             SalaryType = selectedSalaryType,
             Source = selectedSource,
+            IsAgency = selectedIsAgency,
             SkillSearch = selectedSkill,
             ApplicationStage = selectedApplicationStage,
             SortBy = filter.SortBy.ToString()
@@ -3481,6 +3550,7 @@ else
         selectedSalaryTarget = preset.SalaryTarget ?? "";
         selectedSalaryType = preset.SalaryType ?? "";
         selectedSource = preset.Source ?? "";
+        selectedIsAgency = preset.IsAgency ?? "";
         selectedSkill = preset.SkillSearch ?? "";
         selectedApplicationStage = preset.ApplicationStage ?? "";
         if (!string.IsNullOrEmpty(preset.SortBy) && Enum.TryParse<SortOption>(preset.SortBy, out var sort))

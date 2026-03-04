@@ -48,6 +48,7 @@ public class JobListing
     public string Notes { get; set; } = string.Empty;
     public string CoverLetter { get; set; } = string.Empty;
     public bool IsPinned { get; set; }
+    public bool IsAgency { get; set; }
     public bool IsArchived { get; set; }
     public DateTime? ArchivedAt { get; set; }
 }

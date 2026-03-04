@@ -30,7 +30,8 @@ public class JobCrawlService
 
     public async Task<CrawlResult> CrawlAllSitesAsync(
         JobSiteUrls siteUrls, Guid userId, JobListingService jobService,
-        List<CrawlPage>? crawlPages = null, CancellationToken ct = default)
+        List<CrawlPage>? crawlPages = null, List<JobSearchQuery>? searchQueries = null,
+        CancellationToken ct = default)
     {
         var combined = new CrawlResult();
 
@@ -111,7 +112,85 @@ public class JobCrawlService
             }
         }
 
+        // Crawl search queries — auto-built URLs from keyword/location pairs
+        if (searchQueries != null)
+        {
+            foreach (var query in searchQueries)
+            {
+                if (ct.IsCancellationRequested) break;
+                if (!query.Enabled || string.IsNullOrWhiteSpace(query.Keywords)) continue;
+
+                var urls = BuildSearchUrls(query, siteUrls);
+                foreach (var (url, site) in urls)
+                {
+                    if (ct.IsCancellationRequested) break;
+                    try
+                    {
+                        _logger.LogInformation("[Crawl] Search query '{Keywords}' + '{Location}' → {Site}: {Url}",
+                            query.Keywords, query.Location, site, url);
+                        var result = await CrawlUrlAsync(url, site, userId, jobService, ct);
+                        combined.JobsFound += result.JobsFound;
+                        combined.JobsAdded += result.JobsAdded;
+                        combined.PagesScanned += result.PagesScanned;
+                        combined.Errors.AddRange(result.Errors);
+                        await Task.Delay(DelayBetweenRequestsMs, ct);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        combined.Errors.Add($"Search '{query.Keywords}' on {site}: {ex.Message}");
+                        _logger.LogWarning(ex, "[Crawl] Error crawling search query on {Site}", site);
+                    }
+                }
+            }
+        }
+
         return combined;
+    }
+
+    public static List<(string Url, string Site)> BuildSearchUrls(JobSearchQuery query, JobSiteUrls siteUrls)
+    {
+        var urls = new List<(string Url, string Site)>();
+        var kw = Uri.EscapeDataString(query.Keywords.Trim());
+        var loc = Uri.EscapeDataString(query.Location.Trim());
+        var hasLocation = !string.IsNullOrWhiteSpace(query.Location);
+
+        if (siteUrls.CrawlLinkedIn)
+        {
+            var liUrl = $"https://www.linkedin.com/jobs/search/?keywords={kw}";
+            if (hasLocation) liUrl += $"&location={loc}";
+            urls.Add((liUrl, "LinkedIn"));
+        }
+
+        if (siteUrls.CrawlS1Jobs)
+        {
+            var s1Kw = query.Keywords.Trim().Replace(" ", "-");
+            var s1Url = $"https://www.s1jobs.com/jobs/{Uri.EscapeDataString(s1Kw)}/";
+            if (hasLocation) s1Url += $"?location={loc}";
+            urls.Add((s1Url, "S1Jobs"));
+        }
+
+        // Indeed is typically Cloudflare-protected, but include if user has it configured
+        if (!string.IsNullOrWhiteSpace(siteUrls.Indeed))
+        {
+            var indeedUrl = $"https://uk.indeed.com/jobs?q={kw}";
+            if (hasLocation) indeedUrl += $"&l={loc}";
+            urls.Add((indeedUrl, "Indeed"));
+        }
+
+        if (siteUrls.CrawlWTTJ)
+        {
+            var wttjUrl = siteUrls.WTTJ;
+            wttjUrl += (wttjUrl.Contains('?') ? "&" : "?") + $"query={kw}";
+            urls.Add((wttjUrl, "WTTJ"));
+        }
+
+        if (siteUrls.CrawlEnergyJobSearch)
+        {
+            var ejsUrl = $"https://energyjobsearch.com/jobs?title={kw}";
+            urls.Add((ejsUrl, "EnergyJobSearch"));
+        }
+
+        return urls;
     }
 
     public async Task<CrawlResult> CrawlUrlAsync(

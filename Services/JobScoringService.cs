@@ -215,19 +215,21 @@ public class JobScoringService
 
     private double CalculateCompanyMatch(JobListing job, List<string> preferred, List<string> avoid)
     {
-        var companyLower = job.Company.ToLowerInvariant();
+        var companyNorm = JobListingService.NormalizeCompanyName(job.Company).ToLowerInvariant();
 
         // Check avoid list first
         foreach (var avoidCompany in avoid)
         {
-            if (companyLower.Contains(avoidCompany.ToLowerInvariant()))
+            var avoidNorm = JobListingService.NormalizeCompanyName(avoidCompany).ToLowerInvariant();
+            if (companyNorm.Contains(avoidNorm) || avoidNorm.Contains(companyNorm))
                 return -5; // Strong penalty
         }
 
         // Check preferred list
         foreach (var preferredCompany in preferred)
         {
-            if (companyLower.Contains(preferredCompany.ToLowerInvariant()))
+            var prefNorm = JobListingService.NormalizeCompanyName(preferredCompany).ToLowerInvariant();
+            if (companyNorm.Contains(prefNorm) || prefNorm.Contains(companyNorm))
                 return 10;
         }
 
@@ -257,8 +259,9 @@ public class JobScoringService
         var titleMatch = titleWords.Intersect(interestedTitleWords).Count();
         score += Math.Min(5, titleMatch * 1.5);
 
-        // Similar companies or job types
-        if (interestedJobs.Any(j => j.Company.Equals(job.Company, StringComparison.OrdinalIgnoreCase)))
+        // Similar companies or job types (normalised to handle suffix variants)
+        var normCompany = JobListingService.NormalizeCompanyName(job.Company);
+        if (interestedJobs.Any(j => string.Equals(JobListingService.NormalizeCompanyName(j.Company), normCompany, StringComparison.OrdinalIgnoreCase)))
             score += 3;
 
         if (interestedJobs.Any(j => j.JobType == job.JobType))

@@ -79,6 +79,7 @@ builder.Services.AddScoped<AppSettingsService>();
 builder.Services.AddScoped<JobRulesService>();
 builder.Services.AddScoped<JobHistoryService>();
 builder.Services.AddScoped<JobScoringService>();
+builder.Services.AddScoped<JobSimilarityService>();
 
 // AI Assistant service with HttpClient
 builder.Services.AddHttpClient<AIJobAssistantService>(client =>
@@ -767,7 +768,7 @@ app.MapPost("/api/jobs/crawl", async (HttpContext context, JobCrawlService crawl
     var siteUrls = settings.JobSiteUrls;
 
     Console.WriteLine($"[API] Starting job crawl for user {userId}");
-    var result = await crawlService.CrawlAllSitesAsync(siteUrls, userId.Value, jobService, settings.CrawlPages);
+    var result = await crawlService.CrawlAllSitesAsync(siteUrls, userId.Value, jobService, settings.CrawlPages, settings.SearchQueries);
     Console.WriteLine($"[API] Crawl complete: {result.JobsFound} found, {result.JobsAdded} added, {result.PagesScanned} pages");
 
     return Results.Ok(result);

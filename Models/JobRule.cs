@@ -50,6 +50,7 @@ public enum RuleField
     Source,
     Skills,
     IsRemote,
+    IsAgency,
     SuitabilityScore,  // ML-based score (0-100)
     Any
 }

@@ -245,11 +245,20 @@ public class JobRulesService
     {
         if (field == RuleField.IsRemote)
         {
-            // Special case for boolean field
             return op switch
             {
                 RuleOperator.IsTrue => job.IsRemote,
                 RuleOperator.IsFalse => !job.IsRemote,
+                _ => false
+            };
+        }
+
+        if (field == RuleField.IsAgency)
+        {
+            return op switch
+            {
+                RuleOperator.IsTrue => job.IsAgency,
+                RuleOperator.IsFalse => !job.IsAgency,
                 _ => false
             };
         }

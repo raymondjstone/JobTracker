@@ -274,6 +274,58 @@
                     </div>
                 </div>
 
+                <!-- Search Queries -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-search"></i> Search Queries</h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small mb-3">Define keyword/location pairs. The crawler will automatically build search URLs for each enabled job site.</p>
+
+                        @if (editingSearchQueries.Count > 0)
+                        {
+                            <table class="table table-sm align-middle mb-3">
+                                <thead>
+                                    <tr>
+                                        <th>Keywords</th>
+                                        <th>Location</th>
+                                        <th style="width: 60px;">Active</th>
+                                        <th style="width: 50px;"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var q in editingSearchQueries)
+                                    {
+                                        <tr>
+                                            <td><input type="text" class="form-control form-control-sm" @bind="q.Keywords" placeholder="e.g. C# developer" /></td>
+                                            <td><input type="text" class="form-control form-control-sm" @bind="q.Location" placeholder="e.g. Glasgow" /></td>
+                                            <td class="text-center">
+                                                <div class="form-check form-switch d-inline-block">
+                                                    <input class="form-check-input" type="checkbox" @bind="q.Enabled" />
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <button type="button" class="btn btn-outline-danger btn-sm" @onclick="() => editingSearchQueries.Remove(q)" title="Remove">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        }
+
+                        <div class="d-flex gap-2">
+                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="AddSearchQuery">
+                                <i class="bi bi-plus-lg"></i> Add Query
+                            </button>
+                            <button type="button" class="btn btn-primary btn-sm" @onclick="SaveSearchQueries">
+                                <i class="bi bi-check-lg"></i> Save Queries
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Highlight Keywords -->
                 <div class="card mb-4">
                     <div class="card-header">
@@ -995,6 +1047,7 @@
 
     // Settings state
     private JobSiteUrls editingUrls = new();
+    private List<JobSearchQuery> editingSearchQueries = new();
     private string editHighlightKeywords = "";
     private bool editHighlightPrioritizedSkills = true;
     private bool editHighlightPrioritizedSkillsInDescription = true;
@@ -1131,6 +1184,11 @@
             CrawlEnergyJobSearch = jobSiteUrls.CrawlEnergyJobSearch
         };
 
+        editingSearchQueries = settings.SearchQueries.Select(q => new JobSearchQuery
+        {
+            Id = q.Id, Keywords = q.Keywords, Location = q.Location, Enabled = q.Enabled
+        }).ToList();
+
         editHighlightKeywords = string.Join(", ", SettingsService.GetHighlightKeywords());
         editHighlightPrioritizedSkills = settings.HighlightPrioritizedSkills;
         editHighlightPrioritizedSkillsInDescription = settings.HighlightPrioritizedSkillsInDescription;
@@ -1216,6 +1274,20 @@
     private void ResetJobSiteUrls()
     {
         editingUrls = new JobSiteUrls();
+    }
+
+    private void AddSearchQuery()
+    {
+        editingSearchQueries.Add(new JobSearchQuery());
+    }
+
+    private void SaveSearchQueries()
+    {
+        var settings = SettingsService.GetSettings();
+        settings.SearchQueries = editingSearchQueries
+            .Where(q => !string.IsNullOrWhiteSpace(q.Keywords))
+            .ToList();
+        SettingsService.Save();
     }
 
     private void SaveHighlightKeywords()

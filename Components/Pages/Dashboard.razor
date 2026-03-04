@@ -173,11 +173,229 @@ else
             </div>
         </div>
     </div>
+
+    @* Salary Market Insights *@
+    @if (salaryInsights != null && salaryInsights.JobsWithSalary > 0)
+    {
+        <div class="row g-3 mb-4">
+            <div class="col-12">
+                <h4 class="mb-3"><i class="bi bi-currency-pound"></i> Salary Market Insights</h4>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card text-center">
+                    <div class="card-body py-3">
+                        <div class="text-muted small">Jobs with Salary</div>
+                        <div class="fs-3 fw-bold">@salaryInsights.JobsWithSalary</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card text-center">
+                    <div class="card-body py-3">
+                        <div class="text-muted small">Average</div>
+                        <div class="fs-3 fw-bold">@FormatSalary(salaryInsights.OverallAverage)</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card text-center">
+                    <div class="card-body py-3">
+                        <div class="text-muted small">Median</div>
+                        <div class="fs-3 fw-bold">@FormatSalary(salaryInsights.OverallMedian)</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card text-center">
+                    <div class="card-body py-3">
+                        <div class="text-muted small">Range</div>
+                        <div class="fs-5 fw-bold">@FormatSalary(salaryInsights.OverallMin) - @FormatSalary(salaryInsights.OverallMax)</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-3 mb-4">
+            @if (salaryInsights.Distribution.Count > 0)
+            {
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header"><strong>Salary Distribution</strong></div>
+                        <div class="card-body">
+                            @foreach (var band in salaryInsights.Distribution)
+                            {
+                                var maxCount = salaryInsights.Distribution.Max(b => b.Count);
+                                var pct = maxCount > 0 ? Math.Round(100.0 * band.Count / maxCount) : 0;
+                                <div class="d-flex align-items-center mb-1">
+                                    <span class="text-muted small" style="width: 60px;">@band.Label</span>
+                                    <div class="progress flex-grow-1" style="height: 18px;">
+                                        <div class="progress-bar bg-success" style="width: @pct%;">@band.Count</div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+
+            @if (salaryInsights.BySkill.Count > 0)
+            {
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header"><strong>Average Salary by Skill</strong></div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-sm mb-0">
+                                    <thead><tr><th>Skill</th><th class="text-center">Jobs</th><th class="text-end">Avg</th><th class="text-end">Range</th></tr></thead>
+                                    <tbody>
+                                        @foreach (var s in salaryInsights.BySkill)
+                                        {
+                                            <tr>
+                                                <td>@s.Label</td>
+                                                <td class="text-center">@s.Count</td>
+                                                <td class="text-end">@FormatSalary(s.Average)</td>
+                                                <td class="text-end text-muted small">@FormatSalary(s.Min)-@FormatSalary(s.Max)</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+
+        <div class="row g-3 mb-4">
+            @if (salaryInsights.ByTitle.Count > 0)
+            {
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header"><strong>Salary by Role</strong></div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-sm mb-0">
+                                    <thead><tr><th>Role</th><th class="text-center">Jobs</th><th class="text-end">Avg</th><th class="text-end">Range</th></tr></thead>
+                                    <tbody>
+                                        @foreach (var s in salaryInsights.ByTitle)
+                                        {
+                                            <tr>
+                                                <td>@s.Label</td>
+                                                <td class="text-center">@s.Count</td>
+                                                <td class="text-end">@FormatSalary(s.Average)</td>
+                                                <td class="text-end text-muted small">@FormatSalary(s.Min)-@FormatSalary(s.Max)</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+
+            @if (salaryInsights.ByLocation.Count > 0)
+            {
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header"><strong>Salary by Location</strong></div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-sm mb-0">
+                                    <thead><tr><th>Location</th><th class="text-center">Jobs</th><th class="text-end">Avg</th><th class="text-end">Range</th></tr></thead>
+                                    <tbody>
+                                        @foreach (var s in salaryInsights.ByLocation)
+                                        {
+                                            <tr>
+                                                <td>@s.Label</td>
+                                                <td class="text-center">@s.Count</td>
+                                                <td class="text-end">@FormatSalary(s.Average)</td>
+                                                <td class="text-end text-muted small">@FormatSalary(s.Min)-@FormatSalary(s.Max)</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
+    @* Agency Performance *@
+    @if (agencyStats != null && agencyStats.Count > 0)
+    {
+        <div class="row g-3 mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header"><strong><i class="bi bi-building"></i> Agency Performance</strong></div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>Agency</th>
+                                        <th class="text-center">Jobs</th>
+                                        <th class="text-center">Applied</th>
+                                        <th class="text-center">Interviews</th>
+                                        <th class="text-center">Offers</th>
+                                        <th class="text-center">Ghosted</th>
+                                        <th class="text-center">Rejected</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var a in agencyStats)
+                                    {
+                                        <tr>
+                                            <td>@a.CompanyName</td>
+                                            <td class="text-center">@a.TotalJobs</td>
+                                            <td class="text-center">@a.AppliedCount</td>
+                                            <td class="text-center">
+                                                @if (a.InterviewCount > 0)
+                                                {
+                                                    <span class="text-success fw-bold">@a.InterviewCount</span>
+                                                }
+                                                else { <text>0</text> }
+                                            </td>
+                                            <td class="text-center">
+                                                @if (a.OfferCount > 0)
+                                                {
+                                                    <span class="text-success fw-bold">@a.OfferCount</span>
+                                                }
+                                                else { <text>0</text> }
+                                            </td>
+                                            <td class="text-center">
+                                                @if (a.GhostedCount > 0)
+                                                {
+                                                    <span class="text-warning">@a.GhostedCount</span>
+                                                }
+                                                else { <text>0</text> }
+                                            </td>
+                                            <td class="text-center">
+                                                @if (a.RejectedCount > 0)
+                                                {
+                                                    <span class="text-danger">@a.RejectedCount</span>
+                                                }
+                                                else { <text>0</text> }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
 }
 
 @code {
     private PipelineStats? pipelineStats;
     private PipelineSettings pipelineSettings = new();
+    private List<AgencyStats>? agencyStats;
+    private SalaryInsights? salaryInsights;
 
     private readonly ApplicationStage[] funnelStages = new[]
     {
@@ -207,6 +425,8 @@ else
     private void Refresh()
     {
         pipelineStats = JobService.GetPipelineStats(pipelineSettings.StaleDays);
+        agencyStats = JobService.GetAgencyStats();
+        salaryInsights = JobService.GetSalaryInsights();
     }
 
     private int GetStageCount(ApplicationStage stage) => stage switch
@@ -260,6 +480,18 @@ else
         ApplicationStage.Rejected => "bg-danger",
         _ => "bg-secondary"
     };
+
+    private string FormatSalary(decimal value)
+    {
+        var currency = salaryInsights?.Currency ?? "GBP";
+        var symbol = currency switch
+        {
+            "USD" => "$",
+            "EUR" => "€",
+            _ => "£"
+        };
+        return value >= 1000 ? $"{symbol}{value / 1000:0.#}k" : $"{symbol}{value:0}";
+    }
 
     public void Dispose()
     {
