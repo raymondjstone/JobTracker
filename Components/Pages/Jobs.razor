@@ -322,6 +322,11 @@
                                 <option value="@SortOption.ScoreDesc">ML Score (Highest)</option>
                                 <option value="@SortOption.ScoreAsc">ML Score (Lowest)</option>
                             }
+                            @if (skillPriorities.Any())
+                            {
+                                <option value="@SortOption.MatchedSkillsDesc">Matched Skills (Most)</option>
+                                <option value="@SortOption.MatchedSkillsAsc">Matched Skills (Least)</option>
+                            }
                         </select>
                     </div>
                     <div class="col-md-2">
@@ -2624,6 +2629,7 @@ else
         filter.SalaryTarget = decimal.TryParse(selectedSalaryTarget, out var salTarget) && salTarget > 0 ? salTarget : null;
         filter.SalaryType = string.IsNullOrEmpty(selectedSalaryType) ? null : selectedSalaryType;
         filter.SkillSearch = string.IsNullOrEmpty(selectedSkill) ? null : selectedSkill;
+        filter.SkillPriorities = skillPriorities;
         filter.PrioritizeJobId = lastViewedJobId;
         
         // Apply tab-specific filtering

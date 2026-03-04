@@ -1,6 +1,7 @@
 @using Microsoft.AspNetCore.Components.Authorization
 @inject IConfiguration Configuration
 @inject JobTracker.Services.AppShutdownService ShutdownService
+@inject IJSRuntime JS
 @rendermode InteractiveServer
 
 <AuthorizeView>
@@ -133,14 +134,31 @@
 @code {
     private bool isShuttingDown;
 
-    private void Shutdown()
+    private async Task Shutdown()
     {
         if (isShuttingDown) return;
         isShuttingDown = true;
 
-        // Call shutdown synchronously - this triggers IHostApplicationLifetime.StopApplication()
-        // which will gracefully stop the app. The browser will lose connection and show an error.
-        ShutdownService.Shutdown();
+        // Close just this browser tab, then shut down the server.
+        // window.close() works when the tab was opened by JS or as an app window.
+        // If the browser blocks it, we replace the page content with a goodbye message
+        // so the user sees a clean exit instead of a connection-lost error.
+        try
+        {
+            await JS.InvokeVoidAsync("eval", @"
+                (function() {
+                    document.title = 'JobTracker - Shut Down';
+                    document.body.innerHTML = '<div style=""display:flex;align-items:center;justify-content:center;height:100vh;font-family:system-ui;color:#666;""><div style=""text-align:center;""><h2>JobTracker has shut down</h2><p>You can close this tab.</p></div></div>';
+                    fetch('/api/shutdown', { method: 'POST' });
+                    setTimeout(function() { window.close(); }, 200);
+                })();
+            ");
+        }
+        catch
+        {
+            // JS interop may fail if circuit is already gone — fall back to direct shutdown
+            ShutdownService.Shutdown();
+        }
     }
 }
 

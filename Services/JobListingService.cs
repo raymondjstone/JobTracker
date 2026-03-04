@@ -2160,6 +2160,8 @@ public class JobListingService
                 SortOption.SalaryAsc => sorted.ThenBy(j => j.SalaryMin ?? decimal.MaxValue),
                 SortOption.ScoreDesc => sorted.ThenByDescending(j => j.SuitabilityScore),
                 SortOption.ScoreAsc => sorted.ThenBy(j => j.SuitabilityScore),
+                SortOption.MatchedSkillsDesc => sorted.ThenByDescending(j => CountMatchedSkills(j, filter.SkillPriorities)),
+                SortOption.MatchedSkillsAsc => sorted.ThenBy(j => CountMatchedSkills(j, filter.SkillPriorities)),
                 _ => sorted.ThenByDescending(j => j.DateAdded)
             };
 
@@ -2614,6 +2616,13 @@ public class JobListingService
     /// <summary>
     /// Cleans job data - removes duplicated text, extra whitespace, etc.
     /// </summary>
+    private static int CountMatchedSkills(JobListing job, List<string>? priorities)
+    {
+        if (priorities == null || priorities.Count == 0 || job.Skills == null || job.Skills.Count == 0)
+            return 0;
+        return job.Skills.Count(s => priorities.Any(p => p.Equals(s, StringComparison.OrdinalIgnoreCase)));
+    }
+
     private static void CleanJobData(JobListing job)
     {
         job.Title = CleanText(job.Title);
@@ -2912,6 +2921,7 @@ public class JobListingFilter
     public string? SkillSearch { get; set; }
     public bool? IsAgency { get; set; }
     public bool ShowArchived { get; set; }
+    public List<string>? SkillPriorities { get; set; }
 }
 
 public enum SortOption
@@ -2927,7 +2937,9 @@ public enum SortOption
     SalaryDesc,
     SalaryAsc,
     ScoreDesc,
-    ScoreAsc
+    ScoreAsc,
+    MatchedSkillsDesc,
+    MatchedSkillsAsc
 }
 
 public class JobStats

@@ -825,6 +825,16 @@ if (!localMode && string.Equals(storageProvider, "SqlServer", StringComparison.O
         "0 */1 * * *"); // Every hour
 }
 
+// Shutdown endpoint — called from the browser tab before it closes itself
+if (localMode)
+{
+    app.MapPost("/api/shutdown", (AppShutdownService shutdownService) =>
+    {
+        shutdownService.Shutdown();
+        return Results.Ok();
+    }).DisableAntiforgery();
+}
+
 app.Run();
 
 // One-off migration from SQL Server to local JSON storage
