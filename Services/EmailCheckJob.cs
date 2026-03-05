@@ -46,13 +46,27 @@ public class EmailCheckJob
 
                 // Fetch new emails
                 List<IncomingEmail> newEmails;
-                try
+                const int maxRetries = 3;
+                var fetched = false;
+                newEmails = new List<IncomingEmail>();
+                for (int attempt = 1; attempt <= maxRetries; attempt++)
                 {
-                    newEmails = await inboxService.FetchNewEmailsAsync(settings, processedIds);
+                    try
+                    {
+                        newEmails = await inboxService.FetchNewEmailsAsync(settings, processedIds);
+                        fetched = true;
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "[EmailCheck] Attempt {Attempt}/{Max} failed to fetch emails for {Email}", attempt, maxRetries, user.Email);
+                        if (attempt < maxRetries)
+                            await Task.Delay(attempt * 2000); // 2s, 4s backoff
+                    }
                 }
-                catch (Exception ex)
+                if (!fetched)
                 {
-                    _logger.LogError(ex, "[EmailCheck] Failed to fetch emails for user {Email}", user.Email);
+                    _logger.LogError("[EmailCheck] All {Max} attempts failed for user {Email}", maxRetries, user.Email);
                     continue;
                 }
 

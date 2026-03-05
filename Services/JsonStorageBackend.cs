@@ -174,7 +174,8 @@ public class JsonStorageBackend : IStorageBackend
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error loading jobs from file");
+                _logger.LogError(ex, "Error loading jobs from file - data may be corrupted");
+                BackupCorruptedFile(_jobsFilePath);
             }
             return new List<JobListing>();
         }
@@ -278,6 +279,21 @@ public class JsonStorageBackend : IStorageBackend
     {
         var json = JsonSerializer.Serialize(allJobs, WriteOptions);
         WriteAtomic(_jobsFilePath, json);
+    }
+
+    private void BackupCorruptedFile(string filePath)
+    {
+        try
+        {
+            if (!File.Exists(filePath)) return;
+            var backupPath = filePath + $".corrupted-{DateTime.Now:yyyyMMdd-HHmmss}";
+            File.Copy(filePath, backupPath, overwrite: true);
+            _logger.LogWarning("Corrupted file backed up to {BackupPath}", backupPath);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to backup corrupted file {Path}", filePath);
+        }
     }
 
     private static void WriteAtomic(string path, string contents)
@@ -384,7 +400,8 @@ public class JsonStorageBackend : IStorageBackend
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error loading history from file");
+            _logger.LogError(ex, "Error loading history from file - data may be corrupted");
+            BackupCorruptedFile(_historyFilePath);
         }
         return new List<JobHistoryEntry>();
     }
@@ -444,7 +461,9 @@ public class JsonStorageBackend : IStorageBackend
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error loading settings from file");
+                _logger.LogError(ex, "Error loading settings from file - data may be corrupted");
+                var userSettingsPath = Path.Combine(_dataDirectory, $"settings_{userId}.json");
+                BackupCorruptedFile(userSettingsPath);
             }
             return new AppSettings();
         }

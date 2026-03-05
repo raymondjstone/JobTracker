@@ -46,6 +46,29 @@ public class AppSettings
     public int BackupsToKeep { get; set; } = 10;
     public List<CrawlPage> CrawlPages { get; set; } = new();
     public List<JobSearchQuery> SearchQueries { get; set; } = new();
+    public JobViewState LastViewState { get; set; } = new();
+}
+
+public class JobViewState
+{
+    public string? SearchTerm { get; set; }
+    public string? TitleOnlySearchTerm { get; set; }
+    public string? Location { get; set; }
+    public string? JobType { get; set; }
+    public string? IsRemote { get; set; }
+    public string? Interest { get; set; }
+    public string? ScoreBand { get; set; }
+    public string? HasSalary { get; set; }
+    public string? SalarySearch { get; set; }
+    public string? SalaryTarget { get; set; }
+    public string? SalaryType { get; set; }
+    public string? Source { get; set; }
+    public string? IsAgency { get; set; }
+    public string? SkillSearch { get; set; }
+    public string? ApplicationStage { get; set; }
+    public string? SortBy { get; set; }
+    public string? GroupBy { get; set; }
+    public string? ActiveTab { get; set; }
 }
 
 public class JobSearchQuery

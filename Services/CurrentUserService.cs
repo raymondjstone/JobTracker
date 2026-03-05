@@ -45,13 +45,18 @@ public class CurrentUserService
         }
 
         // Fall back to AuthenticationStateProvider (works in interactive SignalR mode)
+        // Use a timeout to prevent deadlocks when called from sync contexts
         try
         {
-            var authState = _authStateProvider.GetAuthenticationStateAsync().GetAwaiter().GetResult();
-            if (authState.User?.Identity?.IsAuthenticated == true)
+            var task = _authStateProvider.GetAuthenticationStateAsync();
+            if (task.IsCompleted || task.Wait(TimeSpan.FromSeconds(2)))
             {
-                var id = ExtractUserId(authState.User);
-                if (id != Guid.Empty) return id;
+                var authState = task.Result;
+                if (authState.User?.Identity?.IsAuthenticated == true)
+                {
+                    var id = ExtractUserId(authState.User);
+                    if (id != Guid.Empty) return id;
+                }
             }
         }
         catch

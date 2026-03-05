@@ -62,12 +62,15 @@ A **comprehensive AI-powered** Blazor application with browser extensions that a
 - **Tabbed Interface** - Browse, Possible, Applied, Pipeline (Kanban), Archived, and Unsuitable tabs
 - **Pinned Jobs** - Pin important jobs to the top of any tab
 - **Filtering** - Filter by search, location, job type, remote, salary, interest, source, skills, and date
+- **Search Highlighting** - Search terms highlighted in job title, company, location, and description preview
 - **Notes & Cover Letter Search** - Search finds matches in job titles, descriptions, companies, notes, and cover letters
 - **Title-Only Search** - Search specifically in job titles
 - **Salary Range Filter** - Parse salary strings into min/max values and filter by target salary
 - **Skill Filter** - Filter by skill with autocomplete from existing job skills
 - **Saved Filter Presets** - Save and load named filter configurations
-- **Bulk Actions** - Mark all filtered jobs as Possible or Unsuitable
+- **Group By** - Group job cards by company, title, location, job type, date posted/added, source, or salary band with collapsible accordion sections and expand/collapse all controls
+- **Persisted View State** - Filter, sort, group, and tab settings are automatically saved and restored between sessions
+- **Bulk Actions** - Mark all filtered jobs as Possible or Unsuitable with count feedback
 - **Change Tracking** - Track job listing changes over time with visual indicators:
   - **"Updated" Badge** - Orange badge appears when job details change (description, salary, location, etc.)
   - **Change Timeline** - View detailed change history with "View Changes" button
@@ -156,6 +159,9 @@ A **comprehensive AI-powered** Blazor application with browser extensions that a
 - **Auto-Archive Job** - Background job to archive rejected/ghosted jobs after configurable days
 - **Job Cleanup Job** - Automatically deletes old unsuitable, rejected, and ghosted jobs based on configurable thresholds
 - **Email Notification Job** - Daily digest email for follow-ups due and stale applications
+- **IMAP Retry Logic** - Email fetch with exponential backoff (3 attempts with 2s, 4s delays)
+- **Data Corruption Protection** - Automatic backup of corrupted JSON data files before returning defaults
+- **API Input Validation** - Length limits on URLs (2000), locations (500), salaries (500), and descriptions (100K)
 - **Configurable Thresholds** - No Reply, Ghosted, Stale, and Auto-Delete days are all configurable per-user in Settings
 
 ### Authentication (SQL Server mode)
@@ -163,9 +169,11 @@ A **comprehensive AI-powered** Blazor application with browser extensions that a
 - **Two-Factor Authentication** - Optional 2FA setup and verification
 - **Password Recovery** - Forgot password and reset password flows
 
-### Appearance
+### Appearance & Accessibility
 - **Dark Mode** - Toggle dark/light theme with one click; persists across sessions via localStorage
 - **Keyword Highlighting** - Configurable keyword highlighting in job descriptions
+- **Search Highlighting** - Matching search terms highlighted in yellow across job cards
+- **ARIA Labels** - Proper accessibility labels on all filter controls, tabs, and interactive elements for screen reader support
 
 ### Notifications
 - **Email Notifications** - Daily digest emails for follow-ups due and stale applications
@@ -360,6 +368,7 @@ When an extension updates a job via `PUT /api/jobs/description`, it may include 
 | Stage | Filter applied jobs by application stage |
 | Date Range | Filter by date posted |
 | Sort By | Sort by date added, date posted, title, company, or salary |
+| Group By | Group by company, title, location, job type, date posted/added, source, or salary band |
 
 ## API Endpoints
 
@@ -457,6 +466,8 @@ JobTracker/
 │   ├── AutoArchiveJob.cs           # Auto-archive rejected/ghosted jobs
 │   ├── JobCleanupJob.cs            # Auto-delete old unsuitable/rejected/ghosted jobs
 │   ├── EmailNotificationJob.cs     # Daily digest email notifications
+│   ├── EmailCheckJob.cs             # IMAP email check with retry logic
+│   ├── EmailReplyMatcher.cs         # Match emails to jobs and detect application stages
 │   ├── EmailService.cs             # SMTP email sending
 │   └── LocalBackgroundService.cs   # Background task runner
 ├── Data/
@@ -878,6 +889,7 @@ Click the stage badge on a job card to cycle through stages, or use the dropdown
 - **Background Jobs** - 7 automated tasks
 - **Dual Storage** - JSON or SQL Server
 - **Browser Extensions** - 5 dedicated extractors
+- **184 Unit Tests** - EmailReplyMatcher, JsonStorageBackend, SalaryParser, JobScoring, JobRules, CompanyNormalization, JobTypeDetection
 
 ---
 

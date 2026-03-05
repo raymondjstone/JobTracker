@@ -741,8 +741,8 @@ public partial class LinkedInJobExtractor
                 return JobType.Temporary;
             if (Regex.IsMatch(lowerText, @"\binternship\b") || Regex.IsMatch(lowerText, @"\bintern\b"))
                 return JobType.Internship;
-            if (Regex.IsMatch(lowerText, @"\bvolunteer\b"))
-                return JobType.Volunteer;
+            // Note: "volunteer" is NOT matched here — too many false positives
+            // (e.g. "volunteer experience preferred"). Only detected via Tier 1 labels.
             if (Regex.IsMatch(lowerText, @"\bfull[\s-]?time\b"))
                 return JobType.FullTime;
         }

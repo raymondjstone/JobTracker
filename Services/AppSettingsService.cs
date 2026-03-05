@@ -27,11 +27,11 @@ public class AppSettingsService
     private void EnsureSettingsLoaded(Guid? forUserId = null)
     {
         var userId = forUserId ?? CurrentUserId;
-        Console.WriteLine($"[SETTINGS] EnsureSettingsLoaded - forUserId: {forUserId}, CurrentUserId: {CurrentUserId}, resolved: {userId}");
+        _logger.LogDebug("EnsureSettingsLoaded - forUserId: {ForUserId}, CurrentUserId: {CurrentUserId}, resolved: {UserId}", forUserId, CurrentUserId, userId);
 
         if (userId == Guid.Empty)
         {
-            Console.WriteLine($"[SETTINGS] WARNING: userId is Empty, skipping load");
+            _logger.LogWarning("userId is Empty, skipping settings load");
             return;
         }
 
@@ -39,7 +39,7 @@ public class AppSettingsService
         {
             if (_loadedForUser != userId)
             {
-                Console.WriteLine($"[SETTINGS] Loading settings from storage for user {userId} (was loaded for {_loadedForUser})");
+                _logger.LogDebug("Loading settings from storage for user {UserId} (was loaded for {PreviousUser})", userId, _loadedForUser);
                 _settings = _storage.LoadSettings(userId);
                 _loadedForUser = userId;
 
@@ -56,15 +56,15 @@ public class AppSettingsService
                         _settings.SmtpFromEmail = _configuration["Smtp:FromEmail"] ?? "";
                         _settings.SmtpFromName = _configuration["Smtp:FromName"] ?? "Job Tracker";
                         _storage.SaveSettings(_settings, userId);
-                        Console.WriteLine($"[SETTINGS] Seeded SMTP settings from appsettings.json for user {userId}");
+                        _logger.LogInformation("Seeded SMTP settings from appsettings.json for user {UserId}", userId);
                     }
                 }
 
-                Console.WriteLine($"[SETTINGS] Loaded {_settings.JobRules.Rules.Count} rules, EnableAutoRules: {_settings.JobRules.EnableAutoRules}");
+                _logger.LogDebug("Loaded {RuleCount} rules, EnableAutoRules: {AutoRules}", _settings.JobRules.Rules.Count, _settings.JobRules.EnableAutoRules);
             }
             else
             {
-                Console.WriteLine($"[SETTINGS] Using cached settings for user {userId} ({_settings.JobRules.Rules.Count} rules)");
+                _logger.LogDebug("Using cached settings for user {UserId} ({RuleCount} rules)", userId, _settings.JobRules.Rules.Count);
             }
         }
     }
@@ -147,10 +147,10 @@ public class AppSettingsService
             }
             if (userId == Guid.Empty)
             {
-                Console.WriteLine("[SETTINGS] WARNING: Cannot save settings - no userId available");
+                _logger.LogWarning("Cannot save settings - no userId available");
                 return;
             }
-            Console.WriteLine($"[SETTINGS] Saving settings for user {userId}");
+            _logger.LogDebug("Saving settings for user {UserId}", userId);
             _storage.SaveSettings(_settings, userId);
         }
     }

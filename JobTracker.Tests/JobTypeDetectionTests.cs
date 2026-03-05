@@ -177,4 +177,25 @@ public class JobTypeDetectionTests
         var text = "You will manage the contract with our key clients.";
         Assert.Equal(JobType.FullTime, LinkedInJobExtractor.DetectJobType(text));
     }
+
+    [Fact]
+    public void DoesNotFalsePositive_VolunteerMentionInDescription()
+    {
+        var text = "Previous volunteer experience is a plus. This is a full-time role.";
+        Assert.Equal(JobType.FullTime, LinkedInJobExtractor.DetectJobType(text));
+    }
+
+    [Fact]
+    public void DoesNotFalsePositive_VolunteerKeywordInJobDescription()
+    {
+        var text = "We welcome candidates with volunteer or community work backgrounds. Permanent position.";
+        Assert.Equal(JobType.FullTime, LinkedInJobExtractor.DetectJobType(text));
+    }
+
+    [Fact]
+    public void DetectsVolunteer_FromEmploymentTypeLabel()
+    {
+        var text = "Employment type  Volunteer  Job function  Community";
+        Assert.Equal(JobType.Volunteer, LinkedInJobExtractor.DetectJobType(text));
+    }
 }

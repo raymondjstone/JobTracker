@@ -131,40 +131,31 @@ public class JobRulesService
         var userId = forUserId ?? job.UserId; // Use job's UserId if not specified
         if (userId == Guid.Empty) userId = CurrentUserId;
 
-        Console.WriteLine($"[RULES] EvaluateJob called for '{job.Title}' - forUserId: {forUserId}, job.UserId: {job.UserId}, resolved userId: {userId}");
+        _logger.LogDebug("EvaluateJob called for '{Title}' - forUserId: {ForUserId}, job.UserId: {JobUserId}, resolved: {UserId}", job.Title, forUserId, job.UserId, userId);
 
         var rulesSettings = GetRulesSettings(userId);
 
-        Console.WriteLine($"[RULES] Settings loaded - EnableAutoRules: {rulesSettings.EnableAutoRules}, StopOnFirstMatch: {rulesSettings.StopOnFirstMatch}");
+        _logger.LogDebug("Settings loaded - EnableAutoRules: {AutoRules}, StopOnFirstMatch: {StopOnFirst}", rulesSettings.EnableAutoRules, rulesSettings.StopOnFirstMatch);
 
         if (!rulesSettings.EnableAutoRules)
         {
-            Console.WriteLine($"[RULES] Rules are DISABLED - skipping evaluation for job: {job.Title}");
             _logger.LogDebug("Rules are disabled - skipping evaluation for job: {Title}", job.Title);
             return result;
         }
 
         var enabledRules = GetEnabledRules(userId);
-        Console.WriteLine($"[RULES] Found {enabledRules.Count} enabled rules for user {userId}");
-        foreach (var rule in enabledRules.Take(5))
-        {
-            Console.WriteLine($"[RULES]   - Rule: '{rule.Name}' (Field: {rule.Field}, Op: {rule.Operator}, Value: '{rule.Value}')");
-        }
-
         _logger.LogDebug("Evaluating {Count} enabled rules for job: {Title} (user: {UserId})", enabledRules.Count, job.Title, userId);
 
         if (enabledRules.Count == 0)
         {
-            Console.WriteLine($"[RULES] WARNING: No enabled rules found for user {userId}");
             _logger.LogWarning("No enabled rules found for user {UserId}", userId);
         }
 
         foreach (var rule in enabledRules)
         {
-            Console.WriteLine($"[RULES] Testing rule '{rule.Name}' (Field: {rule.Field}, Op: {rule.Operator}, Value: '{rule.Value}', HasCompound: {rule.HasCompoundConditions})");
+            _logger.LogDebug("Testing rule '{RuleName}' (Field: {Field}, Op: {Op}, Value: '{Value}')", rule.Name, rule.Field, rule.Operator, rule.Value);
             if (EvaluateRule(rule, job))
             {
-                Console.WriteLine($"[RULES] >>> MATCHED: '{rule.Name}' => SetSuitability={rule.SetSuitability}, SetInterest={rule.SetInterest}");
                 _logger.LogInformation("Rule '{RuleName}' matched job: {Title}", rule.Name, job.Title);
                 result.MatchedRules.Add(rule);
 
@@ -294,11 +285,11 @@ public class JobRulesService
                 var matched = EvaluateCondition(fv, op, value, caseSensitive);
                 if (matched)
                 {
-                    Console.WriteLine($"[RULES]   Any field match: {f}='{Truncate(fv, 60)}' {op} '{value}' => TRUE");
+                    _logger.LogDebug("Any field match: {Field} {Op} '{Value}' => TRUE", f, op, value);
                     return true;
                 }
             }
-            Console.WriteLine($"[RULES]   Any field: no match for {op} '{value}' (Company='{job.Company}', Title='{Truncate(job.Title, 40)}')");
+            _logger.LogDebug("Any field: no match for {Op} '{Value}'", op, value);
             return false;
         }
 
@@ -311,7 +302,7 @@ public class JobRulesService
 
         var fieldValue = GetFieldValue(field, job);
         var result = EvaluateCondition(fieldValue, op, value, caseSensitive);
-        Console.WriteLine($"[RULES]   {field}='{Truncate(fieldValue, 60)}' {op} '{value}' => {result}");
+        _logger.LogDebug("Rule eval: {Field} {Op} '{Value}' => {Result}", field, op, value, result);
         return result;
     }
 

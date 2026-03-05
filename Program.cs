@@ -193,6 +193,7 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+var log = app.Logger;
 
 // If using SQL Server, apply any pending migrations
 if (!localMode && string.Equals(storageProvider, "SqlServer", StringComparison.OrdinalIgnoreCase))
@@ -327,12 +328,12 @@ Guid? GetUserIdFromRequest(HttpContext context, AuthService authService)
 // API endpoints BEFORE antiforgery (they use their own CORS/auth)
 app.MapPost("/api/jobs", async (HttpContext context, JobListingService jobService, AuthService authService) =>
 {
-    Console.WriteLine($"[API] POST /api/jobs - Content-Type: {context.Request.ContentType}");
+    log.LogDebug("POST /api/jobs - Content-Type: {ContentType}", context.Request.ContentType);
 
     var userId = GetUserIdFromRequest(context, authService);
     if (!userId.HasValue)
     {
-        Console.WriteLine("[API] Unauthorized - no valid user ID");
+        log.LogWarning("Unauthorized - no valid user ID for POST /api/jobs");
         return Results.Unauthorized();
     }
 
@@ -341,7 +342,7 @@ app.MapPost("/api/jobs", async (HttpContext context, JobListingService jobServic
         var job = await context.Request.ReadFromJsonAsync<JobListing>();
         if (job == null)
         {
-            Console.WriteLine("[API] Error: job is null");
+            log.LogWarning("POST /api/jobs - job is null");
             return Results.BadRequest("Invalid job data");
         }
 
@@ -354,26 +355,32 @@ app.MapPost("/api/jobs", async (HttpContext context, JobListingService jobServic
             return Results.BadRequest("Title exceeds maximum length.");
         if (job.Company?.Length > 500)
             return Results.BadRequest("Company exceeds maximum length.");
-        if (job.Description?.Length > 10000)
+        if (job.Description?.Length > 100000)
             return Results.BadRequest("Description exceeds maximum length.");
+        if (job.Url?.Length > 2000)
+            return Results.BadRequest("URL exceeds maximum length.");
+        if (job.Location?.Length > 500)
+            return Results.BadRequest("Location exceeds maximum length.");
+        if (job.Salary?.Length > 500)
+            return Results.BadRequest("Salary exceeds maximum length.");
 
         job.UserId = userId.Value;
         var wasAdded = jobService.AddJobListing(job);
 
         if (wasAdded)
         {
-            Console.WriteLine($"[API] Added job: {job.Title} at {job.Company}");
+            log.LogInformation("Added job: {Title} at {Company}", job.Title, job.Company);
             return Results.Created($"/api/jobs/{job.Id}", new { added = true, job });
         }
         else
         {
-            Console.WriteLine($"[API] Duplicate skipped: {job.Title} at {job.Company}");
+            log.LogDebug("Duplicate skipped: {Title} at {Company}", job.Title, job.Company);
             return Results.Ok(new { added = false, message = "Duplicate job - already exists" });
         }
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"[API] Error: {ex.Message}");
+        log.LogError(ex, "API error");
         return Results.BadRequest("An error occurred processing your request.");
     }
 }).DisableAntiforgery();
@@ -383,12 +390,12 @@ app.MapGet("/api/jobs", (HttpContext context, JobListingService jobService, Auth
     var userId = GetUserIdFromRequest(context, authService);
     if (!userId.HasValue)
     {
-        Console.WriteLine("[API] Unauthorized - no valid user ID for GET /api/jobs");
+        log.LogWarning("Unauthorized - no valid user ID for GET /api/jobs");
         return Results.Unauthorized();
     }
 
     var jobs = jobService.GetAllJobListings(userId.Value);
-    Console.WriteLine($"[API] Returning {jobs.Count} jobs for user {userId}");
+    log.LogDebug("Returning {Count} jobs for user {UserId}", jobs.Count, userId);
     return Results.Ok(jobs);
 });
 
@@ -397,7 +404,7 @@ app.MapGet("/api/jobs/count", (HttpContext context, JobListingService jobService
     var userId = GetUserIdFromRequest(context, authService);
     if (!userId.HasValue)
     {
-        Console.WriteLine("[API] Unauthorized - no valid user ID for GET /api/jobs/count");
+        log.LogWarning("Unauthorized for GET /api/jobs/count");
         return Results.Unauthorized();
     }
 
@@ -409,7 +416,7 @@ app.MapGet("/api/jobs/stats", (HttpContext context, JobListingService jobService
     var userId = GetUserIdFromRequest(context, authService);
     if (!userId.HasValue)
     {
-        Console.WriteLine("[API] Unauthorized - no valid user ID for GET /api/jobs/stats");
+        log.LogWarning("Unauthorized for GET /api/jobs/stats");
         return Results.Unauthorized();
     }
 
@@ -422,7 +429,7 @@ app.MapGet("/api/jobs/exists", (string url, HttpContext context, JobListingServi
     var userId = GetUserIdFromRequest(context, authService);
     if (!userId.HasValue)
     {
-        Console.WriteLine("[API] Unauthorized - no valid user ID for GET /api/jobs/exists");
+        log.LogWarning("Unauthorized for GET /api/jobs/exists");
         return Results.Unauthorized();
     }
 
@@ -453,12 +460,12 @@ app.MapPut("/api/jobs/{id:guid}/interest", async (Guid id, HttpContext context, 
         }
 
         jobService.SetInterestStatus(id, body.Interest);
-        Console.WriteLine($"[API] Updated interest for {job.Title}: {body.Interest}");
+        log.LogInformation("Updated interest for {Title}: {Interest}", job.Title, body.Interest);
         return Results.Ok(new { success = true, interest = body.Interest });
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"[API] Error: {ex.Message}");
+        log.LogError(ex, "API error");
         return Results.BadRequest("An error occurred processing your request.");
     }
 }).DisableAntiforgery();
@@ -468,12 +475,12 @@ app.MapPost("/api/jobs/cleanup", (HttpContext context, JobListingService jobServ
     var userId = GetUserIdFromRequest(context, authService);
     if (!userId.HasValue)
     {
-        Console.WriteLine("[API] Unauthorized - no valid user ID for cleanup");
+        log.LogWarning("Unauthorized for cleanup");
         return Results.Unauthorized();
     }
 
     var cleanedCount = jobService.CleanupAllJobs(userId.Value);
-    Console.WriteLine($"[API] Cleaned up {cleanedCount} jobs");
+    log.LogInformation("Cleaned up {Count} jobs", cleanedCount);
     return Results.Ok(new { cleaned = cleanedCount, message = $"Cleaned up {cleanedCount} job titles" });
 }).DisableAntiforgery();
 
@@ -483,12 +490,12 @@ app.MapPost("/api/jobs/clean-descriptions", (HttpContext context, JobListingServ
     var userId = GetUserIdFromRequest(context, authService);
     if (!userId.HasValue)
     {
-        Console.WriteLine("[API] Unauthorized - no valid user ID for clean-descriptions");
+        log.LogWarning("Unauthorized for clean-descriptions");
         return Results.Unauthorized();
     }
 
     var cleanedCount = jobService.CleanAllDescriptions(userId.Value);
-    Console.WriteLine($"[API] Cleaned {cleanedCount} job descriptions");
+    log.LogInformation("Cleaned {Count} job descriptions", cleanedCount);
     return Results.Ok(new { cleaned = cleanedCount, message = $"Cleaned boilerplate from {cleanedCount} job descriptions" });
 }).DisableAntiforgery();
 
@@ -497,7 +504,7 @@ app.MapDelete("/api/jobs/{id:guid}", (Guid id, HttpContext context, JobListingSe
     var userId = GetUserIdFromRequest(context, authService);
     if (!userId.HasValue)
     {
-        Console.WriteLine("[API] Unauthorized - no valid user ID for DELETE job");
+        log.LogWarning("Unauthorized for DELETE job");
         return Results.Unauthorized();
     }
 
@@ -515,12 +522,12 @@ app.MapDelete("/api/jobs/clear", (HttpContext context, JobListingService jobServ
     var userId = GetUserIdFromRequest(context, authService);
     if (!userId.HasValue)
     {
-        Console.WriteLine("[API] Unauthorized - no valid user ID for clear");
+        log.LogWarning("Unauthorized for clear");
         return Results.Unauthorized();
     }
 
     jobService.ClearAllJobListings(userId.Value);
-    Console.WriteLine("[API] All jobs cleared");
+    log.LogWarning("All jobs cleared");
     return Results.Ok(new { message = "All jobs cleared" });
 }).DisableAntiforgery();
 
@@ -548,7 +555,7 @@ app.MapPut("/api/jobs/description", async (HttpContext context, JobListingServic
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"[API] Error: {ex.Message}");
+        log.LogError(ex, "API error");
         return Results.BadRequest("An error occurred processing your request.");
     }
 }).DisableAntiforgery();
@@ -602,12 +609,12 @@ app.MapPost("/api/jobs/remove-duplicates", (HttpContext context, JobListingServi
     var userId = GetUserIdFromRequest(context, authService);
     if (!userId.HasValue)
     {
-        Console.WriteLine("[API] Unauthorized - no valid user ID for remove-duplicates");
+        log.LogWarning("Unauthorized for remove-duplicates");
         return Results.Unauthorized();
     }
 
     var removed = jobService.RemoveDuplicateJobs(userId.Value);
-    Console.WriteLine($"[API] Removed {removed} duplicate jobs");
+    log.LogInformation("Removed {Count} duplicate jobs", removed);
     return Results.Ok(new { removed });
 }).DisableAntiforgery();
 
@@ -617,12 +624,12 @@ app.MapPost("/api/jobs/fix-sources", (HttpContext context, JobListingService job
     var userId = GetUserIdFromRequest(context, authService);
     if (!userId.HasValue)
     {
-        Console.WriteLine("[API] Unauthorized - no valid user ID for fix-sources");
+        log.LogWarning("Unauthorized for fix-sources");
         return Results.Unauthorized();
     }
 
     var count = jobService.FixUnknownSources(userId.Value);
-    Console.WriteLine($"[API] Fixed sources for {count} jobs");
+    log.LogInformation("Fixed sources for {Count} jobs", count);
     return Results.Ok(new { fixedCount = count, message = $"Fixed sources for {count} jobs" });
 }).DisableAntiforgery();
 
@@ -665,7 +672,7 @@ app.MapPost("/api/jobs/{id:guid}/mark-unavailable", async (Guid id, HttpContext 
 
     jobService.SetSuitabilityStatus(id, SuitabilityStatus.Unsuitable, HistoryChangeSource.System, reason, userId);
     jobService.SetLastChecked(id, userId);
-    Console.WriteLine($"[API] Job {id} marked unavailable: {reason}");
+    log.LogInformation("Job {Id} marked unavailable: {Reason}", id, reason);
     return Results.Ok(new { success = true });
 }).DisableAntiforgery();
 
@@ -687,7 +694,7 @@ app.MapPost("/api/jobs/mark-unavailable", async (HttpContext context, JobListing
     var reason = body.Reason ?? "Job no longer available";
     jobService.SetSuitabilityStatus(job.Id, SuitabilityStatus.Unsuitable, HistoryChangeSource.System, reason, userId);
     jobService.SetLastChecked(job.Id, userId);
-    Console.WriteLine($"[API] Job marked unavailable by URL: {job.Title} - {reason}");
+    log.LogInformation("Job marked unavailable by URL: {Title} - {Reason}", job.Title, reason);
     return Results.Ok(new { success = true });
 }).DisableAntiforgery();
 
@@ -699,7 +706,7 @@ app.MapPost("/api/jobs/{id:guid}/mark-checked", (Guid id, HttpContext context, J
         return Results.Unauthorized();
 
     jobService.SetLastChecked(id, userId);
-    Console.WriteLine($"[API] Job {id} marked as checked (still available)");
+    log.LogDebug("Job {Id} marked as checked (still available)", id);
     return Results.Ok(new { success = true });
 }).DisableAntiforgery();
 
@@ -755,7 +762,7 @@ app.MapPost("/api/jobs/check-availability", async (HttpContext context, JobListi
         }
     );
 
-    Console.WriteLine($"[API] Availability check for {body.Source}: {jobsToCheck.Count} jobs, {markedUnavailable} unavailable, {errors} errors, {skipped} skipped");
+    log.LogInformation("Availability check for {Source}: {Total} jobs, {Unavailable} unavailable, {Errors} errors, {Skipped} skipped", body.Source, jobsToCheck.Count, markedUnavailable, errors, skipped);
     return Results.Ok(new { total = jobsToCheck.Count, @checked = jobsToCheck.Count - skipped, markedUnavailable, errors, skipped });
 }).DisableAntiforgery();
 
@@ -769,9 +776,9 @@ app.MapPost("/api/jobs/crawl", async (HttpContext context, JobCrawlService crawl
     var settings = settingsService.GetSettings(userId);
     var siteUrls = settings.JobSiteUrls;
 
-    Console.WriteLine($"[API] Starting job crawl for user {userId}");
+    log.LogInformation("Starting job crawl for user {UserId}", userId);
     var result = await crawlService.CrawlAllSitesAsync(siteUrls, userId.Value, jobService, settings.CrawlPages, settings.SearchQueries);
-    Console.WriteLine($"[API] Crawl complete: {result.JobsFound} found, {result.JobsAdded} added, {result.PagesScanned} pages");
+    log.LogInformation("Crawl complete: {Found} found, {Added} added, {Pages} pages", result.JobsFound, result.JobsAdded, result.PagesScanned);
 
     return Results.Ok(result);
 }).DisableAntiforgery();

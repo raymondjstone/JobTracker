@@ -19,8 +19,16 @@
             <button class="btn btn-outline-primary me-2" @onclick="ShowPresetsModal">
                 <i class="bi bi-collection"></i> Presets
             </button>
-            <button class="btn btn-outline-warning" @onclick="ApplyRulesToExisting">
-                <i class="bi bi-arrow-repeat"></i> Apply to Existing
+            <button class="btn btn-outline-warning" @onclick="ApplyRulesToExisting" disabled="@isApplyingRules">
+                @if (isApplyingRules)
+                {
+                    <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                    <span>Applying...</span>
+                }
+                else
+                {
+                    <i class="bi bi-arrow-repeat"></i> <span>Apply to Existing</span>
+                }
             </button>
         </div>
     </div>
@@ -467,6 +475,7 @@
 
     private string statusMessage = "";
     private bool isError = false;
+    private bool isApplyingRules = false;
 
     // Compound conditions support
     private bool useCompoundConditions = false;
@@ -664,18 +673,29 @@
         LoadRules();
     }
 
-    private void ApplyRulesToExisting()
+    private async Task ApplyRulesToExisting()
     {
-        var count = JobService.ApplyRulesToExistingJobs();
-        if (count > 0)
+        isApplyingRules = true;
+        StateHasChanged();
+        await Task.Yield(); // Let UI update before processing
+
+        try
         {
-            ShowStatus($"Rules applied to {count} existing jobs", false);
+            var count = JobService.ApplyRulesToExistingJobs();
+            if (count > 0)
+            {
+                ShowStatus($"Rules applied to {count} existing jobs", false);
+            }
+            else
+            {
+                ShowStatus("No jobs were updated (rules may already be applied)", false);
+            }
+            LoadRules();
         }
-        else
+        finally
         {
-            ShowStatus("No jobs were updated (rules may already be applied)", false);
+            isApplyingRules = false;
         }
-        LoadRules();
     }
 
     private void ShowStatus(string message, bool error)

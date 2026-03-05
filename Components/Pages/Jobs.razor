@@ -128,27 +128,27 @@
 </div>
 
 @* Tabs *@
-<ul class="nav nav-tabs mb-3">
+<ul class="nav nav-tabs mb-3" role="tablist" aria-label="Job categories">
     <li class="nav-item">
-        <button class="nav-link @(activeTab == TabType.Browse ? "active" : "")" @onclick="() => SetActiveTab(TabType.Browse)">
+        <button class="nav-link @(activeTab == TabType.Browse ? "active" : "")" @onclick="() => SetActiveTab(TabType.Browse)" role="tab" aria-selected="@(activeTab == TabType.Browse)">
             <i class="bi bi-search"></i> Browse Jobs
             <span class="badge bg-secondary ms-1">@browseJobsCount</span>
         </button>
     </li>
     <li class="nav-item">
-        <button class="nav-link @(activeTab == TabType.Possible ? "active" : "")" @onclick="() => SetActiveTab(TabType.Possible)">
+        <button class="nav-link @(activeTab == TabType.Possible ? "active" : "")" @onclick="() => SetActiveTab(TabType.Possible)" role="tab" aria-selected="@(activeTab == TabType.Possible)">
             <i class="bi bi-star"></i> Possible
             <span class="badge bg-success ms-1">@possibleJobsCount</span>
         </button>
     </li>
     <li class="nav-item">
-        <button class="nav-link @(activeTab == TabType.Applied ? "active" : "")" @onclick="() => SetActiveTab(TabType.Applied)">
+        <button class="nav-link @(activeTab == TabType.Applied ? "active" : "")" @onclick="() => SetActiveTab(TabType.Applied)" role="tab" aria-selected="@(activeTab == TabType.Applied)">
             <i class="bi bi-send"></i> Applied
             <span class="badge bg-primary ms-1">@appliedJobsCount</span>
         </button>
     </li>
     <li class="nav-item">
-        <button class="nav-link @(activeTab == TabType.Pipeline ? "active" : "")" @onclick="() => SetActiveTab(TabType.Pipeline)">
+        <button class="nav-link @(activeTab == TabType.Pipeline ? "active" : "")" @onclick="() => SetActiveTab(TabType.Pipeline)" role="tab" aria-selected="@(activeTab == TabType.Pipeline)">
             <i class="bi bi-kanban"></i> Pipeline
             <span class="badge bg-primary ms-1">@appliedJobsCount</span>
             @if (followUpsDueCount > 0)
@@ -158,13 +158,13 @@
         </button>
     </li>
     <li class="nav-item">
-        <button class="nav-link @(activeTab == TabType.Unsuitable ? "active" : "")" @onclick="() => SetActiveTab(TabType.Unsuitable)">
+        <button class="nav-link @(activeTab == TabType.Unsuitable ? "active" : "")" @onclick="() => SetActiveTab(TabType.Unsuitable)" role="tab" aria-selected="@(activeTab == TabType.Unsuitable)">
             <i class="bi bi-slash-circle"></i> Unsuitable
             <span class="badge bg-danger ms-1">@unsuitableJobsCount</span>
         </button>
     </li>
     <li class="nav-item">
-        <button class="nav-link @(activeTab == TabType.Archived ? "active" : "")" @onclick="() => SetActiveTab(TabType.Archived)">
+        <button class="nav-link @(activeTab == TabType.Archived ? "active" : "")" @onclick="() => SetActiveTab(TabType.Archived)" role="tab" aria-selected="@(activeTab == TabType.Archived)">
             <i class="bi bi-archive"></i> Archived
             <span class="badge bg-secondary ms-1">@archivedJobsCount</span>
         </button>
@@ -210,18 +210,18 @@
             <div class="card-body">
                 <div class="row g-3">
                     <div class="col-md-3">
-                        <label class="form-label">Search</label>
-                        <input type="text" class="form-control" placeholder="Search title, description, company..."
-                               @bind="filter.SearchTerm" @bind:event="oninput" @onkeyup="ApplyFilter" />
+                        <label class="form-label" for="filter-search">Search</label>
+                        <input type="text" id="filter-search" class="form-control" placeholder="Search title, description, company..."
+                               @bind="filter.SearchTerm" @bind:event="oninput" @onkeyup="ApplyFilter" aria-label="Search jobs" />
                     </div>
                     <div class="col-md-2">
-                        <label class="form-label">Location</label>
-                        <input type="text" class="form-control" placeholder="Enter location..."
-                               @bind="filter.Location" @bind:event="oninput" @onkeyup="ApplyFilter" />
+                        <label class="form-label" for="filter-location">Location</label>
+                        <input type="text" id="filter-location" class="form-control" placeholder="Enter location..."
+                               @bind="filter.Location" @bind:event="oninput" @onkeyup="ApplyFilter" aria-label="Filter by location" />
                     </div>
                     <div class="col-md-2">
-                        <label class="form-label">Job Type</label>
-                        <select class="form-select" @bind="selectedJobType" @bind:after="ApplyFilter">
+                        <label class="form-label" for="filter-jobtype">Job Type</label>
+                        <select id="filter-jobtype" class="form-select" @bind="selectedJobType" @bind:after="ApplyFilter" aria-label="Filter by job type">
                             <option value="">All Types</option>
                             @foreach (var type in Enum.GetValues<JobType>())
                             {
@@ -230,16 +230,16 @@
                         </select>
                     </div>
                     <div class="col-md-2">
-                        <label class="form-label">Remote</label>
-                        <select class="form-select" @bind="selectedRemote" @bind:after="ApplyFilter">
+                        <label class="form-label" for="filter-remote">Remote</label>
+                        <select id="filter-remote" class="form-select" @bind="selectedRemote" @bind:after="ApplyFilter" aria-label="Filter by remote status">
                             <option value="">All</option>
                             <option value="true">Remote Only</option>
                             <option value="false">On-site Only</option>
                         </select>
                     </div>
                     <div class="col-md-3">
-                        <label class="form-label">Interest</label>
-                        <select class="form-select" @bind="selectedInterest" @bind:after="ApplyFilter">
+                        <label class="form-label" for="filter-interest">Interest</label>
+                        <select id="filter-interest" class="form-select" @bind="selectedInterest" @bind:after="ApplyFilter" aria-label="Filter by interest level">
                             <option value="">All</option>
                             <option value="Interested">Interested</option>
                             <option value="NotInterested">Not Interested</option>
@@ -249,8 +249,8 @@
                 </div>
                 <div class="row g-3 mt-2">
                     <div class="col-md-2">
-                        <label class="form-label">Source</label>
-                        <select class="form-select" @bind="selectedSource" @bind:after="ApplyFilter">
+                        <label class="form-label" for="filter-source">Source</label>
+                        <select id="filter-source" class="form-select" @bind="selectedSource" @bind:after="ApplyFilter" aria-label="Filter by job source">
                             <option value="">All Sources</option>
                             <option value="LinkedIn">LinkedIn</option>
                             <option value="Indeed">Indeed</option>
@@ -260,16 +260,16 @@
                         </select>
                     </div>
                     <div class="col-md-1">
-                        <label class="form-label">Source Type</label>
-                        <select class="form-select" @bind="selectedIsAgency" @bind:after="ApplyFilter">
+                        <label class="form-label" for="filter-agency">Source Type</label>
+                        <select id="filter-agency" class="form-select" @bind="selectedIsAgency" @bind:after="ApplyFilter" aria-label="Filter by agency or direct">
                             <option value="">All</option>
                             <option value="true">Agency</option>
                             <option value="false">Direct</option>
                         </select>
                     </div>
                     <div class="col-md-2">
-                        <label class="form-label">Salary Info</label>
-                        <select class="form-select" @bind="selectedHasSalary" @bind:after="ApplyFilter">
+                        <label class="form-label" for="filter-salary">Salary Info</label>
+                        <select id="filter-salary" class="form-select" @bind="selectedHasSalary" @bind:after="ApplyFilter" aria-label="Filter by salary information">
                             <option value="">All</option>
                             <option value="true">Has Salary</option>
                             <option value="false">No Salary Listed</option>
@@ -279,15 +279,15 @@
                         </select>
                     </div>
                     <div class="col-md-2">
-                        <label class="form-label">Title Only</label>
-                        <input type="text" class="form-control" placeholder="Search job title only..."
-                               @bind="filter.TitleOnlySearchTerm" @bind:event="oninput" @onkeyup="ApplyFilter" />
+                        <label class="form-label" for="filter-title">Title Only</label>
+                        <input type="text" id="filter-title" class="form-control" placeholder="Search job title only..."
+                               @bind="filter.TitleOnlySearchTerm" @bind:event="oninput" @onkeyup="ApplyFilter" aria-label="Search job title only" />
                     </div>
                     @if (activeTab == TabType.Applied || activeTab == TabType.Pipeline)
                     {
                         <div class="col-md-2">
-                            <label class="form-label">Stage</label>
-                            <select class="form-select" @bind="selectedApplicationStage" @bind:after="ApplyFilter">
+                            <label class="form-label" for="filter-stage">Stage</label>
+                            <select id="filter-stage" class="form-select" @bind="selectedApplicationStage" @bind:after="ApplyFilter" aria-label="Filter by application stage">
                                 <option value="">All Stages</option>
                                 @foreach (var stage in Enum.GetValues<ApplicationStage>().Where(s => s != ApplicationStage.None))
                                 {
@@ -297,16 +297,16 @@
                         </div>
                     }
                     <div class="col-md-2">
-                        <label class="form-label">Date From</label>
-                        <input type="date" class="form-control" @bind="filter.DateFrom" @bind:after="ApplyFilter" />
+                        <label class="form-label" for="filter-datefrom">Date From</label>
+                        <input type="date" id="filter-datefrom" class="form-control" @bind="filter.DateFrom" @bind:after="ApplyFilter" aria-label="Filter from date" />
                     </div>
                     <div class="col-md-2">
-                        <label class="form-label">Date To</label>
-                        <input type="date" class="form-control" @bind="filter.DateTo" @bind:after="ApplyFilter" />
+                        <label class="form-label" for="filter-dateto">Date To</label>
+                        <input type="date" id="filter-dateto" class="form-control" @bind="filter.DateTo" @bind:after="ApplyFilter" aria-label="Filter to date" />
                     </div>
                     <div class="col-md-2">
-                        <label class="form-label">Sort By</label>
-                        <select class="form-select" @bind="filter.SortBy" @bind:after="ApplyFilter">
+                        <label class="form-label" for="filter-sort">Sort By</label>
+                        <select id="filter-sort" class="form-select" @bind="filter.SortBy" @bind:after="ApplyFilter" aria-label="Sort jobs by">
                             <option value="@SortOption.DateAddedDesc">Date Added (Newest)</option>
                             <option value="@SortOption.DateAddedAsc">Date Added (Oldest)</option>
                             <option value="@SortOption.DatePostedDesc">Date Posted (Newest)</option>
@@ -330,8 +330,8 @@
                         </select>
                     </div>
                     <div class="col-md-2">
-                        <label class="form-label">ML Score</label>
-                        <select class="form-select" @bind="selectedScoreBand" @bind:after="ApplyFilter">
+                        <label class="form-label" for="filter-score">ML Score</label>
+                        <select id="filter-score" class="form-select" @bind="selectedScoreBand" @bind:after="ApplyFilter" aria-label="Filter by ML suitability score">
                             <option value="">All Scores</option>
                             <option value="excellent">&#x1F7E2; Excellent (80-100)</option>
                             <option value="good">&#x1F535; Good (60-79)</option>
@@ -346,8 +346,8 @@
                                @bind="filter.SalarySearch" @bind:event="oninput" @onkeyup="ApplyFilter" />
                     </div>
                     <div class="col-md-1">
-                        <label class="form-label">Salary Type</label>
-                        <select class="form-select" @bind="selectedSalaryType" @bind:after="ApplyFilter">
+                        <label class="form-label" for="filter-salarytype">Salary Type</label>
+                        <select id="filter-salarytype" class="form-select" @bind="selectedSalaryType" @bind:after="ApplyFilter" aria-label="Filter by salary type">
                             <option value="">All</option>
                             <option value="annual">Annual</option>
                             <option value="day">Day Rate</option>
@@ -359,8 +359,8 @@
                                @bind="selectedSalaryTarget" @bind:event="oninput" @bind:after="ApplyFilter" />
                     </div>
                     <div class="col-md-2">
-                        <label class="form-label">Skill</label>
-                        <input type="text" class="form-control" placeholder="e.g. C#, Python..."
+                        <label class="form-label" for="filter-skill">Skill</label>
+                        <input type="text" id="filter-skill" class="form-control" placeholder="e.g. C#, Python..."
                                list="skill-suggestions"
                                @bind="selectedSkill" @bind:event="oninput" @bind:after="ApplyFilter" />
                         <datalist id="skill-suggestions">
@@ -473,6 +473,35 @@
         <button type="button" class="btn-close" @onclick="() => crawlStatusMessage = null"></button>
     </div>
 }
+
+@if (!string.IsNullOrEmpty(bulkStatusMessage))
+{
+    <div class="alert alert-info alert-dismissible mb-4">
+        <i class="bi bi-check-circle"></i> @bulkStatusMessage
+        <button type="button" class="btn-close" @onclick="() => bulkStatusMessage = null"></button>
+    </div>
+}
+
+@* Group By toolbar *@
+<div class="d-flex align-items-center gap-2 mb-3">
+    <label class="form-label mb-0 text-muted"><i class="bi bi-collection"></i> Group by:</label>
+    <select class="form-select form-select-sm" style="width: auto; min-width: 130px;" @bind="selectedGroupBy" @bind:after="OnGroupByChanged" aria-label="Group jobs by field">
+        <option value="">None</option>
+        <option value="company">Company</option>
+        <option value="title">Title</option>
+        <option value="location">Location</option>
+        <option value="jobtype">Job Type</option>
+        <option value="dateposted">Date Posted</option>
+        <option value="dateadded">Date Added</option>
+        <option value="source">Source</option>
+        <option value="salaryband">Salary Band</option>
+    </select>
+    @if (!string.IsNullOrEmpty(selectedGroupBy))
+    {
+        <button class="btn btn-sm btn-outline-secondary" title="Expand All" @onclick="ExpandAllGroups"><i class="bi bi-arrows-expand"></i></button>
+        <button class="btn btn-sm btn-outline-secondary" title="Collapse All" @onclick="CollapseAllGroups"><i class="bi bi-arrows-collapse"></i></button>
+    }
+</div>
 
 @* Pipeline / Kanban Board *@
 @if (activeTab == TabType.Pipeline)
@@ -614,8 +643,33 @@ else if (!filteredJobs.Any())
 }
 else
 {
-    <div class="row">
-        @foreach (var job in filteredJobs)
+    var jobGroups = string.IsNullOrEmpty(selectedGroupBy)
+        ? new List<IGrouping<string, JobListing>> { new SingleGroup<string, JobListing>("", filteredJobs) }
+        : filteredJobs
+            .GroupBy(j => GetGroupKey(j))
+            .OrderBy(g => IsDateGroupField(selectedGroupBy) ? "" : g.Key)
+            .ThenByDescending(g => IsDateGroupField(selectedGroupBy) ? g.Key : "")
+            .ToList();
+
+    @foreach (var group in jobGroups)
+    {
+        var groupKey = group.Key;
+        var isGrouped = !string.IsNullOrEmpty(selectedGroupBy);
+        var isCollapsed = isGrouped && collapsedGroups.Contains(groupKey);
+
+        if (isGrouped)
+        {
+            <div class="d-flex align-items-center p-2 bg-light rounded border mb-2" style="cursor: pointer;" @onclick="() => ToggleGroup(groupKey)">
+                <i class="bi @(isCollapsed ? "bi-chevron-right" : "bi-chevron-down") me-2"></i>
+                <strong>@groupKey</strong>
+                <span class="badge bg-primary ms-2">@group.Count()</span>
+            </div>
+        }
+
+        if (!isCollapsed)
+        {
+    <div class="row @(isGrouped ? "mb-3" : "")">
+        @foreach (var job in group)
         {
             <div class="col-md-6 col-lg-4 mb-4" id="job-@job.Id">
                 <div class="card h-100 @GetCardBorderClass(job.Interest) @(lastViewedJobId == job.Id ? "last-viewed-job" : "")">
@@ -633,10 +687,10 @@ else
                                     <i class="bi bi-eye-fill text-primary me-1" title="Last viewed"></i>
                                 }
                                 <span class="source-icon me-1" title="@GetSourceDisplayName(job.Source)">@((MarkupString)GetSourceIcon(job.Source))</span>
-                                @job.Title
+                                @(HighlightSearch(job.Title, matchTitleTerm: true))
                             </h5>
                             <h6 class="card-subtitle text-muted">
-                                @job.Company
+                                @(HighlightSearch(job.Company))
                                 @if (job.IsAgency)
                                 {
                                     <span class="badge bg-warning text-dark ms-1" style="font-size: 0.65em;">Agency</span>
@@ -657,7 +711,7 @@ else
                         <div class="clickable-card-area" @onclick="() => OpenJobInLinkedIn(job)" title="Click to open job">
                             <p class="card-text">
                                 <small class="text-muted">
-                                    <i class="bi bi-geo-alt"></i> @(string.IsNullOrEmpty(job.Location) ? "Not specified" : job.Location)
+                                    <i class="bi bi-geo-alt"></i> @(string.IsNullOrEmpty(job.Location) ? (MarkupString)"Not specified" : HighlightSearch(job.Location))
                                     @if (job.IsRemote)
                                     {
                                         <span class="badge bg-success ms-2">Remote</span>
@@ -706,7 +760,7 @@ else
                             {
                                 <p class="card-text mb-1 text-muted"><i class="bi bi-cash-stack"></i> Not specified</p>
                             }
-                            <p class="card-text description-preview">@TruncateDescription(job.Description, 150)</p>
+                            <p class="card-text description-preview">@(HighlightSearch(TruncateDescription(job.Description, 150)))</p>
                         </div>
                         @if (job.Skills.Any())
                         {
@@ -880,6 +934,8 @@ else
             </div>
         }
     </div>
+        }
+    }
 }
 
 @* Job Details Modal *@
@@ -2438,6 +2494,8 @@ else
     private string selectedSalaryTarget = "";
     private string selectedSalaryType = "";
     private string selectedSkill = "";
+    private string selectedGroupBy = "";
+    private HashSet<string> collapsedGroups = new();
     private List<string> availableSkills = new();
     private JobListing? selectedJob = null;
     private JobListing? jobToDelete = null;
@@ -2501,6 +2559,7 @@ else
     private bool isCrawling = false;
     private string? crawlStatusMessage = null;
     private bool crawlStatusIsError = false;
+    private string? bulkStatusMessage = null;
 
     // Kanban drag & drop state
     private Guid? draggingJobId = null;
@@ -2548,6 +2607,7 @@ else
         aiSettings = initSettings.AIAssistant;
         skillPriorities = initSettings.ScoringPreferences.SkillPriorities;
         localCurrency = initSettings.LocalCurrency;
+        RestoreViewState();
         RefreshData();
         
         // Auto-refresh every 5 seconds to pick up changes from extensions
@@ -2613,7 +2673,7 @@ else
     private void SetActiveTab(TabType tab)
     {
         activeTab = tab;
-        ClearFilters();
+        ClearFilters(); // calls ApplyFilter which saves view state
     }
 
     private void ApplyFilter()
@@ -2661,6 +2721,7 @@ else
         }
 
         filteredCount = filteredJobs.Count();
+        SaveViewState();
     }
 
     private void ClearFilters()
@@ -2989,19 +3050,23 @@ else
 
     private void MarkAllFilteredUnsuitable()
     {
+        var count = filteredJobs.Count();
         foreach (var job in filteredJobs)
         {
             JobService.SetSuitabilityStatus(job.Id, SuitabilityStatus.Unsuitable);
         }
+        bulkStatusMessage = $"Marked {count} jobs as Unsuitable";
         RefreshData();
     }
 
     private void MarkAllFilteredPossible()
     {
+        var count = filteredJobs.Count();
         foreach (var job in filteredJobs)
         {
             JobService.SetSuitabilityStatus(job.Id, SuitabilityStatus.Possible);
         }
+        bulkStatusMessage = $"Marked {count} jobs as Possible";
         RefreshData();
     }
 
@@ -3214,6 +3279,26 @@ else
     {
         if (string.IsNullOrEmpty(description) || description.Length <= maxLength) return description;
         return description[..maxLength] + "...";
+    }
+
+    private MarkupString HighlightSearch(string text, bool matchSearchTerm = true, bool matchTitleTerm = false)
+    {
+        if (string.IsNullOrEmpty(text)) return (MarkupString)"";
+        var encoded = System.Net.WebUtility.HtmlEncode(text);
+
+        var terms = new List<string>();
+        if (matchSearchTerm && !string.IsNullOrWhiteSpace(filter.SearchTerm))
+            terms.Add(filter.SearchTerm.Trim());
+        if (matchTitleTerm && !string.IsNullOrWhiteSpace(filter.TitleOnlySearchTerm))
+            terms.Add(filter.TitleOnlySearchTerm.Trim());
+
+        if (terms.Count == 0) return (MarkupString)encoded;
+
+        var pattern = string.Join("|", terms.Select(t => System.Text.RegularExpressions.Regex.Escape(t)));
+        var highlighted = System.Text.RegularExpressions.Regex.Replace(
+            encoded, pattern, m => $"<mark>{m.Value}</mark>",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return (MarkupString)highlighted;
     }
 
     private string GetJobTypeBadgeClass(JobType jobType) => jobType switch
@@ -3890,6 +3975,130 @@ else
             JobService.UpdateJobListing(selectedJobForAI);
             showCoverLetterModal = false;
             StateHasChanged();
+        }
+    }
+
+    // --- Grouping helpers ---
+
+    private void OnGroupByChanged()
+    {
+        collapsedGroups.Clear();
+        SaveViewState();
+    }
+
+    private void ToggleGroup(string key)
+    {
+        if (!collapsedGroups.Remove(key))
+            collapsedGroups.Add(key);
+    }
+
+    private void ExpandAllGroups()
+    {
+        collapsedGroups.Clear();
+    }
+
+    private void CollapseAllGroups()
+    {
+        foreach (var group in filteredJobs.GroupBy(j => GetGroupKey(j)))
+            collapsedGroups.Add(group.Key);
+    }
+
+    private bool IsDateGroupField(string field) => field is "dateposted" or "dateadded";
+
+    private string GetGroupKey(JobListing job) => selectedGroupBy switch
+    {
+        "company" => string.IsNullOrWhiteSpace(job.Company) ? "Unknown" : job.Company,
+        "title" => string.IsNullOrWhiteSpace(job.Title) ? "Unknown" : job.Title,
+        "location" => string.IsNullOrWhiteSpace(job.Location) ? "Unknown" : job.Location,
+        "jobtype" => job.JobType.ToString(),
+        "dateposted" => job.DatePosted.ToString("yyyy-MM-dd"),
+        "dateadded" => job.DateAdded.ToString("yyyy-MM-dd"),
+        "source" => string.IsNullOrWhiteSpace(job.Source) ? "Unknown" : job.Source,
+        "salaryband" => GetSalaryBandLabel(job),
+        _ => ""
+    };
+
+    private string GetSalaryBandLabel(JobListing job)
+    {
+        if (!job.SalaryMin.HasValue) return "No Salary";
+        var band = (int)(job.SalaryMin.Value / 10000) * 10000;
+        if (job.SalaryMin.Value >= 200000) return "200k+";
+        return $"{band / 1000}k-{(band + 10000) / 1000}k";
+    }
+
+    private class SingleGroup<TKey, TElement> : IGrouping<TKey, TElement>
+    {
+        private readonly TKey _key;
+        private readonly IEnumerable<TElement> _elements;
+        public SingleGroup(TKey key, IEnumerable<TElement> elements) { _key = key; _elements = elements; }
+        public TKey Key => _key;
+        public IEnumerator<TElement> GetEnumerator() => _elements.GetEnumerator();
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
+    private bool _restoringViewState;
+
+    private void SaveViewState()
+    {
+        if (_restoringViewState) return;
+        var settings = SettingsService.GetSettings();
+        settings.LastViewState = new JobViewState
+        {
+            SearchTerm = filter.SearchTerm,
+            TitleOnlySearchTerm = filter.TitleOnlySearchTerm,
+            Location = filter.Location,
+            JobType = selectedJobType,
+            IsRemote = selectedRemote,
+            Interest = selectedInterest,
+            ScoreBand = selectedScoreBand,
+            HasSalary = selectedHasSalary,
+            SalarySearch = filter.SalarySearch,
+            SalaryTarget = selectedSalaryTarget,
+            SalaryType = selectedSalaryType,
+            Source = selectedSource,
+            IsAgency = selectedIsAgency,
+            SkillSearch = selectedSkill,
+            ApplicationStage = selectedApplicationStage,
+            SortBy = filter.SortBy.ToString(),
+            GroupBy = selectedGroupBy,
+            ActiveTab = activeTab.ToString()
+        };
+        SettingsService.Save();
+    }
+
+    private void RestoreViewState()
+    {
+        var settings = SettingsService.GetSettings();
+        var vs = settings.LastViewState;
+        if (vs == null) return;
+
+        _restoringViewState = true;
+        try
+        {
+            filter.SearchTerm = vs.SearchTerm;
+            filter.TitleOnlySearchTerm = vs.TitleOnlySearchTerm;
+            filter.Location = vs.Location;
+            filter.SalarySearch = vs.SalarySearch;
+            selectedJobType = vs.JobType ?? "";
+            selectedRemote = vs.IsRemote ?? "";
+            selectedInterest = vs.Interest ?? "";
+            selectedScoreBand = vs.ScoreBand ?? "";
+            selectedHasSalary = vs.HasSalary ?? "";
+            selectedSalaryTarget = vs.SalaryTarget ?? "";
+            selectedSalaryType = vs.SalaryType ?? "";
+            selectedSource = vs.Source ?? "";
+            selectedIsAgency = vs.IsAgency ?? "";
+            selectedSkill = vs.SkillSearch ?? "";
+            selectedApplicationStage = vs.ApplicationStage ?? "";
+            selectedGroupBy = vs.GroupBy ?? "";
+            if (!string.IsNullOrEmpty(vs.SortBy) && Enum.TryParse<SortOption>(vs.SortBy, out var sort))
+                filter.SortBy = sort;
+            if (!string.IsNullOrEmpty(vs.ActiveTab) && Enum.TryParse<TabType>(vs.ActiveTab, out var tab))
+                activeTab = tab;
+        }
+        finally
+        {
+            _restoringViewState = false;
         }
     }
 

@@ -288,7 +288,7 @@ public class JobListingService
 
                 if (existingByUrl != null)
                 {
-                    Console.WriteLine($"[ADD] DUPLICATE by URL: '{jobListing.Title}' at '{jobListing.Company}' - existing job Suitability={existingByUrl.Suitability}, Company='{existingByUrl.Company}'");
+                    _logger.LogDebug("Duplicate by URL: '{Title}' at '{Company}'", jobListing.Title, jobListing.Company);
                     _logger.LogInformation("Duplicate job skipped (URL match): {Title} at {Company}",
                         jobListing.Title, jobListing.Company);
                     return false;
@@ -358,7 +358,7 @@ public class JobListingService
             if (!string.IsNullOrEmpty(salaryResult.Period)) jobListing.SalaryPeriod = salaryResult.Period;
 
             // Apply job rules
-            Console.WriteLine($"[ADD] Evaluating rules for '{jobListing.Title}' - Company='{jobListing.Company}', Source='{jobListing.Source}', Suitability={jobListing.Suitability}");
+            _logger.LogDebug("Evaluating rules for '{Title}' at '{Company}'", jobListing.Title, jobListing.Company);
             RuleEvaluationResult? ruleResult = null;
             {
                 ruleResult = _rulesService.Value.EvaluateJob(jobListing);
@@ -379,7 +379,7 @@ public class JobListingService
                 }
             }
 
-            Console.WriteLine($"[ADD] After rules: Suitability={jobListing.Suitability}, Interest={jobListing.Interest}, MatchedRules={ruleResult?.MatchedRules.Count ?? 0}");
+            _logger.LogDebug("After rules: Suitability={Suitability}, Interest={Interest}, MatchedRules={Count}", jobListing.Suitability, jobListing.Interest, ruleResult?.MatchedRules.Count ?? 0);
 
             // Calculate ML-based suitability score
             try
@@ -1214,13 +1214,18 @@ public class JobListingService
                 changed = true;
             }
 
-            // Update JobType if the parsed job has a specific type and the stored job is still the default.
-            // Also update if overwriteNonEmpty is set and the parsed type differs.
-            if (parsed.JobType != JobType.FullTime &&
-                (job.JobType == JobType.FullTime || (overwriteNonEmpty && job.JobType != parsed.JobType)))
+            // Update JobType: allow re-fetch to correct the type in either direction.
+            // A non-default parsed type always wins over default; overwriteNonEmpty allows any change.
+            // Also allow FullTime to correct a likely false positive (e.g. Volunteer from keyword match).
+            if (parsed.JobType != job.JobType)
             {
-                job.JobType = parsed.JobType;
-                changed = true;
+                if (parsed.JobType != JobType.FullTime ||
+                    overwriteNonEmpty ||
+                    job.JobType == JobType.Volunteer) // Volunteer is most prone to false positives
+                {
+                    job.JobType = parsed.JobType;
+                    changed = true;
+                }
             }
 
             // Merge any contacts extracted from the job page
@@ -1425,17 +1430,18 @@ public class JobListingService
                         job.IsAgency = true;
                 }
 
-                // Update job type if extension detected a specific (non-default) type
-                if (jobType.HasValue && jobType.Value != JobType.FullTime && job.JobType == JobType.FullTime)
+                // Update job type from extension or description detection.
+                // Allow correction in either direction (including fixing false positives).
+                if (jobType.HasValue && jobType.Value != job.JobType)
                 {
                     job.JobType = jobType.Value;
                     _logger.LogInformation("Updated job type to {JobType} for '{Title}'", job.JobType, job.Title);
                 }
-                // Also try detecting from the description text if still default
-                if (job.JobType == JobType.FullTime && !string.IsNullOrWhiteSpace(cleanedDescription))
+                // Also try detecting from the description text
+                if (!string.IsNullOrWhiteSpace(cleanedDescription))
                 {
                     var detected = LinkedInJobExtractor.DetectJobType(cleanedDescription);
-                    if (detected != JobType.FullTime)
+                    if (detected != job.JobType && detected != JobType.FullTime)
                     {
                         job.JobType = detected;
                         _logger.LogInformation("Detected job type {JobType} from description for '{Title}'", job.JobType, job.Title);
@@ -1534,8 +1540,8 @@ public class JobListingService
                 return true;
             }
 
-            // Even if description didn't change, update job type if still default
-            if (jobType.HasValue && jobType.Value != JobType.FullTime && job.JobType == JobType.FullTime)
+            // Even if description didn't change, update job type if it differs
+            if (jobType.HasValue && jobType.Value != job.JobType)
             {
                 job.JobType = jobType.Value;
                 _storage.SaveJob(job);
