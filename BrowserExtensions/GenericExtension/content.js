@@ -9,6 +9,7 @@
   var lastUrl = window.location.href;
   var extractionInterval = null;
   var activated = false;
+  var activatePromptShown = false;
 
   // Check RFC 1918 private IP ranges: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
   function isPrivateIP(host) {
@@ -43,11 +44,36 @@
   }
   if (siteSpecificExtensionLoaded()) return;
 
+  // Normalize hostname for allowlist matching (strip www.)
+  function getSiteDomain(host) {
+    return host.replace(/^www\./, '').toLowerCase();
+  }
+
+  var siteDomain = getSiteDomain(currentHost);
+
+  // Check if domain is in allowed sites list
+  function isSiteAllowed(allowedSites) {
+    for (var i = 0; i < allowedSites.length; i++) {
+      var allowed = allowedSites[i].toLowerCase();
+      if (siteDomain === allowed || siteDomain.endsWith('.' + allowed)) return true;
+    }
+    return false;
+  }
+
   console.log('[GEN] Universal Job Extractor loaded');
 
-  // Load server URL and API key from storage
+  // Check if domain is in dismissed/blocked sites list
+  function isSiteBlocked(blockedSites) {
+    for (var i = 0; i < blockedSites.length; i++) {
+      var blocked = blockedSites[i].toLowerCase();
+      if (siteDomain === blocked || siteDomain.endsWith('.' + blocked)) return true;
+    }
+    return false;
+  }
+
+  // Load settings from storage, then decide whether to activate or show prompt
   if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-    chrome.storage.local.get(['serverUrl', 'apiKey'], function(result) {
+    chrome.storage.local.get(['serverUrl', 'apiKey', 'allowedSites', 'blockedSites'], function(result) {
       if (result.serverUrl) {
         SERVER_URL = result.serverUrl.replace(/\/+$/, '');
         console.log('[GEN] Using server URL from settings:', SERVER_URL);
@@ -56,11 +82,25 @@
         API_KEY = result.apiKey;
         console.log('[GEN] API key loaded');
       }
-      // Start detection after settings loaded
-      startDetection();
+
+      var allowedSites = (result.allowedSites && Array.isArray(result.allowedSites))
+        ? result.allowedSites : [];
+      var blockedSites = (result.blockedSites && Array.isArray(result.blockedSites))
+        ? result.blockedSites : [];
+
+      if (isSiteAllowed(allowedSites)) {
+        console.log('[GEN] Site is activated:', siteDomain);
+        startDetection();
+      } else if (isSiteBlocked(blockedSites)) {
+        console.log('[GEN] Site is dismissed:', siteDomain);
+        // Do nothing — site was previously dismissed
+      } else {
+        console.log('[GEN] Site not activated:', siteDomain, '- showing activation prompt');
+        showActivatePrompt();
+      }
     });
   } else {
-    startDetection();
+    showActivatePrompt();
   }
 
   function getHeaders() {
@@ -117,34 +157,201 @@
           detected: getAllJsonLdJobPostings().length > 0,
           cardCount: findJobCards().length
         });
+      } else if (message.action === 'activateSite') {
+        // Activated from popup — remove prompt if shown, start detection and extract immediately
+        removeActivatePrompt();
+        startDetectionAndExtract();
+        sendResponse({ success: true });
       }
     });
+  }
+
+  // === Activation Prompt ===
+
+  function showActivatePrompt() {
+    if (activatePromptShown) return;
+    activatePromptShown = true;
+
+    // Wait for body to be available
+    if (!document.body) {
+      document.addEventListener('DOMContentLoaded', function() { createActivatePrompt(); });
+    } else {
+      createActivatePrompt();
+    }
+  }
+
+  function createActivatePrompt() {
+    if (document.getElementById('gen-activate-prompt')) return;
+    var el = document.createElement('div');
+    el.id = 'gen-activate-prompt';
+    el.style.cssText = 'position:fixed;bottom:20px;right:20px;background:#4A90D9;color:#fff;padding:10px 14px;border-radius:12px;font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;z-index:2147483647;display:flex;align-items:center;gap:10px;box-shadow:0 4px 20px rgba(0,0,0,0.3);max-width:340px;';
+
+    var icon = document.createElement('span');
+    icon.textContent = '\uD83C\uDF10'; // globe emoji
+    icon.style.cssText = 'font-size:22px;flex-shrink:0;';
+
+    var content = document.createElement('div');
+    content.style.cssText = 'flex:1;min-width:0;';
+
+    var text = document.createElement('div');
+    text.textContent = 'Activate Job Tracker for ' + siteDomain + '?';
+    text.style.cssText = 'font-weight:600;margin-bottom:6px;font-size:12px;';
+
+    var btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex;gap:6px;';
+
+    var activateBtn = document.createElement('button');
+    activateBtn.textContent = 'Activate';
+    activateBtn.style.cssText = 'background:#fff;color:#4A90D9;border:none;padding:4px 14px;border-radius:6px;font:600 12px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;cursor:pointer;';
+    activateBtn.onmouseover = function() { this.style.opacity = '0.85'; };
+    activateBtn.onmouseout = function() { this.style.opacity = '1'; };
+    activateBtn.onclick = function() { activateSite(); };
+
+    var dismissBtn = document.createElement('button');
+    dismissBtn.textContent = 'Dismiss';
+    dismissBtn.style.cssText = 'background:rgba(255,255,255,0.2);color:#fff;border:none;padding:4px 14px;border-radius:6px;font:600 12px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;cursor:pointer;';
+    dismissBtn.onmouseover = function() { this.style.opacity = '0.85'; };
+    dismissBtn.onmouseout = function() { this.style.opacity = '1'; };
+    dismissBtn.onclick = function() { dismissSite(); };
+
+    btnRow.appendChild(activateBtn);
+    btnRow.appendChild(dismissBtn);
+    content.appendChild(text);
+    content.appendChild(btnRow);
+    el.appendChild(icon);
+    el.appendChild(content);
+    document.body.appendChild(el);
+  }
+
+  function removeActivatePrompt() {
+    var el = document.getElementById('gen-activate-prompt');
+    if (el) el.remove();
+  }
+
+  function activateSite() {
+    removeActivatePrompt();
+
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.get(['allowedSites', 'blockedSites'], function(result) {
+        var sites = (result.allowedSites && Array.isArray(result.allowedSites))
+          ? result.allowedSites : [];
+        // Remove from blocked list if it was there
+        var blocked = (result.blockedSites && Array.isArray(result.blockedSites))
+          ? result.blockedSites.filter(function(s) { return s.toLowerCase() !== siteDomain; })
+          : [];
+        if (!isSiteAllowed(sites)) {
+          sites.push(siteDomain);
+          sites.sort();
+        }
+        chrome.storage.local.set({ allowedSites: sites, blockedSites: blocked.sort() }, function() {
+          console.log('[GEN] Site activated:', siteDomain);
+          startDetectionAndExtract();
+        });
+      });
+    } else {
+      startDetectionAndExtract();
+    }
+  }
+
+  // Start detection watchers AND immediately try extraction (for mid-session activation)
+  function startDetectionAndExtract() {
+    startDetection();
+    // Don't wait for the 2s delay — page is already loaded, extract now
+    tryActivate();
+    doExtract(true);
+  }
+
+  function dismissSite() {
+    removeActivatePrompt();
+
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.get(['blockedSites'], function(result) {
+        var blocked = (result.blockedSites && Array.isArray(result.blockedSites))
+          ? result.blockedSites : [];
+        if (!isSiteBlocked(blocked)) {
+          blocked.push(siteDomain);
+          blocked.sort();
+        }
+        chrome.storage.local.set({ blockedSites: blocked }, function() {
+          console.log('[GEN] Site dismissed:', siteDomain);
+        });
+      });
+    }
   }
 
   function startDetection() {
     // Initial check after DOM settles
     setTimeout(function() {
       tryActivate();
+      // Also try heuristic extraction for allowed sites (catches pages
+      // without JSON-LD or recognisable job cards)
+      if (!uiCreated) doExtract(true);
     }, 2000);
 
     // Re-check after more time for slow SPAs
     setTimeout(function() {
       tryActivate();
+      if (!uiCreated) doExtract(true);
     }, 5000);
 
     // Watch for SPA navigation (URL changes without page reload)
+    var lastJsonLdSnapshot = getJsonLdSnapshot();
     setInterval(function() {
-      if (window.location.href !== lastUrl) {
-        console.log('[GEN] URL changed:', lastUrl, '->', window.location.href);
-        lastUrl = window.location.href;
-        // Reset for new page
-        setTimeout(tryActivate, 2000);
-      }
-    }, 1000);
+      var urlChanged = window.location.href !== lastUrl;
+      var jsonLdChanged = false;
 
-    // Watch for dynamically added JSON-LD scripts or job cards
+      // Also detect JSON-LD content changes (e.g. Monster replaces script text
+      // when a different job is selected in search results without full reload)
+      var currentSnapshot = getJsonLdSnapshot();
+      if (currentSnapshot !== lastJsonLdSnapshot) {
+        jsonLdChanged = true;
+        lastJsonLdSnapshot = currentSnapshot;
+      }
+
+      if (urlChanged || jsonLdChanged) {
+        if (urlChanged) {
+          console.log('[GEN] URL changed:', lastUrl, '->', window.location.href);
+          lastUrl = window.location.href;
+        }
+        if (jsonLdChanged) {
+          console.log('[GEN] JSON-LD content changed, re-extracting');
+        }
+        setTimeout(function() {
+          tryActivate();
+          doExtract(true);
+        }, 1000);
+      }
+    }, 1500);
+
+    // Watch for clicks on job cards — when user selects a different job
+    // in a split-view layout, re-extract after a short delay
+    document.addEventListener('click', function(e) {
+      var target = e.target;
+      // Walk up to find if a job link or card was clicked
+      for (var depth = 0; depth < 8 && target && target !== document.body; depth++) {
+        if (target.tagName === 'A' && target.href && isJobDetailUrl(target.href)) {
+          setTimeout(function() { doExtract(true); }, 1500);
+          return;
+        }
+        // Check if clicked inside a card-like container with a job link
+        if (target.querySelector && target.querySelector('a[href]')) {
+          var link = target.querySelector('a[href]');
+          if (link && link.href && isJobDetailUrl(link.href)) {
+            setTimeout(function() { doExtract(true); }, 1500);
+            return;
+          }
+        }
+        target = target.parentElement;
+      }
+    }, true);
+
+    // Watch for dynamically added content — covers both JSON-LD additions
+    // and SPA content swaps (e.g. Monster replaces large DOM chunks when
+    // a different job is selected in search results).
+    var mutationTimer = null;
     var observer = new MutationObserver(function(mutations) {
       var dominated = false;
+      var significantContent = false;
       for (var i = 0; i < mutations.length; i++) {
         var added = mutations[i].addedNodes;
         for (var j = 0; j < added.length; j++) {
@@ -158,16 +365,33 @@
           // Check if it contains JSON-LD or links to job pages
           if (node.querySelector && (
             node.querySelector('script[type="application/ld+json"]') ||
-            node.querySelector('a[href*="/job"]')
+            node.querySelector('a[href*="/job"]') ||
+            node.querySelector('a[href*="/career"]') ||
+            node.querySelector('a[href*="/position"]') ||
+            node.querySelector('a[href*="/opening"]') ||
+            node.querySelector('a[href*="/posting"]') ||
+            node.querySelector('a[href*="/vacancy"]')
           )) {
             dominated = true;
             break;
           }
+          // Detect large content additions that may be a job detail panel
+          // being rendered by a SPA framework (React, etc.)
+          var textLen = (node.textContent || '').length;
+          if (textLen > 200) {
+            significantContent = true;
+          }
         }
         if (dominated) break;
       }
-      if (dominated) {
-        setTimeout(tryActivate, 1000);
+      if (dominated || significantContent) {
+        // Debounce rapid mutations
+        if (mutationTimer) clearTimeout(mutationTimer);
+        mutationTimer = setTimeout(function() {
+          mutationTimer = null;
+          tryActivate();
+          doExtract(true);
+        }, dominated ? 1000 : 2000);
       }
     });
     observer.observe(document.documentElement, { childList: true, subtree: true });
@@ -205,6 +429,18 @@
   }
 
   // === JSON-LD Parsing ===
+
+  // Snapshot of all JSON-LD script contents for change detection.
+  // Used by the polling watcher to detect when a site (e.g. Monster)
+  // replaces JSON-LD in-place without adding/removing script tags.
+  function getJsonLdSnapshot() {
+    var scripts = document.querySelectorAll('script[type="application/ld+json"]');
+    var parts = [];
+    for (var i = 0; i < scripts.length; i++) {
+      parts.push(scripts[i].textContent || '');
+    }
+    return parts.join('|||');
+  }
 
   function getJsonLdJobData() {
     var scripts = document.querySelectorAll('script[type="application/ld+json"]');
@@ -291,10 +527,16 @@
     /\/jobs?\/[a-z0-9-]+\/[a-z0-9-]/i,    // /job/title-slug/id or /jobs/title/id
     /\/job\/[^/?#]+$/i,                     // /job/some-slug
     /\/jobs\/[^/?#]+$/i,                    // /jobs/some-slug
+    /\/job-openings?\//i,                   // Monster: /job-openings/slug
+    /\/job-listing\//i,                     // /job-listing/slug
     /\/career[s]?\/[^/?#]+\/[^/?#]+/i,     // /careers/company/job-slug
     /\/position[s]?\/[^/?#]+/i,            // /positions/slug
     /\/opening[s]?\/[^/?#]+/i,             // /openings/slug
     /\/vacancy\/[^/?#]+/i,                 // /vacancy/slug
+    /\/posting[s]?\/[^/?#]+/i,             // /postings/slug
+    /\/opportunity\/[^/?#]+/i,             // /opportunity/slug
+    /\/rolle\/[^/?#]+/i,                   // German: /rolle/slug
+    /\/emploi\/[^/?#]+/i,                  // French: /emploi/slug
     /[?&](?:jobId|job_id|jk|vjk|id)=/i    // ?jobId=xxx or ?jk=xxx
   ];
 
@@ -725,36 +967,28 @@
 
   // === Heuristic Fallback (single job page) ===
 
+  // Track last heuristic extraction to detect changes
+  var lastHeuristicTitle = '';
+
   function extractHeuristic() {
     console.log('[GEN] Attempting heuristic extraction (no schema.org found)');
-    var job = {
-      Title: '',
-      Company: '',
-      Location: '',
-      Description: '',
-      JobType: 0,
-      Salary: '',
-      Url: getCurrentJobUrl(),
-      DatePosted: new Date().toISOString(),
-      IsRemote: false,
-      Skills: [],
-      Source: getSourceFromHostname(),
-      Contacts: []
-    };
+
+    var title = '';
+    var company = '';
 
     // Try OpenGraph meta tags
     var ogTitle = document.querySelector('meta[property="og:title"]');
     if (ogTitle && ogTitle.content) {
-      job.Title = ogTitle.content.trim();
+      title = ogTitle.content.trim();
     }
 
     var ogSiteName = document.querySelector('meta[property="og:site_name"]');
     if (ogSiteName && ogSiteName.content) {
-      if (!job.Company) job.Company = ogSiteName.content.trim();
+      if (!company) company = ogSiteName.content.trim();
     }
 
-    // Try parsing page title: "Job Title - Company | Site" or "Job Title at Company"
-    if (!job.Title) {
+    // Try page <title>: commonly "Job Title - Company | Site" or "Job Title at Company"
+    if (!title) {
       var pageTitle = document.title || '';
       var titlePatterns = [
         /^(.+?)\s*[-|]\s*(.+?)\s*[-|]\s*.+$/,
@@ -764,15 +998,65 @@
       for (var p = 0; p < titlePatterns.length; p++) {
         var m = pageTitle.match(titlePatterns[p]);
         if (m) {
-          if (!job.Title) job.Title = m[1].trim();
-          if (!job.Company || job.Company === (ogSiteName && ogSiteName.content)) {
-            job.Company = m[2].trim();
+          if (!title) title = m[1].trim();
+          if (!company || company === (ogSiteName && ogSiteName.content)) {
+            company = m[2].trim();
           }
           break;
         }
       }
-      if (!job.Title) job.Title = pageTitle;
+      if (!title) title = pageTitle;
     }
+
+    // On search results pages the page title/OG is the search query, not a job.
+    // Try to find the currently visible/selected job title from the DOM instead.
+    var visibleTitle = findVisibleJobTitle();
+    var visibleUrl = null;
+    if (visibleTitle) {
+      // If the OG/page title looks like a search page, prefer the visible title
+      var searchIndicators = /search|find|results|jobs for|browse|monster jobs/i;
+      if (!title || searchIndicators.test(title) || title === (document.title || '')) {
+        title = visibleTitle.title;
+        if (visibleTitle.company) company = visibleTitle.company;
+        visibleUrl = visibleTitle.url; // URL matched from link text
+      }
+    }
+
+    if (!title || title.length < 3) {
+      console.log('[GEN] Heuristic extraction failed - could not determine job title');
+      return null;
+    }
+
+    // Skip if this is the exact same job we already extracted
+    if (title === lastHeuristicTitle) {
+      return null;
+    }
+    lastHeuristicTitle = title;
+
+    // Determine the job URL:
+    // 1. URL found by matching title to a link on the page (best)
+    // 2. Fallback to page URL
+    var jobUrl = visibleUrl || getCurrentJobUrl();
+
+    // If we already sent this exact URL, skip
+    if (sentJobIds[jobUrl]) {
+      return null;
+    }
+
+    var job = {
+      Title: title,
+      Company: company,
+      Location: '',
+      Description: '',
+      JobType: 0,
+      Salary: '',
+      Url: jobUrl,
+      DatePosted: new Date().toISOString(),
+      IsRemote: false,
+      Skills: [],
+      Source: getSourceFromHostname(),
+      Contacts: []
+    };
 
     // Try to find description from largest text block with job keywords
     var jobKeywords = /responsibilities|requirements|qualifications|experience|skills|what you.ll|about the role|job description|who we.re looking for/i;
@@ -800,19 +1084,125 @@
       job.Description = bestBlock.substring(0, 15000).trim();
     }
 
+    // Find company/location from common selectors if not already set
+    if (!job.Company || job.Company === (ogSiteName && ogSiteName.content)) {
+      var compSel = document.querySelector(
+        '[data-testid*="company"], [class*="company-name"], [class*="companyName"], ' +
+        '[class*="employer"], [class*="hiring-org"]'
+      );
+      if (compSel) job.Company = cleanText(compSel.textContent);
+    }
+    if (!job.Location) {
+      var locSel = document.querySelector(
+        '[data-testid*="location"], [class*="job-location"], [class*="jobLocation"], ' +
+        '[class*="location-name"]'
+      );
+      if (locSel) job.Location = cleanText(locSel.textContent);
+    }
+
     // Check remote
     var pageText = document.body ? document.body.textContent.toLowerCase() : '';
     if (pageText.includes('remote') || pageText.includes('work from home')) {
       job.IsRemote = true;
     }
 
-    if (!job.Title || job.Title.length < 3) {
-      console.log('[GEN] Heuristic extraction failed - could not determine job title');
-      return null;
-    }
-
     console.log('[GEN] Heuristic extraction found: "' + job.Title + '" at "' + job.Company + '"');
     return job;
+  }
+
+  // Find the most prominent visible job title on the page — for search result
+  // pages where the detail panel shows the selected job.
+  function findVisibleJobTitle() {
+    // Words/phrases that indicate a heading is NOT a job title
+    var skipPattern = /^(search|results|find|browse|sign in|log in|create account|privacy|cookie|terms|about|contact|help|faq|for job seekers|for employers|get noticed|upload|post a job|skills|description|qualifications|requirements|responsibilities|benefits|how to apply|similar jobs|related|recommended|trending|popular|featured|sponsored|advertisement|ad|menu|navigation|home|back|next|previous|more|show|hide|close|open|save|share|apply|filters?|sort|refine)$/i;
+    var skipContains = /get noticed|upload your|post a job|sign up|create account|for employers|for job seekers|cookie|privacy|terms of|©|\bads?\b|sponsor/i;
+
+    var headings = document.querySelectorAll('h1, h2, h3');
+    var best = null;
+    var bestSize = 0;
+
+    for (var i = 0; i < headings.length; i++) {
+      var h = headings[i];
+      var text = cleanText(h.textContent);
+      if (!text || text.length < 5 || text.length > 200) continue;
+      if (skipPattern.test(text)) continue;
+      if (skipContains.test(text)) continue;
+
+      // Check visibility
+      var rect = h.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) continue;
+      // Skip headings that are off-screen or in a sidebar far left
+      if (rect.top < 0 || rect.left < 0) continue;
+
+      // Verify this heading likely belongs to a job detail area, not nav/promo:
+      // Check if nearby content has job-related keywords
+      var parent = h.parentElement;
+      var parentText = parent ? (parent.textContent || '').substring(0, 2000).toLowerCase() : '';
+      var isJobContext = /apply|description|qualifications|requirements|salary|location|company|posted|experience|remote|full.time|part.time|contract/i.test(parentText);
+
+      // Prefer headings in job context
+      var size = rect.width * rect.height;
+      if (h.tagName === 'H1') size *= 3;
+      else if (h.tagName === 'H2') size *= 2;
+      if (isJobContext) size *= 5; // Strong boost for job-context headings
+
+      if (size > bestSize) {
+        bestSize = size;
+        best = h;
+      }
+    }
+
+    if (!best) return null;
+
+    var title = cleanText(best.textContent);
+
+    // Try to find the URL by matching this title to a link on the page
+    var matchedUrl = findLinkByTitle(title);
+
+    // Try to find company near the heading — walk up multiple levels
+    var company = '';
+    var el = best.parentElement;
+    for (var d = 0; d < 5 && el; d++) {
+      var compEl = el.querySelector(
+        '[data-testid*="company"], [data-testid*="Company"], ' +
+        '[class*="company-name"], [class*="companyName"], [class*="company_name"], ' +
+        '[class*="employer-name"], [class*="employerName"]'
+      );
+      if (compEl) {
+        var ct = cleanText(compEl.textContent);
+        if (ct && ct.length > 1 && ct.length < 100) {
+          company = ct;
+          break;
+        }
+      }
+      el = el.parentElement;
+    }
+
+    return { title: title, company: company, url: matchedUrl };
+  }
+
+  // Find a link on the page whose text matches the given title.
+  // This lets us get the job detail URL from the card link that corresponds
+  // to the currently displayed job in a split-view layout.
+  function findLinkByTitle(title) {
+    if (!title) return null;
+    var titleLower = title.toLowerCase().replace(/\s+/g, ' ');
+    var allLinks = document.querySelectorAll('a[href]');
+
+    for (var i = 0; i < allLinks.length; i++) {
+      var link = allLinks[i];
+      var linkText = cleanText(link.textContent).toLowerCase().replace(/\s+/g, ' ');
+      if (!linkText) continue;
+
+      // Exact match or title contains the link text or vice versa
+      if (linkText === titleLower || titleLower.indexOf(linkText) === 0 || linkText.indexOf(titleLower) === 0) {
+        if (link.href && isJobDetailUrl(link.href)) {
+          return normalizeJobUrl(link.href);
+        }
+      }
+    }
+
+    return null;
   }
 
   // === Utility Functions ===
@@ -891,6 +1281,155 @@
 
   // === Extraction & Sending ===
 
+  // Detect the active/selected job detail panel on search results pages.
+  // Sites like Monster show a split view: job list on left, detail on right.
+  // When the user clicks a card, the detail panel updates without page reload.
+  var lastDetailSignature = '';
+
+  function findActiveDetailPanel() {
+    // Look for common detail panel patterns
+    var selectors = [
+      // Monster-specific
+      '[data-testid="svx-jobview-content"]',
+      '[data-testid="jobview"]',
+      '.job-view-content',
+      // Generic patterns: detail/preview panels next to a list
+      '[class*="job-detail"]', '[class*="jobDetail"]', '[class*="job_detail"]',
+      '[class*="job-preview"]', '[class*="jobPreview"]', '[class*="job_preview"]',
+      '[id*="job-detail"]', '[id*="jobDetail"]', '[id*="job_detail"]',
+      '[id*="job-preview"]', '[id*="jobPreview"]',
+      '[role="main"] article',
+      // Right-side panel with job content
+      '[class*="detail-pane"]', '[class*="detailPane"]',
+      '[class*="preview-pane"]', '[class*="previewPane"]',
+      '[class*="rightPanel"]', '[class*="right-panel"]'
+    ];
+
+    for (var i = 0; i < selectors.length; i++) {
+      var el = document.querySelector(selectors[i]);
+      if (el && el.textContent.length > 200) return el;
+    }
+
+    return null;
+  }
+
+  function extractFromDetailPanel(panel) {
+    if (!panel) return null;
+    var text = panel.innerText || '';
+    if (text.length < 100) return null;
+
+    // Build a signature to detect changes
+    var sig = text.substring(0, 300);
+    if (sig === lastDetailSignature) return null; // Same job still selected
+    lastDetailSignature = sig;
+
+    // Find the job URL: look for a canonical-style link in the panel,
+    // or an active/selected card link, or fall back to the page URL
+    var jobUrl = '';
+
+    // Check for a link inside the panel with a job URL pattern
+    var panelLinks = panel.querySelectorAll('a[href]');
+    for (var i = 0; i < panelLinks.length; i++) {
+      var href = panelLinks[i].href;
+      if (href && isJobDetailUrl(href)) {
+        jobUrl = normalizeJobUrl(href);
+        break;
+      }
+    }
+
+    // Check for an active/selected card in a list
+    if (!jobUrl) {
+      var activeCard = document.querySelector(
+        '[class*="active"] a[href], [class*="selected"] a[href], ' +
+        '[aria-selected="true"] a[href], [data-selected] a[href], ' +
+        '.is-active a[href], .is-selected a[href]'
+      );
+      if (activeCard && activeCard.href && isJobDetailUrl(activeCard.href)) {
+        jobUrl = normalizeJobUrl(activeCard.href);
+      }
+    }
+
+    // Fallback to page URL
+    if (!jobUrl) jobUrl = getCurrentJobUrl();
+
+    if (sentJobIds[jobUrl]) return null;
+
+    var job = {
+      Title: '',
+      Company: '',
+      Location: '',
+      Description: '',
+      JobType: 0,
+      Salary: '',
+      Url: jobUrl,
+      DatePosted: new Date().toISOString(),
+      IsRemote: false,
+      Skills: [],
+      Source: getSourceFromHostname(),
+      Contacts: []
+    };
+
+    // Extract title from panel headings
+    var headings = panel.querySelectorAll('h1, h2, h3');
+    for (var h = 0; h < headings.length; h++) {
+      var ht = cleanText(headings[h].textContent);
+      if (ht && ht.length > 3 && ht.length < 200) {
+        job.Title = ht;
+        break;
+      }
+    }
+
+    // Fallback title from OG or page title
+    if (!job.Title) {
+      var ogTitle = document.querySelector('meta[property="og:title"]');
+      if (ogTitle && ogTitle.content) job.Title = ogTitle.content.trim();
+    }
+    if (!job.Title) job.Title = document.title || '';
+
+    // Company from panel
+    var companyEl = panel.querySelector(
+      '[data-testid*="company"], [data-testid*="Company"], ' +
+      '[class*="company"], [class*="Company"], [class*="employer"], [class*="Employer"]'
+    );
+    if (companyEl) job.Company = cleanText(companyEl.textContent);
+
+    // Location from panel
+    var locationEl = panel.querySelector(
+      '[data-testid*="location"], [data-testid*="Location"], ' +
+      '[class*="location"], [class*="Location"]'
+    );
+    if (locationEl) job.Location = cleanText(locationEl.textContent);
+
+    // Description — grab the largest text block from the panel
+    var jobKeywords = /responsibilities|requirements|qualifications|experience|skills|what you.ll|about the role|job description|who we.re looking for/i;
+    var blocks = panel.querySelectorAll('div, section, article');
+    var bestBlock = null;
+    var bestScore = 0;
+    for (var b = 0; b < blocks.length; b++) {
+      var bt = blocks[b].innerText || '';
+      if (bt.length < 100 || bt.length > 50000) continue;
+      var score = bt.length;
+      if (jobKeywords.test(bt)) score += 5000;
+      if (score > bestScore) { bestScore = score; bestBlock = bt; }
+    }
+    if (bestBlock) job.Description = bestBlock.substring(0, 15000);
+
+    // Remote detection
+    if (text.toLowerCase().match(/\bremote\b|\btelecommute\b|\bwork from home\b/)) {
+      job.IsRemote = true;
+    }
+
+    // Salary detection
+    var salaryEl = panel.querySelector(
+      '[data-testid*="salary"], [data-testid*="Salary"], ' +
+      '[class*="salary"], [class*="Salary"], [class*="compensation"]'
+    );
+    if (salaryEl) job.Salary = cleanText(salaryEl.textContent);
+
+    if (!job.Title || job.Title.length < 3) return null;
+    return job;
+  }
+
   function doExtract(includeHeuristic) {
     if (sending) return;
 
@@ -905,7 +1444,20 @@
       }
     }
 
-    // 2. Try DOM job links (for search results pages)
+    // 2. Try detail panel (split-view search results — Monster, etc.)
+    // This catches the currently selected job in a list+detail layout
+    if (jobs.length === 0) {
+      var detailPanel = findActiveDetailPanel();
+      if (detailPanel) {
+        var detailJob = extractFromDetailPanel(detailPanel);
+        if (detailJob) {
+          console.log('[GEN] Extracted from detail panel: ' + detailJob.Title);
+          jobs.push(detailJob);
+        }
+      }
+    }
+
+    // 3. Try DOM job links (for search results pages)
     if (jobs.length === 0) {
       var cardInfos = findJobCards();
       for (var c = 0; c < cardInfos.length; c++) {
@@ -916,10 +1468,12 @@
       }
     }
 
-    // 3. Heuristic fallback (manual trigger or single job detail pages)
+    // 4. Heuristic fallback (manual trigger or single job detail pages)
+    // Note: extractHeuristic() handles its own dedup via title tracking,
+    // so we don't check sentJobIds here — it returns null for duplicates.
     if (jobs.length === 0 && includeHeuristic) {
       var heuristicJob = extractHeuristic();
-      if (heuristicJob && !sentJobIds[heuristicJob.Url]) {
+      if (heuristicJob) {
         jobs.push(heuristicJob);
       }
     }

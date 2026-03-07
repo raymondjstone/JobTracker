@@ -235,7 +235,7 @@ Each job site has its own extension. Install the ones you need:
    - `BrowserExtensions/GenericExtension/` - Universal Extractor (any job site)
 5. Repeat for each extension you want to install
 
-> **Universal Extractor:** Works on any job site using three extraction strategies: schema.org JSON-LD metadata, DOM job link detection, and heuristic fallback. It automatically defers to site-specific extensions when both are installed.
+> **Universal Extractor:** Opt-in per site — on each new domain a small prompt asks you to activate. Once activated, it uses three extraction strategies: schema.org JSON-LD metadata, DOM job link detection, and heuristic fallback. It automatically defers to site-specific extensions when both are installed.
 
 ## Usage
 
@@ -815,25 +815,9 @@ Run the fix-sources endpoint to infer sources from URLs:
 curl -X POST https://localhost:7046/api/jobs/fix-sources
 ```
 
-### Limiting Universal Extractor to specific sites
+### Universal Extractor not activating
 
-By default, the Universal Extractor runs on all sites. To restrict it to specific job sites, edit `BrowserExtensions/GenericExtension/manifest.json` and change the `content_scripts` matches from `"<all_urls>"` to specific domains:
-
-```json
-"content_scripts": [
-  {
-    "matches": [
-      "*://*.glassdoor.com/*",
-      "*://*.monster.com/*",
-      "*://*.ziprecruiter.com/*"
-    ],
-    "js": ["content.js"],
-    "run_at": "document_end"
-  }
-]
-```
-
-After editing, reload the extension in `chrome://extensions/` or `edge://extensions/`.
+The Universal Extractor uses an opt-in model — it only runs on sites you explicitly activate. On each new domain, a small prompt appears in the bottom-right corner asking "Activate Job Tracker for this site?". Click **Activate** to enable extraction for that domain permanently. You can also manage activated sites from the extension popup.
 
 ### Duplicate text in job titles
 

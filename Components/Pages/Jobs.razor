@@ -457,6 +457,14 @@
     </div>
 }
 
+@if (!string.IsNullOrEmpty(fetchStatusMessage))
+{
+    <div class="alert alert-info alert-dismissible mb-4">
+        <i class="bi bi-box-arrow-up-right"></i> @fetchStatusMessage
+        <button type="button" class="btn-close" @onclick="() => fetchStatusMessage = null"></button>
+    </div>
+}
+
 @* Sort & Group toolbar *@
 <div class="d-flex align-items-center gap-3 mb-3 flex-wrap">
     <div class="d-flex align-items-center gap-2">
@@ -2566,6 +2574,8 @@ else
     private string? crawlStatusMessage = null;
     private bool crawlStatusIsError = false;
     private string? bulkStatusMessage = null;
+    private string? fetchStatusMessage = null;
+    private System.Timers.Timer? _fetchStatusTimer;
 
     // Kanban drag & drop state
     private Guid? draggingJobId = null;
@@ -2662,6 +2672,23 @@ else
         availableSkills = JobService.GetDistinctSkills().ToList();
         UpdateTabCounts();
         ApplyFilter();
+    }
+
+    private void ShowFetchStatus(string message)
+    {
+        fetchStatusMessage = message;
+        _fetchStatusTimer?.Dispose();
+        _fetchStatusTimer = new System.Timers.Timer(8000);
+        _fetchStatusTimer.Elapsed += (s, e) =>
+        {
+            _fetchStatusTimer?.Dispose();
+            _fetchStatusTimer = null;
+            fetchStatusMessage = null;
+            InvokeAsync(StateHasChanged);
+        };
+        _fetchStatusTimer.AutoReset = false;
+        _fetchStatusTimer.Start();
+        StateHasChanged();
     }
 
     private void UpdateTabCounts()
@@ -3222,8 +3249,7 @@ else
                     if (!string.IsNullOrEmpty(refreshed.Url))
                     {
                         await JSRuntime.InvokeVoidAsync("open", refreshed.Url, "_blank");
-                        await JSRuntime.InvokeVoidAsync("alert",
-                            "LinkedIn blocked server-side detail fetch. The job page was opened in a new tab so the browser extension can capture the full details.\\n\\nRefresh this page after a moment to see updates.");
+                        ShowFetchStatus("Job page opened in a new tab — the browser extension will capture the full details. Refresh to see updates.");
                     }
                 }
 
@@ -3237,10 +3263,7 @@ else
                 if (!string.IsNullOrEmpty(job.Url))
                 {
                     await JSRuntime.InvokeVoidAsync("open", job.Url, "_blank");
-                    await JSRuntime.InvokeVoidAsync("alert", 
-                        $"Could not fetch details from server (site may be blocking automated requests).\n\n" +
-                        $"Job page opened in new tab. The browser extension will automatically fetch the latest details.\n\n" +
-                        $"Refresh this page after a moment to see the updates.");
+                    ShowFetchStatus("Job page opened in a new tab — the browser extension will fetch the latest details. Refresh to see updates.");
 
                     // Mark as checked so we don't keep retrying
                     JobService.SetLastChecked(job.Id);
@@ -3254,10 +3277,7 @@ else
             if (!string.IsNullOrEmpty(job.Url))
             {
                 await JSRuntime.InvokeVoidAsync("open", job.Url, "_blank");
-                await JSRuntime.InvokeVoidAsync("alert", 
-                    $"Error fetching from server: {ex.Message}\n\n" +
-                    $"Job page opened in new tab. The browser extension will fetch the details.\n\n" +
-                    $"Refresh this page after a moment to see the updates.");
+                ShowFetchStatus("Job page opened in a new tab — the browser extension will fetch the details. Refresh to see updates.");
 
                 JobService.SetLastChecked(job.Id);
                 RefreshData();
@@ -4125,6 +4145,7 @@ else
         JobService.OnChange -= OnJobServiceChanged;
         SettingsService.OnChange -= OnSettingsChanged;
         refreshTimer?.Dispose();
+        _fetchStatusTimer?.Dispose();
         scanCts?.Cancel();
         scanCts?.Dispose();
         _dotNetRef?.Dispose();
