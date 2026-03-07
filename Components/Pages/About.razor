@@ -22,7 +22,7 @@
 
                     <h4>Core Features</h4>
                     <ul>
-                        <li><strong>Multi-Platform Support</strong> - Browser extensions for LinkedIn, Indeed, S1Jobs, Welcome to the Jungle, and EnergyJobSearch</li>
+                        <li><strong>Multi-Platform Support</strong> - Browser extensions for LinkedIn, Indeed, S1Jobs, Welcome to the Jungle, EnergyJobSearch, and a Universal Extractor for any site with schema.org data</li>
                         <li><strong>Automatic Job Extraction</strong> - Capture job listings with one click from supported job sites</li>
                         <li><strong>Smart Rules Engine</strong> - Automatically classify jobs based on custom rules you define</li>
                         <li><strong>Application Tracking</strong> - Monitor your application status through multiple stages (Applied, Pending, Interview, Offer, etc.)</li>
@@ -75,6 +75,12 @@
                                 <strong>EnergyJobSearch</strong> - Energy sector job site integration
                             </div>
                         </div>
+                        <div class="col-md-6">
+                            <div class="d-flex align-items-center mb-2">
+                                <i class="bi bi-globe me-2" style="font-size: 1.5rem; color: #6c757d;"></i>
+                                <strong>Universal Extractor</strong> - Any job site (Glassdoor, Monster, ZipRecruiter, etc.)
+                            </div>
+                        </div>
                     </div>
                     <div class="alert alert-secondary">
                         <i class="bi bi-shield-exclamation"></i>
@@ -83,10 +89,16 @@
 
                     <h4>Browser Extensions</h4>
                     <p>
-                        Install browser extensions to seamlessly capture job listings while browsing. Extensions work with 
+                        Install browser extensions to seamlessly capture job listings while browsing. Extensions work with
                         Chrome, Edge, and other Chromium-based browsers. Visit the <a href="/extension-install">Extensions</a> page
                         for installation instructions.
                     </p>
+                    <div class="alert alert-info mb-3">
+                        <i class="bi bi-lightbulb me-2"></i>
+                        <strong>Tip:</strong> Use the <strong>site-specific extensions</strong> (LinkedIn, Indeed, etc.) for the best experience on those sites &mdash;
+                        they have tailored extraction, auto-fetch, and crawl features. The <strong>Universal Extractor</strong> is a fallback
+                        for any other job site. If both are installed on the same site, the site-specific extension takes priority automatically.
+                    </div>
                      <p class="text-muted mb-0">
                          Extension source folders are located under <code>BrowserExtensions</code> in the repository.
                      </p>

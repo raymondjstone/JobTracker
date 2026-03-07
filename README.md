@@ -28,8 +28,9 @@ A **comprehensive AI-powered** Blazor application with browser extensions that a
 | S1Jobs | `BrowserExtensions/S1JobsExtension/` | `S1J` | Full support |
 | Welcome to the Jungle | `BrowserExtensions/WTTJExtension/` | `WTTJ` | Full support |
 | EnergyJobSearch | `BrowserExtensions/EnergyJobSearchExtension/` | `EJS` | Full support |
+| **Any site** (Universal) | `BrowserExtensions/GenericExtension/` | `GEN` | Fallback support |
 
-> Note: The LinkedIn extension folder was renamed from `BrowserExtension/` to `LinkedInExtension/` and all extensions are now located under `BrowserExtensions/`.
+> **Tip:** Use the **site-specific extensions** (LinkedIn, Indeed, etc.) for the best experience on those sites — they have tailored extraction, auto-fetch, and crawl features. The **Universal Extractor** is a fallback for any other job site (Glassdoor, Monster, ZipRecruiter, etc.). If both are installed on the same site, the site-specific extension takes priority automatically.
 
 ## Features
 
@@ -49,7 +50,7 @@ A **comprehensive AI-powered** Blazor application with browser extensions that a
 - **Cost Optimization** - Switch models based on your budget and quality needs
 
 ### Job Extraction
-- **Multi-site Support** - Extract jobs from LinkedIn, Indeed, S1Jobs, Welcome to the Jungle, and EnergyJobSearch
+- **Multi-site Support** - Extract jobs from LinkedIn, Indeed, S1Jobs, Welcome to the Jungle, EnergyJobSearch, and any site via the Universal Extractor
 - **Automatic Extraction** - Jobs are extracted automatically as you browse
 - **Description Capture** - Full job descriptions are captured when you view individual jobs
 - **In-Page Description Fetch** - Automatically clicks through job cards on list/collection pages to capture all descriptions
@@ -231,14 +232,17 @@ Each job site has its own extension. Install the ones you need:
    - `BrowserExtensions/S1JobsExtension/` - S1Jobs
    - `BrowserExtensions/WTTJExtension/` - Welcome to the Jungle
    - `BrowserExtensions/EnergyJobSearchExtension/` - EnergyJobSearch
+   - `BrowserExtensions/GenericExtension/` - Universal Extractor (any job site)
 5. Repeat for each extension you want to install
+
+> **Universal Extractor:** Works on any job site using three extraction strategies: schema.org JSON-LD metadata, DOM job link detection, and heuristic fallback. It automatically defers to site-specific extensions when both are installed.
 
 ## Usage
 
 ### Extracting Jobs
 
 1. **Start the Blazor app** - Make sure it's running (`dotnet run`)
-2. **Navigate to a job site** - Go to LinkedIn Jobs, Indeed, S1Jobs, WTTJ, or EnergyJobSearch
+2. **Navigate to a job site** - Go to LinkedIn Jobs, Indeed, S1Jobs, WTTJ, EnergyJobSearch, or any job site (with the Universal Extractor)
 3. **Browse jobs** - The extension automatically extracts job listings as you scroll
 4. **View job details** - Click on individual jobs to capture full descriptions
 5. **Check the indicator** - A colored pill in the bottom-right shows extraction status
@@ -265,6 +269,8 @@ Each extension can automatically navigate through jobs to capture missing descri
    EJS.autoFetch(3)
    ```
 
+   > **Note:** The Universal Extractor (`GEN`) does not support auto-fetch as it has no site-specific card selectors. Use the Extract button in the popup or `GEN.extract()` in the console instead.
+
 2. **Via Extension Popup** - Click the extension icon and press "Auto-Fetch Descriptions"
 
 3. **Stop Auto-Fetch** - Click the Stop button in the UI or run:
@@ -290,7 +296,9 @@ Each extension exposes commands in the browser console:
 | `XXX.autoFetchStatus()` | Check auto-fetch progress |
 | `XXX.help()` | Show all available commands |
 
-Replace `XXX` with: `LJE` (LinkedIn), `IND` (Indeed), `S1J` (S1Jobs), `WTTJ` (Welcome to the Jungle), or `EJS` (EnergyJobSearch)
+Replace `XXX` with: `LJE` (LinkedIn), `IND` (Indeed), `S1J` (S1Jobs), `WTTJ` (Welcome to the Jungle), `EJS` (EnergyJobSearch), or `GEN` (Universal Extractor)
+
+> **Universal Extractor (`GEN`) commands:** `GEN.extract()`, `GEN.debug()`, `GEN.test()`, `GEN.status()`, and `GEN.help()` are available. Auto-fetch commands are not supported by the Universal Extractor.
 
 ### Managing Jobs in the Web App
 
@@ -359,7 +367,7 @@ When an extension updates a job via `PUT /api/jobs/description`, it may include 
 | Location | Filter by job location |
 | Job Type | Full-time, Part-time, Contract, etc. |
 | Remote | Remote only or On-site only |
-| Source | LinkedIn, Indeed, S1Jobs, WTTJ, or EnergyJobSearch |
+| Source | LinkedIn, Indeed, S1Jobs, WTTJ, EnergyJobSearch, or other (via Universal Extractor) |
 | Interest | Interested, Not Interested, or Not Rated |
 | Salary Info | Has salary or No salary listed |
 | Salary Contains | Search within salary text (e.g., "100K") |
@@ -493,9 +501,15 @@ JobTracker/
 │   │   ├── content.js
 │   │   ├── popup.html
 │   │   └── popup.js
-│   └── EnergyJobSearchExtension/
+│   ├── EnergyJobSearchExtension/
+│   │   ├── manifest.json
+│   │   ├── content.js
+│   │   ├── popup.html
+│   │   └── popup.js
+│   └── GenericExtension/
 │       ├── manifest.json
 │       ├── content.js
+│       ├── background.js
 │       ├── popup.html
 │       └── popup.js
 └── Program.cs                      # App configuration and API endpoints
@@ -770,7 +784,7 @@ Create automation rules using ML scores:
 
 1. Make sure you're on a job listing page
 2. Open DevTools (F12) → Console tab
-3. Look for `[LJE]`, `[IND]`, `[S1J]`, `[WTTJ]`, or `[EJS]` messages
+3. Look for `[LJE]`, `[IND]`, `[S1J]`, `[WTTJ]`, `[EJS]`, or `[GEN]` messages
 4. Run the `debug()` command to see page structure
 5. Try the `extract()` command to manually trigger
 
@@ -800,6 +814,26 @@ Run the fix-sources endpoint to infer sources from URLs:
 ```bash
 curl -X POST https://localhost:7046/api/jobs/fix-sources
 ```
+
+### Limiting Universal Extractor to specific sites
+
+By default, the Universal Extractor runs on all sites. To restrict it to specific job sites, edit `BrowserExtensions/GenericExtension/manifest.json` and change the `content_scripts` matches from `"<all_urls>"` to specific domains:
+
+```json
+"content_scripts": [
+  {
+    "matches": [
+      "*://*.glassdoor.com/*",
+      "*://*.monster.com/*",
+      "*://*.ziprecruiter.com/*"
+    ],
+    "js": ["content.js"],
+    "run_at": "document_end"
+  }
+]
+```
+
+After editing, reload the extension in `chrome://extensions/` or `edge://extensions/`.
 
 ### Duplicate text in job titles
 
@@ -882,13 +916,13 @@ Click the stage badge on a job card to cycle through stages, or use the dropdown
 - **9 AI Features** - Comprehensive job search assistance
 - **2 AI Providers** - OpenAI and Anthropic Claude
 - **8 Model Options** - From fast/cheap to most capable
-- **5 Job Sites** - LinkedIn, Indeed, S1Jobs, WTTJ, EnergyJobSearch
+- **6 Job Sites** - LinkedIn, Indeed, S1Jobs, WTTJ, EnergyJobSearch + Universal Extractor
 - **7 Application Stages** - Full pipeline tracking
 - **ML Scoring** - 7-factor intelligent job matching
 - **Kanban Pipeline** - Visual drag-and-drop board
 - **Background Jobs** - 7 automated tasks
 - **Dual Storage** - JSON or SQL Server
-- **Browser Extensions** - 5 dedicated extractors
+- **Browser Extensions** - 5 dedicated extractors + 1 universal fallback
 - **184 Unit Tests** - EmailReplyMatcher, JsonStorageBackend, SalaryParser, JobScoring, JobRules, CompanyNormalization, JobTypeDetection
 
 ---
