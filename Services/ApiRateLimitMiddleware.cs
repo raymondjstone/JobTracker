@@ -15,7 +15,7 @@ public class ApiRateLimitMiddleware
     private readonly ConcurrentDictionary<string, RequestTracker> _clients = new();
 
     public ApiRateLimitMiddleware(RequestDelegate next, ILogger<ApiRateLimitMiddleware> logger,
-        int maxRequests = 60, int windowSeconds = 60)
+        int maxRequests = 600, int windowSeconds = 60)
     {
         _next = next;
         _logger = logger;
