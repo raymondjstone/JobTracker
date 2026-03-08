@@ -11,7 +11,7 @@
 
   <ItemGroup>
     <PackageReference Include="Azure.Identity" Version="1.17.1" />
-    <PackageReference Include="MailKit" Version="4.14.1" />
+    <PackageReference Include="MailKit" Version="4.15.1" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.0" />
 
@@ -64,6 +64,37 @@
     <Exec Command="powershell -Command &quot;Compress-Archive -Path 'BrowserExtensions\GenericExtension\*' -DestinationPath 'wwwroot\extensions\GenericExtension.zip' -Force&quot;" Condition="Exists('BrowserExtensions\GenericExtension')" />
 
     <Message Importance="high" Text="Extension zip files created in wwwroot/extensions/" />
+  </Target>
+
+  <!-- Publish self-contained x86 and x64 builds, zip into Portable/.
+       Skips when already inside a publish (to avoid recursion). -->
+  <Target Name="CreatePortableZip" AfterTargets="Build"
+          Condition="'$(CreatePortableZip)' != 'false'">
+
+    <PropertyGroup>
+      <PortableOutputDir>$(MSBuildProjectDirectory)\Portable</PortableOutputDir>
+    </PropertyGroup>
+
+    <MakeDir Directories="$(PortableOutputDir)" />
+
+    <!-- x86 -->
+    <Message Importance="high" Text="Publishing self-contained portable build (win-x86)..." />
+    <Exec Command="dotnet publish &quot;$(MSBuildProjectFullPath)&quot; -c Release --self-contained -r win-x86 -p:PublishSingleFile=true -p:PublishReadyToRun=true -o &quot;$(MSBuildProjectDirectory)\bin\portable-x86&quot; -p:CreatePortableZip=false" />
+    <Exec Command="powershell -Command &quot;if (Test-Path '$(MSBuildProjectDirectory)\bin\portable-x86\Data') { Remove-Item -Recurse -Force '$(MSBuildProjectDirectory)\bin\portable-x86\Data' }&quot;" />
+    <Exec Command="powershell -Command &quot;Remove-Item -Force '$(PortableOutputDir)\JobTracker-x86.zip*' -ErrorAction SilentlyContinue&quot;" />
+    <Exec Command="7z a -v80m &quot;$(PortableOutputDir)\JobTracker-x86.zip&quot; &quot;$(MSBuildProjectDirectory)\bin\portable-x86\*&quot;" />
+    <RemoveDir Directories="$(MSBuildProjectDirectory)\bin\portable-x86" />
+    <Message Importance="high" Text="Portable build created: Portable\JobTracker-x86.zip (split at 80MB)" />
+
+    <!-- x64 -->
+    <Message Importance="high" Text="Publishing self-contained portable build (win-x64)..." />
+    <Exec Command="dotnet publish &quot;$(MSBuildProjectFullPath)&quot; -c Release --self-contained -r win-x64 -p:PublishSingleFile=true -p:PublishReadyToRun=true -o &quot;$(MSBuildProjectDirectory)\bin\portable-x64&quot; -p:CreatePortableZip=false" />
+    <Exec Command="powershell -Command &quot;if (Test-Path '$(MSBuildProjectDirectory)\bin\portable-x64\Data') { Remove-Item -Recurse -Force '$(MSBuildProjectDirectory)\bin\portable-x64\Data' }&quot;" />
+    <Exec Command="powershell -Command &quot;Remove-Item -Force '$(PortableOutputDir)\JobTracker-x64.zip*' -ErrorAction SilentlyContinue&quot;" />
+    <Exec Command="7z a -v80m &quot;$(PortableOutputDir)\JobTracker-x64.zip&quot; &quot;$(MSBuildProjectDirectory)\bin\portable-x64\*&quot;" />
+    <RemoveDir Directories="$(MSBuildProjectDirectory)\bin\portable-x64" />
+    <Message Importance="high" Text="Portable build created: Portable\JobTracker-x64.zip (split at 80MB)" />
+
   </Target>
 
 </Project>

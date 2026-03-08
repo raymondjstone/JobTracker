@@ -68,8 +68,8 @@ public class EmailService
             return false;
         }
 
-        // Get the user's SMTP settings
-        var settings = settingsService.GetSettings(user.Id);
+        // Get the user's SMTP settings (decrypted for actual use)
+        var settings = settingsService.GetSettingsDecrypted(user.Id);
 
         if (string.IsNullOrEmpty(settings.SmtpHost))
         {

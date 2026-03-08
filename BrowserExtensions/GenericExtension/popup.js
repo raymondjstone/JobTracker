@@ -1,5 +1,8 @@
 var SERVER_URL = 'https://localhost:7046';
 var API_KEY = '';
+var allowedSites = [];
+var blockedSites = [];
+var currentTabDomain = '';
 
 function getHeaders() {
   var headers = { 'Accept': 'application/json' };
@@ -9,20 +12,57 @@ function getHeaders() {
   return headers;
 }
 
-document.addEventListener('DOMContentLoaded', function() {
-  chrome.storage.local.get(['serverUrl', 'apiKey'], function(result) {
-    var url = (result.serverUrl || SERVER_URL).replace(/\/+$/, '');
-    document.getElementById('server-url').value = url;
-    SERVER_URL = url;
+function getSiteDomain(host) {
+  return host.replace(/^www\./, '').toLowerCase();
+}
 
-    if (result.apiKey) {
-      API_KEY = result.apiKey;
-      document.getElementById('api-key').value = result.apiKey;
+function isSiteInList(domain, list) {
+  var d = domain.toLowerCase();
+  for (var i = 0; i < list.length; i++) {
+    var allowed = list[i].toLowerCase();
+    if (d === allowed || d.endsWith('.' + allowed)) return true;
+  }
+  return false;
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  // Get current tab domain first
+  chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+    if (tabs && tabs[0] && tabs[0].url) {
+      try {
+        var url = new URL(tabs[0].url);
+        currentTabDomain = getSiteDomain(url.hostname);
+        document.getElementById('current-site-domain').textContent = currentTabDomain;
+      } catch(e) {
+        currentTabDomain = '';
+        document.getElementById('current-site-domain').textContent = '(unknown)';
+      }
     }
 
-    checkServerStatus();
-    loadStats();
-    checkSchemaStatus();
+    // Load settings
+    chrome.storage.local.get(['serverUrl', 'apiKey', 'allowedSites', 'blockedSites'], function(result) {
+      var url = (result.serverUrl || SERVER_URL).replace(/\/+$/, '');
+      document.getElementById('server-url').value = url;
+      SERVER_URL = url;
+
+      if (result.apiKey) {
+        API_KEY = result.apiKey;
+        document.getElementById('api-key').value = result.apiKey;
+      }
+
+      allowedSites = (result.allowedSites && Array.isArray(result.allowedSites))
+        ? result.allowedSites.slice().sort() : [];
+      blockedSites = (result.blockedSites && Array.isArray(result.blockedSites))
+        ? result.blockedSites.slice().sort() : [];
+
+      updateSiteActivationUI();
+      renderSiteList();
+      renderDismissedList();
+
+      checkServerStatus();
+      loadStats();
+      checkSchemaStatus();
+    });
   });
 
   document.getElementById('server-url').addEventListener('change', function() {
@@ -44,7 +84,265 @@ document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('open-app-btn').addEventListener('click', function() {
     chrome.tabs.create({ url: SERVER_URL });
   });
+
+  // Activate/deactivate current site
+  document.getElementById('activate-btn').addEventListener('click', function() {
+    if (!currentTabDomain) return;
+    if (!isSiteInList(currentTabDomain, allowedSites)) {
+      allowedSites.push(currentTabDomain);
+      allowedSites.sort();
+    }
+    // Remove from dismissed list if it was there
+    blockedSites = blockedSites.filter(function(s) {
+      return s.toLowerCase() !== currentTabDomain.toLowerCase();
+    });
+    saveSiteLists(function() {
+      updateSiteActivationUI();
+      renderSiteList();
+      renderDismissedList();
+      showMessage('Activated ' + currentTabDomain + '. Reload the page to start extracting.');
+      notifyContentScript('activateSite');
+    });
+  });
+
+  document.getElementById('deactivate-btn').addEventListener('click', function() {
+    if (!currentTabDomain) return;
+    allowedSites = allowedSites.filter(function(s) {
+      return s.toLowerCase() !== currentTabDomain.toLowerCase();
+    });
+    saveSiteLists(function() {
+      updateSiteActivationUI();
+      renderSiteList();
+      showMessage('Deactivated ' + currentTabDomain + '. Reload the page to stop.');
+    });
+  });
+
+  // Toggle allowed sites list
+  document.getElementById('sites-toggle').addEventListener('click', function() {
+    var content = document.getElementById('sites-content');
+    var expanded = content.classList.toggle('expanded');
+    this.innerHTML = expanded ? '&#9650; Hide' : '&#9660; Show';
+  });
+
+  // Toggle dismissed sites list
+  document.getElementById('dismissed-toggle').addEventListener('click', function() {
+    var content = document.getElementById('dismissed-content');
+    var expanded = content.classList.toggle('expanded');
+    this.innerHTML = expanded ? '&#9650; Hide' : '&#9660; Show';
+  });
+
+  // Allowed sites: edit as text toggle
+  document.getElementById('sites-edit-toggle').addEventListener('click', function() {
+    var area = document.getElementById('sites-edit-area');
+    area.style.display = area.style.display === 'none' ? 'block' : 'none';
+    if (area.style.display === 'block') {
+      document.getElementById('sites-textarea').value = allowedSites.join('\n');
+    }
+  });
+
+  document.getElementById('sites-save').addEventListener('click', function() {
+    var text = document.getElementById('sites-textarea').value;
+    allowedSites = text.split('\n')
+      .map(function(s) { return s.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, ''); })
+      .filter(function(s) { return s.length > 0; });
+    allowedSites.sort();
+    // Deduplicate
+    allowedSites = allowedSites.filter(function(s, i, a) { return i === 0 || s !== a[i - 1]; });
+    saveSiteLists(function() {
+      renderSiteList();
+      updateSiteActivationUI();
+      document.getElementById('sites-edit-area').style.display = 'none';
+      showMessage('Activated sites saved (' + allowedSites.length + '). Reload tabs for changes to take effect.');
+    });
+  });
+
+  document.getElementById('sites-edit-cancel').addEventListener('click', function() {
+    document.getElementById('sites-edit-area').style.display = 'none';
+  });
+
+  // Dismissed sites: edit as text toggle
+  document.getElementById('dismissed-edit-toggle').addEventListener('click', function() {
+    var area = document.getElementById('dismissed-edit-area');
+    area.style.display = area.style.display === 'none' ? 'block' : 'none';
+    if (area.style.display === 'block') {
+      document.getElementById('dismissed-textarea').value = blockedSites.join('\n');
+    }
+  });
+
+  document.getElementById('dismissed-save').addEventListener('click', function() {
+    var text = document.getElementById('dismissed-textarea').value;
+    blockedSites = text.split('\n')
+      .map(function(s) { return s.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, ''); })
+      .filter(function(s) { return s.length > 0; });
+    blockedSites.sort();
+    blockedSites = blockedSites.filter(function(s, i, a) { return i === 0 || s !== a[i - 1]; });
+    saveSiteLists(function() {
+      renderDismissedList();
+      updateSiteActivationUI();
+      document.getElementById('dismissed-edit-area').style.display = 'none';
+      showMessage('Dismissed sites saved (' + blockedSites.length + '). Reload tabs for changes to take effect.');
+    });
+  });
+
+  document.getElementById('dismissed-edit-cancel').addEventListener('click', function() {
+    document.getElementById('dismissed-edit-area').style.display = 'none';
+  });
+
+  // Add site manually
+  document.getElementById('add-site-btn').addEventListener('click', addSiteManually);
+  document.getElementById('add-site-input').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') addSiteManually();
+  });
 });
+
+function addSiteManually() {
+  var input = document.getElementById('add-site-input');
+  var domain = input.value.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '');
+  if (!domain || domain.length < 3) return;
+
+  if (isSiteInList(domain, allowedSites)) {
+    showMessage(domain + ' is already activated.');
+    return;
+  }
+
+  allowedSites.push(domain);
+  allowedSites.sort();
+  // Remove from dismissed if it was there
+  blockedSites = blockedSites.filter(function(s) {
+    return s.toLowerCase() !== domain.toLowerCase();
+  });
+  input.value = '';
+
+  saveSiteLists(function() {
+    updateSiteActivationUI();
+    renderSiteList();
+    renderDismissedList();
+    showMessage('Added ' + domain);
+  });
+}
+
+function removeSite(domain) {
+  allowedSites = allowedSites.filter(function(s) {
+    return s.toLowerCase() !== domain.toLowerCase();
+  });
+  saveSiteLists(function() {
+    updateSiteActivationUI();
+    renderSiteList();
+  });
+}
+
+function undismissSite(domain) {
+  blockedSites = blockedSites.filter(function(s) {
+    return s.toLowerCase() !== domain.toLowerCase();
+  });
+  saveSiteLists(function() {
+    updateSiteActivationUI();
+    renderDismissedList();
+  });
+}
+
+function saveSiteLists(callback) {
+  chrome.storage.local.set({ allowedSites: allowedSites, blockedSites: blockedSites }, callback || function() {});
+}
+
+function updateSiteActivationUI() {
+  var dot = document.getElementById('site-status-dot');
+  var text = document.getElementById('site-status-text');
+  var activateBtn = document.getElementById('activate-btn');
+  var deactivateBtn = document.getElementById('deactivate-btn');
+  var countEl = document.getElementById('sites-count');
+
+  countEl.textContent = allowedSites.length;
+
+  if (!currentTabDomain) {
+    dot.className = 'status-dot';
+    text.textContent = 'No site detected';
+    activateBtn.style.display = 'none';
+    deactivateBtn.style.display = 'none';
+    return;
+  }
+
+  if (isSiteInList(currentTabDomain, allowedSites)) {
+    dot.className = 'status-dot active';
+    text.textContent = 'Active';
+    activateBtn.style.display = 'none';
+    deactivateBtn.style.display = '';
+  } else {
+    dot.className = 'status-dot inactive';
+    text.textContent = 'Not activated';
+    activateBtn.style.display = '';
+    deactivateBtn.style.display = 'none';
+  }
+}
+
+function renderSiteList() {
+  var listEl = document.getElementById('site-list');
+  if (allowedSites.length === 0) {
+    listEl.innerHTML = '<div class="empty-list">No sites activated yet.<br>Visit a job site and click Activate.</div>';
+    return;
+  }
+
+  listEl.innerHTML = '';
+  allowedSites.forEach(function(site) {
+    var item = document.createElement('div');
+    item.className = 'site-item';
+
+    var name = document.createElement('span');
+    name.className = 'site-name';
+    name.textContent = site;
+
+    var removeBtn = document.createElement('button');
+    removeBtn.className = 'site-remove-btn';
+    removeBtn.textContent = 'Remove';
+    removeBtn.onclick = function() { removeSite(site); };
+
+    item.appendChild(name);
+    item.appendChild(removeBtn);
+    listEl.appendChild(item);
+  });
+}
+
+function renderDismissedList() {
+  var countEl = document.getElementById('dismissed-count');
+  var listEl = document.getElementById('dismissed-list');
+
+  countEl.textContent = blockedSites.length;
+
+  if (blockedSites.length === 0) {
+    listEl.innerHTML = '<div class="empty-list">No dismissed sites.</div>';
+    return;
+  }
+
+  listEl.innerHTML = '';
+  blockedSites.forEach(function(site) {
+    var item = document.createElement('div');
+    item.className = 'site-item';
+
+    var name = document.createElement('span');
+    name.className = 'site-name';
+    name.textContent = site;
+
+    var removeBtn = document.createElement('button');
+    removeBtn.className = 'site-remove-btn';
+    removeBtn.textContent = 'Unblock';
+    removeBtn.onclick = function() { undismissSite(site); };
+
+    item.appendChild(name);
+    item.appendChild(removeBtn);
+    listEl.appendChild(item);
+  });
+}
+
+function notifyContentScript(action) {
+  chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+    if (tabs && tabs[0] && tabs[0].id) {
+      chrome.tabs.sendMessage(tabs[0].id, { action: action }, function() {
+        // Ignore errors (content script may not be ready)
+        if (chrome.runtime.lastError) {}
+      });
+    }
+  });
+}
 
 function showMessage(text, isError) {
   const msg = document.getElementById('message');

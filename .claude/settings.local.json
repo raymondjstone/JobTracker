@@ -38,7 +38,13 @@
       "WebFetch(domain:www.monster.com)",
       "WebFetch(domain:crawlbase.com)",
       "WebFetch(domain:github.com)",
-      "WebFetch(domain:apify.com)"
+      "WebFetch(domain:apify.com)",
+      "Bash(dotnet list:*)",
+      "Bash(dotnet package:*)",
+      "Bash(dotnet add:*)",
+      "Bash(xargs:*)",
+      "Bash(rm:*)",
+      "Bash(wc:*)"
     ]
   }
 }

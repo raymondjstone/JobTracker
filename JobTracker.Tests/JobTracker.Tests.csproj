@@ -19,4 +19,8 @@
     <ProjectReference Include="..\JobTracker.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
 </Project>

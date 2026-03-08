@@ -33,7 +33,7 @@ public class EmailCheckJob
         {
             try
             {
-                var settings = settingsService.GetSettings(user.Id);
+                var settings = settingsService.GetSettingsDecrypted(user.Id);
 
                 if (!settings.EmailCheckEnabled || string.IsNullOrWhiteSpace(settings.ImapHost))
                     continue;

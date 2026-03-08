@@ -196,13 +196,37 @@ A **comprehensive AI-powered** Blazor application with browser extensions that a
 - **Run in Browser** - Opens each enabled crawl page in a new tab and automatically closes it after its delay (requires allowing popups for `https://localhost:7046`).
 - **Reorder pages** - Use up/down arrows to control crawl order.
 
+## Portable / Pre-built (No SDK Required)
+
+Pre-built self-contained executables are available in the `Portable/` folder. No .NET SDK or runtime install is needed.
+
+| Files | Platform |
+|-------|----------|
+| `Portable/JobTracker-x86.zip.001`, `.002` | Windows 32-bit |
+| `Portable/JobTracker-x64.zip.001`, `.002` | Windows 64-bit |
+
+The archives are split into 80MB parts for easier distribution. You need [7-Zip](https://www.7-zip.org/) to extract them.
+
+### Quick Start
+
+1. Download all `.zip.001`, `.zip.002`, etc. parts for your platform into the same folder
+2. Right-click the `.zip.001` file and choose **7-Zip > Extract Here** (or run `7z x JobTracker-x86.zip.001`)
+3. Edit `appsettings.json` if needed (defaults work out of the box)
+4. Run `JobTracker.exe`
+5. Open `https://localhost:7046` in your browser
+6. Accept the self-signed certificate warning on first visit
+
+The app creates a `Data/` folder alongside the executable for storing jobs, settings, and history. To update, just replace the files (keep your `Data/` folder and `appsettings.json`).
+
+> **Note:** These zips are rebuilt automatically on every Release build. If you're building from source, run `dotnet build -c Release` and the split zips appear in `Portable/`.
+
 ## Prerequisites
 
-- [.NET 10 SDK](https://dotnet.microsoft.com/download) or later
+- [.NET 10 SDK](https://dotnet.microsoft.com/download) or later (only needed if building from source)
 - Google Chrome or Microsoft Edge browser
 - Accounts on job sites you want to use
 
-## Installation
+## Installation (From Source)
 
 ### 1. Set Up the Blazor Application
 
@@ -235,7 +259,7 @@ Each job site has its own extension. Install the ones you need:
    - `BrowserExtensions/GenericExtension/` - Universal Extractor (any job site)
 5. Repeat for each extension you want to install
 
-> **Universal Extractor:** Works on any job site using three extraction strategies: schema.org JSON-LD metadata, DOM job link detection, and heuristic fallback. It automatically defers to site-specific extensions when both are installed.
+> **Universal Extractor:** Opt-in per site — on each new domain a small prompt asks you to activate. Once activated, it uses three extraction strategies: schema.org JSON-LD metadata, DOM job link detection, and heuristic fallback. It automatically defers to site-specific extensions when both are installed.
 
 ## Usage
 
@@ -815,25 +839,9 @@ Run the fix-sources endpoint to infer sources from URLs:
 curl -X POST https://localhost:7046/api/jobs/fix-sources
 ```
 
-### Limiting Universal Extractor to specific sites
+### Universal Extractor not activating
 
-By default, the Universal Extractor runs on all sites. To restrict it to specific job sites, edit `BrowserExtensions/GenericExtension/manifest.json` and change the `content_scripts` matches from `"<all_urls>"` to specific domains:
-
-```json
-"content_scripts": [
-  {
-    "matches": [
-      "*://*.glassdoor.com/*",
-      "*://*.monster.com/*",
-      "*://*.ziprecruiter.com/*"
-    ],
-    "js": ["content.js"],
-    "run_at": "document_end"
-  }
-]
-```
-
-After editing, reload the extension in `chrome://extensions/` or `edge://extensions/`.
+The Universal Extractor uses an opt-in model — it only runs on sites you explicitly activate. On each new domain, a small prompt appears in the bottom-right corner asking "Activate Job Tracker for this site?". Click **Activate** to enable extraction for that domain permanently. You can also manage activated sites from the extension popup.
 
 ### Duplicate text in job titles
 

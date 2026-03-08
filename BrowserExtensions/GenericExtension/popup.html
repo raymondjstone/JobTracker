@@ -108,6 +108,11 @@
       background: rgba(255,255,255,0.2);
       color: white;
     }
+    .btn-sm {
+      padding: 6px;
+      font-size: 11px;
+      margin: 0;
+    }
     .info {
       font-size: 11px;
       opacity: 0.8;
@@ -122,6 +127,138 @@
       display: none;
       text-align: center;
     }
+
+    /* Current site activation */
+    .site-activation {
+      background: rgba(255,255,255,0.15);
+      padding: 12px;
+      border-radius: 8px;
+      margin-bottom: 15px;
+    }
+    .site-activation .site-domain {
+      font-weight: 700;
+      font-size: 13px;
+      margin-bottom: 8px;
+      word-break: break-all;
+    }
+    .site-activation .site-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      margin-bottom: 8px;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .status-dot.active { background: #4ade80; }
+    .status-dot.inactive { background: #fbbf24; }
+
+    /* Allowed sites list */
+    .allowed-sites-section {
+      background: rgba(255,255,255,0.1);
+      padding: 12px;
+      border-radius: 8px;
+      margin-bottom: 15px;
+    }
+    .allowed-sites-section h4 {
+      margin: 0 0 8px 0;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .section-toggle {
+      background: none;
+      border: none;
+      color: white;
+      cursor: pointer;
+      font-size: 11px;
+      opacity: 0.8;
+      padding: 2px 6px;
+      width: auto;
+      margin: 0;
+    }
+    .section-toggle:hover { opacity: 1; }
+    .section-content {
+      display: none;
+    }
+    .section-content.expanded {
+      display: block;
+    }
+    .sites-count {
+      font-size: 10px;
+      opacity: 0.8;
+      background: rgba(255,255,255,0.15);
+      padding: 1px 6px;
+      border-radius: 8px;
+    }
+    .site-list {
+      max-height: 160px;
+      overflow-y: auto;
+      margin-bottom: 8px;
+    }
+    .site-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 4px 0;
+      font-size: 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    .site-item:last-child {
+      border-bottom: none;
+    }
+    .site-item .site-name {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .site-remove-btn {
+      background: rgba(239, 68, 68, 0.4);
+      border: none;
+      color: white;
+      cursor: pointer;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 10px;
+      width: auto;
+      margin: 0;
+      flex-shrink: 0;
+    }
+    .site-remove-btn:hover {
+      background: rgba(239, 68, 68, 0.7);
+    }
+    .add-site-row {
+      display: flex;
+      gap: 6px;
+    }
+    .add-site-row input {
+      flex: 1;
+      padding: 6px 8px;
+      border: none;
+      border-radius: 4px;
+      font-size: 11px;
+      box-sizing: border-box;
+    }
+    .add-site-row button {
+      width: auto;
+      padding: 6px 12px;
+      font-size: 11px;
+      margin: 0;
+    }
+    .empty-list {
+      font-size: 11px;
+      opacity: 0.6;
+      text-align: center;
+      padding: 8px 0;
+    }
+
     .other-extensions {
       background: rgba(255,255,255,0.1);
       padding: 12px;
@@ -149,11 +286,21 @@
     <div style="width: 40px; height: 40px; border-radius: 6px; background: white; display: flex; align-items: center; justify-content: center; font-size: 24px;">&#127760;</div>
     <div>
       <h1 style="margin: 0; font-size: 16px;">Universal Job Extractor</h1>
-      <small style="font-size: 10px; opacity: 0.8;">Job Tracker - schema.org fallback parser</small>
+      <small style="font-size: 10px; opacity: 0.8;">Job Tracker - opt-in per site</small>
     </div>
   </div>
 
   <div id="message"></div>
+
+  <div class="site-activation" id="site-activation">
+    <div class="site-domain" id="current-site-domain">-</div>
+    <div class="site-status">
+      <div class="status-dot" id="site-status-dot"></div>
+      <span id="site-status-text">Checking...</span>
+    </div>
+    <button class="btn-primary btn-sm" id="activate-btn" style="display:none;">Activate for this site</button>
+    <button class="btn-secondary btn-sm" id="deactivate-btn" style="display:none;">Deactivate</button>
+  </div>
 
   <div class="status">
     <div class="stat-row">
@@ -186,8 +333,55 @@
   <button class="btn-primary" id="extract-btn">Extract Jobs Now</button>
   <button class="btn-secondary" id="open-app-btn">Open Job Tracker</button>
 
+  <div class="allowed-sites-section">
+    <h4>
+      <span>Activated Sites <span class="sites-count" id="sites-count">0</span></span>
+      <button class="section-toggle" id="sites-toggle">&#9660; Show</button>
+    </h4>
+    <div class="section-content" id="sites-content">
+      <div class="site-list" id="site-list"></div>
+      <div class="add-site-row">
+        <input type="text" id="add-site-input" placeholder="e.g. glassdoor.com">
+        <button class="btn-primary" id="add-site-btn">Add</button>
+      </div>
+      <div style="margin-top:8px;">
+        <button class="btn-secondary btn-sm" id="sites-edit-toggle" style="width:auto;font-size:10px;padding:4px 8px;">Edit as text</button>
+      </div>
+      <div id="sites-edit-area" style="display:none;margin-top:6px;">
+        <div style="font-size:10px;opacity:0.7;margin-bottom:4px;">One domain per line. Save to apply changes.</div>
+        <textarea id="sites-textarea" placeholder="glassdoor.com&#10;monster.com" style="width:100%;height:100px;padding:8px;border:none;border-radius:4px;font-size:11px;font-family:monospace;box-sizing:border-box;resize:vertical;margin-bottom:8px;"></textarea>
+        <div style="display:flex;gap:6px;">
+          <button class="btn-primary btn-sm" id="sites-save" style="flex:1;">Save</button>
+          <button class="btn-secondary btn-sm" id="sites-edit-cancel" style="flex:1;">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="allowed-sites-section" id="dismissed-sites-section">
+    <h4>
+      <span>Dismissed Sites <span class="sites-count" id="dismissed-count">0</span></span>
+      <button class="section-toggle" id="dismissed-toggle">&#9660; Show</button>
+    </h4>
+    <div class="section-content" id="dismissed-content">
+      <div class="dismissed-info" style="font-size:10px;opacity:0.7;margin-bottom:6px;">Sites that won't show the activation prompt. Remove to see the prompt again.</div>
+      <div class="site-list" id="dismissed-list"></div>
+      <div style="margin-top:8px;">
+        <button class="btn-secondary btn-sm" id="dismissed-edit-toggle" style="width:auto;font-size:10px;padding:4px 8px;">Edit as text</button>
+      </div>
+      <div id="dismissed-edit-area" style="display:none;margin-top:6px;">
+        <div style="font-size:10px;opacity:0.7;margin-bottom:4px;">One domain per line. Save to apply changes.</div>
+        <textarea id="dismissed-textarea" placeholder="example.com&#10;another-site.com" style="width:100%;height:100px;padding:8px;border:none;border-radius:4px;font-size:11px;font-family:monospace;box-sizing:border-box;resize:vertical;margin-bottom:8px;"></textarea>
+        <div style="display:flex;gap:6px;">
+          <button class="btn-primary btn-sm" id="dismissed-save" style="flex:1;">Save</button>
+          <button class="btn-secondary btn-sm" id="dismissed-edit-cancel" style="flex:1;">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="info">
-    Works on any job site: schema.org JSON-LD, DOM job cards, or heuristic extraction.<br>
+    Activate sites to enable job extraction. Dismissed sites won't be asked again.<br>
     Open console (F12) and type GEN.help() for more commands.
   </div>
 

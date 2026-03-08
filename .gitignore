@@ -368,3 +368,6 @@ Data/Backups/
 # Environment-specific settings (keep base appsettings.json which has redacted values)
 appsettings.*.json
 !appsettings.json
+
+# Portable build output
+# Portable/

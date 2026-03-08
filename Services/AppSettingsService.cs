@@ -78,6 +78,93 @@ public class AppSettingsService
         }
     }
 
+    /// <summary>
+    /// Returns a copy of settings with sensitive fields decrypted for use.
+    /// Use this when you need to actually use passwords/API keys.
+    /// </summary>
+    public AppSettings GetSettingsDecrypted(Guid? forUserId = null)
+    {
+        var settings = GetSettings(forUserId);
+        // Return decrypted values (Decrypt handles both encrypted and plaintext)
+        return new AppSettings
+        {
+            SmtpHost = settings.SmtpHost,
+            SmtpPort = settings.SmtpPort,
+            SmtpUsername = settings.SmtpUsername,
+            SmtpPassword = SettingsEncryptionService.Decrypt(settings.SmtpPassword),
+            SmtpFromEmail = settings.SmtpFromEmail,
+            SmtpFromName = settings.SmtpFromName,
+            ImapHost = settings.ImapHost,
+            ImapPort = settings.ImapPort,
+            ImapUseSsl = settings.ImapUseSsl,
+            ImapUsername = settings.ImapUsername,
+            ImapPassword = SettingsEncryptionService.Decrypt(settings.ImapPassword),
+            ImapFolder = settings.ImapFolder,
+            AIAssistant = new AIAssistantSettings
+            {
+                Enabled = settings.AIAssistant.Enabled,
+                Provider = settings.AIAssistant.Provider,
+                ApiKey = SettingsEncryptionService.Decrypt(settings.AIAssistant.ApiKey),
+                Model = settings.AIAssistant.Model,
+                AutoAnalyzeNewJobs = settings.AIAssistant.AutoAnalyzeNewJobs,
+                AutoGenerateCoverLetter = settings.AIAssistant.AutoGenerateCoverLetter,
+                ShowSkillGaps = settings.AIAssistant.ShowSkillGaps,
+                ShowSimilarJobs = settings.AIAssistant.ShowSimilarJobs,
+                UserSkills = settings.AIAssistant.UserSkills,
+                UserExperience = settings.AIAssistant.UserExperience,
+            },
+            // Copy remaining non-sensitive settings by reference
+            JobSiteUrls = settings.JobSiteUrls,
+            JobRules = settings.JobRules,
+            FilterPresets = settings.FilterPresets,
+            HighlightKeywords = settings.HighlightKeywords,
+            HighlightPrioritizedSkills = settings.HighlightPrioritizedSkills,
+            HighlightPrioritizedSkillsInDescription = settings.HighlightPrioritizedSkillsInDescription,
+            SkillsToShowOnCard = settings.SkillsToShowOnCard,
+            Pipeline = settings.Pipeline,
+            CoverLetterTemplates = settings.CoverLetterTemplates,
+            EmailNotificationsEnabled = settings.EmailNotificationsEnabled,
+            EmailOnStaleApplications = settings.EmailOnStaleApplications,
+            EmailOnFollowUpDue = settings.EmailOnFollowUpDue,
+            EmailCheckEnabled = settings.EmailCheckEnabled,
+            EmailCheckAutoUpdateStage = settings.EmailCheckAutoUpdateStage,
+            EmailCheckParseJobAlerts = settings.EmailCheckParseJobAlerts,
+            AutoArchiveEnabled = settings.AutoArchiveEnabled,
+            AutoArchiveDays = settings.AutoArchiveDays,
+            DeleteUnsuitableAfterDays = settings.DeleteUnsuitableAfterDays,
+            DeleteRejectedAfterDays = settings.DeleteRejectedAfterDays,
+            DeleteGhostedAfterDays = settings.DeleteGhostedAfterDays,
+            ScoringPreferences = settings.ScoringPreferences,
+            DarkMode = settings.DarkMode,
+            LocalCurrency = settings.LocalCurrency,
+            BackupDirectory = settings.BackupDirectory,
+            BackupOnStartup = settings.BackupOnStartup,
+            BackupsToKeep = settings.BackupsToKeep,
+            HistoryMaxEntries = settings.HistoryMaxEntries,
+            CrawlPages = settings.CrawlPages,
+            SearchQueries = settings.SearchQueries,
+            LastViewState = settings.LastViewState,
+        };
+    }
+
+    /// <summary>
+    /// Encrypts sensitive fields before saving. Call this when the user updates passwords/API keys.
+    /// </summary>
+    public void EncryptSensitiveFields()
+    {
+        lock (_lock)
+        {
+            if (!string.IsNullOrEmpty(_settings.SmtpPassword) && !SettingsEncryptionService.IsEncrypted(_settings.SmtpPassword))
+                _settings.SmtpPassword = SettingsEncryptionService.Encrypt(_settings.SmtpPassword);
+
+            if (!string.IsNullOrEmpty(_settings.ImapPassword) && !SettingsEncryptionService.IsEncrypted(_settings.ImapPassword))
+                _settings.ImapPassword = SettingsEncryptionService.Encrypt(_settings.ImapPassword);
+
+            if (!string.IsNullOrEmpty(_settings.AIAssistant.ApiKey) && !SettingsEncryptionService.IsEncrypted(_settings.AIAssistant.ApiKey))
+                _settings.AIAssistant.ApiKey = SettingsEncryptionService.Encrypt(_settings.AIAssistant.ApiKey);
+        }
+    }
+
     public JobSiteUrls GetJobSiteUrls()
     {
         EnsureSettingsLoaded();
@@ -133,6 +220,7 @@ public class AppSettingsService
     /// <summary>
     /// Saves current settings to the storage backend.
     /// Uses the userId that was used to load the settings.
+    /// Automatically encrypts sensitive fields before saving.
     /// </summary>
     public virtual void Save()
     {
@@ -150,6 +238,10 @@ public class AppSettingsService
                 _logger.LogWarning("Cannot save settings - no userId available");
                 return;
             }
+
+            // Encrypt sensitive fields before persisting
+            EncryptSensitiveFields();
+
             _logger.LogDebug("Saving settings for user {UserId}", userId);
             _storage.SaveSettings(_settings, userId);
         }

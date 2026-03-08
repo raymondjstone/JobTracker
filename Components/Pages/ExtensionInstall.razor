@@ -348,7 +348,8 @@
 
                     <h6>Supported Pages</h6>
                     <ul>
-                        <li><strong>Any external job site</strong> &mdash; Monster, Glassdoor, ZipRecruiter, CareerBuilder, Dice, AngelList, and any site with job listings</li>
+                        <li><strong>Any external job site you activate</strong> &mdash; Monster, Glassdoor, ZipRecruiter, CareerBuilder, Dice, AngelList, and any site with job listings</li>
+                        <li><strong>Opt-in per site</strong> &mdash; only runs on domains you explicitly activate via the in-page prompt or extension popup</li>
                         <li>Automatically skips localhost, private IPs, and the Job Tracker app itself</li>
                         <li>Automatically defers to site-specific extensions on LinkedIn, Indeed, S1Jobs, WTTJ, and EnergyJobSearch</li>
                     </ul>
@@ -363,31 +364,16 @@
                         <li>Badge indicator appears only when jobs are detected on the page</li>
                     </ul>
 
-                    <h6>Limiting Which Sites It Runs On</h6>
+                    <h6>Activating Sites</h6>
                     <p>
-                        By default, the universal extractor runs on all external websites. To restrict it to specific sites only:
+                        The universal extractor uses an <strong>opt-in model</strong> &mdash; it does not extract jobs until you activate it for a site.
                     </p>
-                    <ol>
-                        <li>Open the extension folder: <code>BrowserExtensions\GenericExtension</code></li>
-                        <li>Edit <code>manifest.json</code></li>
-                        <li>Change the <code>content_scripts</code> <code>matches</code> from <code>"&lt;all_urls&gt;"</code> to specific patterns:</li>
-                    </ol>
-                    <pre class="bg-light p-2 rounded"><code>"content_scripts": [{
-  "matches": [
-    "*://*.monster.com/*",
-    "*://*.glassdoor.com/*",
-    "*://*.glassdoor.co.uk/*",
-    "*://*.ziprecruiter.com/*",
-    "*://*.dice.com/*",
-    "*://*.careerbuilder.com/*"
-  ],
-  "js": ["content.js"],
-  "run_at": "document_end"
-}]</code></pre>
-                    <p class="text-muted small">
-                        After editing, reload the extension via the browser extensions page.
-                        You can add or remove URL patterns to match only the sites you use.
-                    </p>
+                    <ul>
+                        <li>On each new site, a small prompt appears in the bottom-right: <em>"Activate Job Tracker for this site?"</em></li>
+                        <li>Click <strong>Activate</strong> to enable extraction for that domain permanently, or <strong>Dismiss</strong> to hide the prompt for that visit.</li>
+                        <li>You can also activate or deactivate sites from the extension popup.</li>
+                        <li>The <strong>Activated Sites</strong> section in the popup lets you view, add, or remove domains at any time.</li>
+                    </ul>
 
                     <h6>Console Commands</h6>
                     <ul class="mb-0">

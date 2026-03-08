@@ -44,6 +44,7 @@ public class AppSettings
     public string BackupDirectory { get; set; } = "";
     public bool BackupOnStartup { get; set; }
     public int BackupsToKeep { get; set; } = 10;
+    public int HistoryMaxEntries { get; set; } = 50000;
     public List<CrawlPage> CrawlPages { get; set; } = new();
     public List<JobSearchQuery> SearchQueries { get; set; } = new();
     public JobViewState LastViewState { get; set; } = new();

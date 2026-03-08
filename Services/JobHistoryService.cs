@@ -8,20 +8,39 @@ public class JobHistoryService
     private readonly ILogger<JobHistoryService> _logger;
     private readonly IStorageBackend _storage;
     private readonly CurrentUserService _currentUser;
-    private readonly int _historyLimit;
+    private readonly AppSettingsService _settingsService;
+    private readonly int _configHistoryLimit; // Fallback from appsettings.json
     private readonly object _lock = new();
     private List<JobHistoryEntry> _history = new();
     private Guid _loadedForUser = Guid.Empty;
+    private Dictionary<Guid, int> _userHistoryCounts = new(); // Track counts per user to avoid full scan on every insert
 
     public event Action? OnChange;
 
-    public JobHistoryService(IStorageBackend storage, ILogger<JobHistoryService> logger, CurrentUserService currentUser, IConfiguration configuration)
+    public JobHistoryService(IStorageBackend storage, ILogger<JobHistoryService> logger, CurrentUserService currentUser, IConfiguration configuration, AppSettingsService settingsService)
     {
         _logger = logger;
         _storage = storage;
         _currentUser = currentUser;
-        _historyLimit = configuration.GetValue<int>("HistoryMax", 50000);
+        _settingsService = settingsService;
+        _configHistoryLimit = configuration.GetValue<int>("HistoryMax", 50000);
         // Don't load here - will load lazily when needed
+    }
+
+    private int HistoryLimit
+    {
+        get
+        {
+            try
+            {
+                var userLimit = _settingsService.GetSettings().HistoryMaxEntries;
+                return userLimit > 0 ? userLimit : _configHistoryLimit;
+            }
+            catch
+            {
+                return _configHistoryLimit;
+            }
+        }
     }
 
     private Guid CurrentUserId => _currentUser.GetCurrentUserId();
@@ -38,6 +57,8 @@ public class JobHistoryService
             {
                 _history = _storage.LoadHistory(userId);
                 _loadedForUser = userId;
+                // Rebuild count cache
+                _userHistoryCounts = _history.GroupBy(h => h.UserId).ToDictionary(g => g.Key, g => g.Count());
                 _logger.LogDebug("Loaded {Count} history entries for user {UserId}", _history.Count, userId);
             }
         }
@@ -55,6 +76,7 @@ public class JobHistoryService
         {
             _history = _storage.LoadHistory(userId);
             _loadedForUser = userId;
+            _userHistoryCounts = _history.GroupBy(h => h.UserId).ToDictionary(g => g.Key, g => g.Count());
             _logger.LogDebug("Force reloaded {Count} history entries for user {UserId}", _history.Count, userId);
         }
     }
@@ -316,12 +338,21 @@ public class JobHistoryService
         {
             _history.Insert(0, entry); // Add to beginning for reverse chronological
 
-            // Keep history manageable - cap at HistoryLimit entries per user
-            var userHistory = _history.Where(h => h.UserId == userId).ToList();
-            if (userHistory.Count > _historyLimit)
+            // Track count and only do expensive trim when actually over limit
+            _userHistoryCounts.TryGetValue(userId, out var currentCount);
+            _userHistoryCounts[userId] = currentCount + 1;
+
+            var limit = HistoryLimit;
+            if (currentCount + 1 > limit)
             {
-                var toRemove = userHistory.Skip(_historyLimit).Select(h => h.Id).ToHashSet();
-                _history.RemoveAll(h => toRemove.Contains(h.Id));
+                // Only scan when we actually exceed the limit
+                var userHistory = _history.Where(h => h.UserId == userId).ToList();
+                if (userHistory.Count > limit)
+                {
+                    var toRemove = userHistory.Skip(limit).Select(h => h.Id).ToHashSet();
+                    _history.RemoveAll(h => toRemove.Contains(h.Id));
+                    _userHistoryCounts[userId] = _history.Count(h => h.UserId == userId);
+                }
             }
 
             _storage.AddHistoryEntry(entry);
