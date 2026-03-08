@@ -966,6 +966,27 @@
                     </div>
                 </div>
 
+                <!-- History Settings -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-clock-history"></i> History Settings</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label">Maximum History Entries</label>
+                            <div class="input-group" style="max-width: 250px;">
+                                <input type="number" class="form-control" @bind="editHistoryMax" min="1000" max="500000" step="1000" />
+                                <span class="input-group-text">entries</span>
+                            </div>
+                            <small class="text-muted">Maximum number of history entries to keep per user. Older entries are automatically pruned. Default: 50,000.</small>
+                        </div>
+
+                        <button class="btn btn-primary" @onclick="SaveHistorySettings">
+                            <i class="bi bi-check-lg"></i> Save History Settings
+                        </button>
+                    </div>
+                </div>
+
                 <!-- Download Backup -->
                 <div class="card mb-4">
                     <div class="card-header">
@@ -1127,6 +1148,7 @@
 
     // Backup directory
     private string editBackupDirectory = "";
+    private int editHistoryMax = 50000;
     private bool editBackupOnStartup;
     private int editBackupsToKeep = 10;
 
@@ -1209,10 +1231,11 @@
         editBackupDirectory = settings.BackupDirectory;
         editBackupOnStartup = settings.BackupOnStartup;
         editBackupsToKeep = settings.BackupsToKeep > 0 ? settings.BackupsToKeep : 10;
+        editHistoryMax = settings.HistoryMaxEntries > 0 ? settings.HistoryMaxEntries : 50000;
         editSmtpHost = settings.SmtpHost;
         editSmtpPort = settings.SmtpPort;
         editSmtpUsername = settings.SmtpUsername;
-        editSmtpPassword = settings.SmtpPassword;
+        editSmtpPassword = SettingsEncryptionService.Decrypt(settings.SmtpPassword);
         editSmtpFromEmail = settings.SmtpFromEmail;
         editSmtpFromName = settings.SmtpFromName;
         editEmailNotificationsEnabled = settings.EmailNotificationsEnabled;
@@ -1222,7 +1245,7 @@
         editImapPort = settings.ImapPort;
         editImapUseSsl = settings.ImapUseSsl;
         editImapUsername = settings.ImapUsername;
-        editImapPassword = settings.ImapPassword;
+        editImapPassword = SettingsEncryptionService.Decrypt(settings.ImapPassword);
         editImapFolder = settings.ImapFolder;
         editEmailCheckEnabled = settings.EmailCheckEnabled;
         editEmailCheckAutoUpdateStage = settings.EmailCheckAutoUpdateStage;
@@ -1255,7 +1278,7 @@
         var ai = settings.AIAssistant;
         editAIEnabled = ai.Enabled;
         editAIProvider = ai.Provider;
-        editAIApiKey = ai.ApiKey;
+        editAIApiKey = SettingsEncryptionService.Decrypt(ai.ApiKey);
         editAIModel = ai.Model;
         editAIUserSkills = string.Join(", ", ai.UserSkills);
         editAIUserExperience = ai.UserExperience;
@@ -1818,6 +1841,13 @@
         settings.BackupDirectory = editBackupDirectory?.Trim() ?? "";
         settings.BackupOnStartup = editBackupOnStartup;
         settings.BackupsToKeep = editBackupsToKeep > 0 ? editBackupsToKeep : 10;
+        SettingsService.Save();
+    }
+
+    private void SaveHistorySettings()
+    {
+        var settings = SettingsService.GetSettings();
+        settings.HistoryMaxEntries = editHistoryMax >= 1000 ? editHistoryMax : 50000;
         SettingsService.Save();
     }
 

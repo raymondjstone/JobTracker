@@ -549,7 +549,7 @@ public class JsonStorageBackend : IStorageBackend
                     var contact = store?.Contacts.FirstOrDefault(c => c.Id == contactId);
                     if (contact != null) return contact;
                 }
-                catch { }
+                catch (Exception ex) { _logger.LogDebug(ex, "Error reading contact file: {File}", file); }
             }
             return null;
         }
@@ -597,7 +597,7 @@ public class JsonStorageBackend : IStorageBackend
                         return;
                     }
                 }
-                catch { }
+                catch (Exception ex) { _logger.LogDebug(ex, "Error in DeleteContact for file: {File}", file); }
             }
         }
     }
@@ -617,7 +617,7 @@ public class JsonStorageBackend : IStorageBackend
                     if (contactIds.Count > 0)
                         return store.Contacts.Where(c => contactIds.Contains(c.Id)).ToList();
                 }
-                catch { }
+                catch (Exception ex) { _logger.LogDebug(ex, "Error in GetContactsForJob for file: {File}", file); }
             }
             return new List<Contact>();
         }
@@ -645,7 +645,7 @@ public class JsonStorageBackend : IStorageBackend
                         return;
                     }
                 }
-                catch { }
+                catch (Exception ex) { _logger.LogDebug(ex, "Error in LinkContactToJob for file: {File}", file); }
             }
         }
     }
@@ -669,7 +669,7 @@ public class JsonStorageBackend : IStorageBackend
                         return;
                     }
                 }
-                catch { }
+                catch (Exception ex) { _logger.LogDebug(ex, "Error in UnlinkContactFromJob for file: {File}", file); }
             }
         }
     }
@@ -702,7 +702,7 @@ public class JsonStorageBackend : IStorageBackend
                             result[id] = count;
                     }
                 }
-                catch { }
+                catch (Exception ex) { _logger.LogDebug(ex, "Error in GetJobLinkCounts for file: {File}", file); }
             }
             return result;
         }
@@ -722,7 +722,7 @@ public class JsonStorageBackend : IStorageBackend
                     var ids = store.JobLinks.Where(jl => jl.ContactId == contactId).Select(jl => jl.JobId).ToList();
                     if (ids.Count > 0) return ids;
                 }
-                catch { }
+                catch (Exception ex) { _logger.LogDebug(ex, "Error in GetLinkedJobIds for file: {File}", file); }
             }
             return new List<Guid>();
         }

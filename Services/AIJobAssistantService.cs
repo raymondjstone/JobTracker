@@ -29,7 +29,7 @@ public class AIJobAssistantService
     /// </summary>
     public async Task<JobAnalysis?> AnalyzeJobAsync(JobListing job, Guid userId)
     {
-        var settings = _settingsService.GetSettings(userId);
+        var settings = _settingsService.GetSettingsDecrypted(userId);
         
         if (!settings.AIAssistant.Enabled || string.IsNullOrEmpty(settings.AIAssistant.ApiKey))
         {
@@ -89,7 +89,7 @@ Respond ONLY with valid JSON in this format:
         List<string> userSkills,
         string? userExperience = null)
     {
-        var settings = _settingsService.GetSettings(userId);
+        var settings = _settingsService.GetSettingsDecrypted(userId);
         
         if (!settings.AIAssistant.Enabled || string.IsNullOrEmpty(settings.AIAssistant.ApiKey))
         {
@@ -225,7 +225,7 @@ Respond ONLY with valid JSON in this format:
         JobListing job,
         Guid userId)
     {
-        var settings = _settingsService.GetSettings(userId);
+        var settings = _settingsService.GetSettingsDecrypted(userId);
 
         if (!settings.AIAssistant.Enabled || string.IsNullOrEmpty(settings.AIAssistant.ApiKey))
             return null;
@@ -278,7 +278,7 @@ Respond ONLY with valid JSON in this format:
         Guid userId,
         string currentSalary = "")
     {
-        var settings = _settingsService.GetSettings(userId);
+        var settings = _settingsService.GetSettingsDecrypted(userId);
 
         if (!settings.AIAssistant.Enabled || string.IsNullOrEmpty(settings.AIAssistant.ApiKey))
             return null;
@@ -337,7 +337,7 @@ Respond ONLY with valid JSON in this format:
         JobListing job,
         Guid userId)
     {
-        var settings = _settingsService.GetSettings(userId);
+        var settings = _settingsService.GetSettingsDecrypted(userId);
 
         if (!settings.AIAssistant.Enabled || string.IsNullOrEmpty(settings.AIAssistant.ApiKey))
             return null;
@@ -399,7 +399,7 @@ Respond ONLY with valid JSON in this format:
         Guid userId,
         List<JobListing> applicationHistory)
     {
-        var settings = _settingsService.GetSettings(userId);
+        var settings = _settingsService.GetSettingsDecrypted(userId);
 
         if (!settings.AIAssistant.Enabled || string.IsNullOrEmpty(settings.AIAssistant.ApiKey))
             return null;

@@ -299,6 +299,9 @@ if (localMode)
     app.UseMiddleware<LocalAuthMiddleware>();
 }
 
+// API rate limiting (60 requests per minute per client)
+app.UseApiRateLimit(maxRequests: 60, windowSeconds: 60);
+
 // Authentication and Authorization middleware
 app.UseAuthentication();
 app.UseAuthorization();

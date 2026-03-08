@@ -43,7 +43,8 @@
       "Bash(dotnet package:*)",
       "Bash(dotnet add:*)",
       "Bash(xargs:*)",
-      "Bash(rm:*)"
+      "Bash(rm:*)",
+      "Bash(wc:*)"
     ]
   }
 }
