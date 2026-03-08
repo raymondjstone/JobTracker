@@ -9,6 +9,15 @@ using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Default to port 7046 (matches dev launchSettings) unless overridden via
+// command-line, environment variable, or appsettings Urls/Kestrel config.
+if (builder.Configuration["Urls"] == null &&
+    builder.Configuration["Kestrel:Endpoints:Https:Url"] == null &&
+    Environment.GetEnvironmentVariable("ASPNETCORE_URLS") == null)
+{
+    builder.WebHost.UseUrls("https://localhost:7046");
+}
+
 // One-off migration: SQL Server -> Local JSON storage
 if (args.Contains("--migrate-to-local"))
 {
