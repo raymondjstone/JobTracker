@@ -73,7 +73,7 @@ public static class SettingsEncryptionService
 
             return Encoding.UTF8.GetString(plaintext);
         }
-        catch (Exception) when (true)
+        catch
         {
             // If decryption fails (wrong key, corrupted data, invalid base64), return empty
             // This handles migration scenarios where the key has changed

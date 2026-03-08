@@ -2792,6 +2792,15 @@ else
         }
     }
 
+    /// <summary>
+    /// Opens a URL in a new tab that automatically closes after a delay.
+    /// Used for fetch-details fallback where the browser extension captures data.
+    /// </summary>
+    private async Task OpenTabAndAutoClose(string url, int delaySeconds = 10)
+    {
+        await JSRuntime.InvokeVoidAsync("crawlPagesRunner.openAndScheduleClose", url, delaySeconds);
+    }
+
     private async Task ShareToWhatsApp(JobListing job)
     {
         var message = $"?? Job Opportunity\n\n?? *{job.Title}*\n?? {job.Company}\n";
@@ -3248,8 +3257,8 @@ else
                 {
                     if (!string.IsNullOrEmpty(refreshed.Url))
                     {
-                        await JSRuntime.InvokeVoidAsync("open", refreshed.Url, "_blank");
-                        ShowFetchStatus("Job page opened in a new tab — the browser extension will capture the full details. Refresh to see updates.");
+                        await OpenTabAndAutoClose(refreshed.Url);
+                        ShowFetchStatus("Job page opened — tab will close automatically after the extension captures details.");
                     }
                 }
 
@@ -3262,8 +3271,8 @@ else
                 // Server-side check failed or was skipped - fall back to browser extension
                 if (!string.IsNullOrEmpty(job.Url))
                 {
-                    await JSRuntime.InvokeVoidAsync("open", job.Url, "_blank");
-                    ShowFetchStatus("Job page opened in a new tab — the browser extension will fetch the latest details. Refresh to see updates.");
+                    await OpenTabAndAutoClose(job.Url);
+                    ShowFetchStatus("Job page opened — tab will close automatically after details are fetched.");
 
                     // Mark as checked so we don't keep retrying
                     JobService.SetLastChecked(job.Id);
@@ -3276,8 +3285,8 @@ else
             // If any error occurs during server-side fetch, fall back to browser
             if (!string.IsNullOrEmpty(job.Url))
             {
-                await JSRuntime.InvokeVoidAsync("open", job.Url, "_blank");
-                ShowFetchStatus("Job page opened in a new tab — the browser extension will fetch the details. Refresh to see updates.");
+                await OpenTabAndAutoClose(job.Url);
+                ShowFetchStatus("Job page opened — tab will close automatically after details are fetched.");
 
                 JobService.SetLastChecked(job.Id);
                 RefreshData();
