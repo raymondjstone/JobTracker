@@ -18,14 +18,16 @@ public class JobCrawlService
     private readonly HttpClient _httpClient;
     private readonly ILogger<JobCrawlService> _logger;
     private readonly IConfiguration _configuration;
-    private const int MaxPagesPerSite = 5;
-    private const int DelayBetweenRequestsMs = 2000;
+    private readonly int _maxPagesPerSite;
+    private readonly int _delayBetweenRequestsMs;
 
     public JobCrawlService(HttpClient httpClient, ILogger<JobCrawlService> logger, IConfiguration configuration)
     {
         _httpClient = httpClient;
         _logger = logger;
         _configuration = configuration;
+        _maxPagesPerSite = configuration.GetValue("Crawl:_maxPagesPerSite", 5);
+        _delayBetweenRequestsMs = configuration.GetValue("Crawl:_delayBetweenRequestsMs", 2000);
     }
 
     public async Task<CrawlResult> CrawlAllSitesAsync(
@@ -133,7 +135,7 @@ public class JobCrawlService
                         combined.JobsAdded += result.JobsAdded;
                         combined.PagesScanned += result.PagesScanned;
                         combined.Errors.AddRange(result.Errors);
-                        await Task.Delay(DelayBetweenRequestsMs, ct);
+                        await Task.Delay(_delayBetweenRequestsMs, ct);
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
@@ -440,7 +442,7 @@ public class JobCrawlService
             return result;
         }
 
-        for (int page = 1; page <= MaxPagesPerSite; page++)
+        for (int page = 1; page <= _maxPagesPerSite; page++)
         {
             ct.ThrowIfCancellationRequested();
 
@@ -466,8 +468,8 @@ public class JobCrawlService
                     result.JobsAdded++;
             }
 
-            if (page < MaxPagesPerSite)
-                await Task.Delay(DelayBetweenRequestsMs, ct);
+            if (page < _maxPagesPerSite)
+                await Task.Delay(_delayBetweenRequestsMs, ct);
         }
 
         return result;
@@ -630,7 +632,7 @@ public class JobCrawlService
             var langFilter = $"language:{lang}";
             filters = string.IsNullOrEmpty(filters) ? langFilter : $"{filters} AND {langFilter}";
 
-            for (int page = 0; page < MaxPagesPerSite; page++)
+            for (int page = 0; page < _maxPagesPerSite; page++)
             {
                 ct.ThrowIfCancellationRequested();
 
@@ -687,8 +689,8 @@ public class JobCrawlService
                 // Stop if we've reached the last page
                 if (page + 1 >= nbPages) break;
 
-                if (page < MaxPagesPerSite - 1)
-                    await Task.Delay(DelayBetweenRequestsMs, ct);
+                if (page < _maxPagesPerSite - 1)
+                    await Task.Delay(_delayBetweenRequestsMs, ct);
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -900,7 +902,7 @@ public class JobCrawlService
             return result;
         }
 
-        for (int page = 1; page <= MaxPagesPerSite; page++)
+        for (int page = 1; page <= _maxPagesPerSite; page++)
         {
             ct.ThrowIfCancellationRequested();
 
@@ -931,8 +933,8 @@ public class JobCrawlService
                     result.JobsAdded++;
             }
 
-            if (page < MaxPagesPerSite)
-                await Task.Delay(DelayBetweenRequestsMs, ct);
+            if (page < _maxPagesPerSite)
+                await Task.Delay(_delayBetweenRequestsMs, ct);
         }
 
         return result;

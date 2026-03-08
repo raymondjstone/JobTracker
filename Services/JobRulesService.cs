@@ -63,10 +63,11 @@ public class JobRulesService
 
     public void AddRule(JobRule rule)
     {
+        ValidateRegexPatterns(rule);
         var settings = _settingsService.GetSettings();
         rule.Id = Guid.NewGuid();
         rule.UserId = CurrentUserId;
-        rule.DateCreated = DateTime.Now;
+        rule.DateCreated = DateTime.UtcNow;
         settings.JobRules.Rules.Add(rule);
         SaveAndNotify();
         _logger.LogInformation("Added rule: {Name}", rule.Name);
@@ -74,9 +75,35 @@ public class JobRulesService
 
     public void UpdateRule(JobRule rule)
     {
+        ValidateRegexPatterns(rule);
         UpdateRuleInternal(rule);
         OnChange?.Invoke();
         _logger.LogInformation("Updated rule: {Name}", rule.Name);
+    }
+
+    /// <summary>
+    /// Validates all regex patterns in a rule before saving.
+    /// Throws ArgumentException if any pattern is invalid.
+    /// </summary>
+    private static void ValidateRegexPatterns(JobRule rule)
+    {
+        var conditions = rule.HasCompoundConditions
+            ? rule.Conditions.Where(c => c.Operator == RuleOperator.Regex)
+            : rule.Operator == RuleOperator.Regex
+                ? [new RuleCondition { Value = rule.Value }]
+                : [];
+
+        foreach (var cond in conditions)
+        {
+            try
+            {
+                _ = new System.Text.RegularExpressions.Regex(cond.Value, System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromSeconds(1));
+            }
+            catch (System.Text.RegularExpressions.RegexParseException ex)
+            {
+                throw new ArgumentException($"Invalid regex pattern '{cond.Value}': {ex.Message}", nameof(rule));
+            }
+        }
     }
 
     private void UpdateRuleInternal(JobRule rule)

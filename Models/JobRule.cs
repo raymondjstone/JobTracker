@@ -26,7 +26,7 @@ public class JobRule
     // Stats
     public int TimesTriggered { get; set; } = 0;
     public DateTime? LastTriggered { get; set; }
-    public DateTime DateCreated { get; set; } = DateTime.Now;
+    public DateTime DateCreated { get; set; } = DateTime.UtcNow;
 
     // Helper to check if using compound conditions
     public bool HasCompoundConditions => Conditions.Count > 0;

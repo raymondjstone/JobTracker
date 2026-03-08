@@ -235,65 +235,69 @@ var storage = app.Services.GetRequiredService<IStorageBackend>();
 var authService = app.Services.GetRequiredService<AuthService>();
 var startupLogger = app.Services.GetRequiredService<ILogger<Program>>();
 
-if (!authService.GetAllUsers().Any())
+// Seed users, migrate emails, and backfill API keys under a file lock
+// to prevent duplicate user creation on concurrent startup.
 {
-    if (localMode)
-    {
-        var localUser = authService.CreateUser(
-            email: "local@localhost",
-            name: "Local User",
-            password: Guid.NewGuid().ToString()
-        );
-        startupLogger.LogInformation("Created local user: {Email}", localUser.Email);
-        storage.MigrateExistingDataToUser(localUser.Id);
-        startupLogger.LogInformation("Migrated existing data to local user");
-    }
-    else
-    {
-        var initialPassword = builder.Configuration["InitialUser:Password"]
-            ?? throw new InvalidOperationException("InitialUser:Password must be configured in appsettings.json or environment variables.");
-        var initialEmail = builder.Configuration["InitialUser:Email"] ?? "admin@localhost";
-        var initialName = builder.Configuration["InitialUser:Name"] ?? "Admin";
-        var initialUser = authService.CreateUser(
-            email: initialEmail,
-            name: initialName,
-            password: initialPassword
-        );
-        startupLogger.LogInformation("Created initial user: {Email}", initialUser.Email);
-        storage.MigrateExistingDataToUser(initialUser.Id);
-        startupLogger.LogInformation("Migrated existing data to user: {Email}", initialUser.Email);
-    }
-}
+    var seedLockPath = Path.Combine(app.Environment.ContentRootPath, "Data", ".seed-lock");
+    Directory.CreateDirectory(Path.GetDirectoryName(seedLockPath)!);
+    using var seedLock = new FileStream(seedLockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
 
-// Migrate existing users with invalid localhost emails to the configured email
-if (!localMode)
-{
-    var configuredEmail = builder.Configuration["InitialUser:Email"] ?? "admin@example.com";
-    var allUsers = authService.GetAllUsers();
-
-    foreach (var user in allUsers)
+    if (!authService.GetAllUsers().Any())
     {
-        // Fix localhost or local@ emails
-        if (user.Email.EndsWith("@localhost", StringComparison.OrdinalIgnoreCase) || 
-            user.Email.StartsWith("local@", StringComparison.OrdinalIgnoreCase))
+        if (localMode)
         {
-            startupLogger.LogInformation("Migrating user email from {OldEmail} to {NewEmail}", user.Email, configuredEmail);
-            authService.UpdateUserEmail(user.Id, configuredEmail);
+            var localUser = authService.CreateUser(
+                email: "local@localhost",
+                name: "Local User",
+                password: Guid.NewGuid().ToString()
+            );
+            startupLogger.LogInformation("Created local user: {Email}", localUser.Email);
+            storage.MigrateExistingDataToUser(localUser.Id);
+            startupLogger.LogInformation("Migrated existing data to local user");
+        }
+        else
+        {
+            var initialPassword = builder.Configuration["InitialUser:Password"]
+                ?? throw new InvalidOperationException("InitialUser:Password must be configured in appsettings.json or environment variables.");
+            var initialEmail = builder.Configuration["InitialUser:Email"] ?? "admin@localhost";
+            var initialName = builder.Configuration["InitialUser:Name"] ?? "Admin";
+            var initialUser = authService.CreateUser(
+                email: initialEmail,
+                name: initialName,
+                password: initialPassword
+            );
+            startupLogger.LogInformation("Created initial user: {Email}", initialUser.Email);
+            storage.MigrateExistingDataToUser(initialUser.Id);
+            startupLogger.LogInformation("Migrated existing data to user: {Email}", initialUser.Email);
         }
     }
-}
 
-// Backfill ApiKey for existing users that don't have one persisted yet.
-// (The property initializer generates a random key on deserialization, but it's
-// not stable until explicitly saved. This ensures it's persisted once.)
-foreach (var existingUser in authService.GetAllUsers())
-{
-    // ApiKey will have been set by the property initializer — save it so it persists
-    if (!string.IsNullOrEmpty(existingUser.ApiKey))
+    // Migrate existing users with invalid localhost emails to the configured email
+    if (!localMode)
     {
-        storage.SaveUser(existingUser);
+        var configuredEmail = builder.Configuration["InitialUser:Email"] ?? "admin@example.com";
+        var allUsers = authService.GetAllUsers();
+
+        foreach (var user in allUsers)
+        {
+            if (user.Email.EndsWith("@localhost", StringComparison.OrdinalIgnoreCase) ||
+                user.Email.StartsWith("local@", StringComparison.OrdinalIgnoreCase))
+            {
+                startupLogger.LogInformation("Migrating user email from {OldEmail} to {NewEmail}", user.Email, configuredEmail);
+                authService.UpdateUserEmail(user.Id, configuredEmail);
+            }
+        }
     }
-}
+
+    // Backfill ApiKey for existing users that don't have one persisted yet.
+    foreach (var existingUser in authService.GetAllUsers())
+    {
+        if (!string.IsNullOrEmpty(existingUser.ApiKey))
+        {
+            storage.SaveUser(existingUser);
+        }
+    }
+} // seedLock released here
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
@@ -397,10 +401,14 @@ app.MapPost("/api/jobs", async (HttpContext context, JobListingService jobServic
             return Results.Ok(new { added = false, message = "Duplicate job - already exists" });
         }
     }
+    catch (System.Text.Json.JsonException)
+    {
+        return Results.BadRequest(new { error = "Invalid JSON in request body." });
+    }
     catch (Exception ex)
     {
-        log.LogError(ex, "API error");
-        return Results.BadRequest("An error occurred processing your request.");
+        log.LogError(ex, "Error in POST /api/jobs");
+        return Results.StatusCode(500);
     }
 }).DisableAntiforgery();
 
@@ -482,10 +490,14 @@ app.MapPut("/api/jobs/{id:guid}/interest", async (Guid id, HttpContext context, 
         log.LogInformation("Updated interest for {Title}: {Interest}", job.Title, body.Interest);
         return Results.Ok(new { success = true, interest = body.Interest });
     }
+    catch (System.Text.Json.JsonException)
+    {
+        return Results.BadRequest(new { error = "Invalid JSON in request body." });
+    }
     catch (Exception ex)
     {
-        log.LogError(ex, "API error");
-        return Results.BadRequest("An error occurred processing your request.");
+        log.LogError(ex, "Error in PUT /api/jobs/interest");
+        return Results.StatusCode(500);
     }
 }).DisableAntiforgery();
 
@@ -545,9 +557,17 @@ app.MapDelete("/api/jobs/clear", (HttpContext context, JobListingService jobServ
         return Results.Unauthorized();
     }
 
+    // Require explicit confirmation header to prevent accidental data loss
+    var confirm = context.Request.Headers["X-Confirm-Delete"].FirstOrDefault();
+    if (confirm != "DELETE-ALL-JOBS")
+    {
+        return Results.BadRequest(new { error = "Missing confirmation header. Set X-Confirm-Delete: DELETE-ALL-JOBS to confirm." });
+    }
+
+    var count = jobService.GetTotalCount(userId.Value);
     jobService.ClearAllJobListings(userId.Value);
-    log.LogWarning("All jobs cleared");
-    return Results.Ok(new { message = "All jobs cleared" });
+    log.LogWarning("All {Count} jobs cleared for user {UserId}", count, userId.Value);
+    return Results.Ok(new { message = $"All {count} jobs cleared" });
 }).DisableAntiforgery();
 
 // Update job description by URL
@@ -572,10 +592,14 @@ app.MapPut("/api/jobs/description", async (HttpContext context, JobListingServic
         var updated = jobService.UpdateJobDescription(body.Url, body.Description ?? "", userId.Value, body.Company, body.Contacts, parsedJobType);
         return updated ? Results.Ok(new { updated = true }) : Results.Ok(new { updated = false, message = "Job not found or description unchanged" });
     }
+    catch (System.Text.Json.JsonException)
+    {
+        return Results.BadRequest(new { error = "Invalid JSON in request body." });
+    }
     catch (Exception ex)
     {
-        log.LogError(ex, "API error");
-        return Results.BadRequest("An error occurred processing your request.");
+        log.LogError(ex, "Error in PUT /api/jobs/description");
+        return Results.StatusCode(500);
     }
 }).DisableAntiforgery();
 
@@ -588,7 +612,8 @@ app.MapGet("/api/jobs/needing-descriptions", (int? limit, HttpContext context, J
         return Results.Unauthorized();
     }
 
-    var jobs = jobService.GetJobsNeedingDescriptions(limit ?? int.MaxValue, userId.Value);
+    var effectiveLimit = Math.Min(limit ?? 500, 500); // Cap at 500 to prevent excessive responses
+    var jobs = jobService.GetJobsNeedingDescriptions(effectiveLimit, userId.Value);
     var urls = jobs.Select(j => new { j.Url, j.Title, j.Company, j.Source }).ToList();
     return Results.Ok(new { count = urls.Count, jobs = urls });
 });

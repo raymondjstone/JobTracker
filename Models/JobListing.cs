@@ -10,8 +10,8 @@ public class JobListing
     public string Description { get; set; } = string.Empty;
     public JobType JobType { get; set; } = JobType.FullTime;
     public string Url { get; set; } = string.Empty;
-    public DateTime DatePosted { get; set; } = DateTime.Now;
-    public DateTime DateAdded { get; set; } = DateTime.Now;
+    public DateTime DatePosted { get; set; } = DateTime.UtcNow;
+    public DateTime DateAdded { get; set; } = DateTime.UtcNow;
     public DateTime? LastUpdated { get; set; } // Tracks when job details were last changed
     public string Salary { get; set; } = string.Empty;
     public bool IsRemote { get; set; }
@@ -69,7 +69,7 @@ public class Contact
     public string? Phone { get; set; }
     public string? ProfileUrl { get; set; }
     public string? Role { get; set; }
-    public DateTime DateAdded { get; set; } = DateTime.Now;
+    public DateTime DateAdded { get; set; } = DateTime.UtcNow;
     public List<ContactInteraction> Interactions { get; set; } = new();
 }
 
@@ -88,14 +88,14 @@ public class ContactEntry
     public string? LinkedInUrl { get; set; }
     public string? ProfileUrl { get; set; }
     public string? Role { get; set; }
-    public DateTime DateAdded { get; set; } = DateTime.Now;
+    public DateTime DateAdded { get; set; } = DateTime.UtcNow;
     public List<ContactInteraction> Interactions { get; set; } = new();
 }
 
 public class ContactInteraction
 {
     public Guid Id { get; set; } = Guid.NewGuid();
-    public DateTime Date { get; set; } = DateTime.Now;
+    public DateTime Date { get; set; } = DateTime.UtcNow;
     public string Channel { get; set; } = string.Empty;
     public string Notes { get; set; } = string.Empty;
 }

@@ -147,6 +147,12 @@
         // Only allow local relative paths
         if (!returnUrl.StartsWith("/") || returnUrl.StartsWith("//") || returnUrl.StartsWith("/\\"))
             return "/";
+        // Block any URI with a scheme (e.g. javascript:, data:) or encoded separators
+        if (returnUrl.Contains(':') || returnUrl.Contains("%2f", StringComparison.OrdinalIgnoreCase))
+            return "/";
+        // Ensure it's actually a valid relative path
+        if (!Uri.TryCreate(returnUrl, UriKind.Relative, out _))
+            return "/";
         return returnUrl;
     }
 

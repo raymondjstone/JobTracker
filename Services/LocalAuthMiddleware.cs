@@ -44,6 +44,15 @@ public class LocalAuthMiddleware
     private Models.User? GetLocalUser()
     {
         var users = _authService.GetAllUsers();
-        return users.FirstOrDefault(u => u.Email == "local@localhost") ?? users.FirstOrDefault();
+        var localUser = users.FirstOrDefault(u => u.Email == "local@localhost");
+        if (localUser != null) return localUser;
+
+        var fallback = users.FirstOrDefault();
+        if (fallback != null)
+        {
+            _logger.LogWarning("Local user 'local@localhost' not found, falling back to user: {Email} ({Id})",
+                fallback.Email, fallback.Id);
+        }
+        return fallback;
     }
 }

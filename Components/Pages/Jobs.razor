@@ -801,6 +801,12 @@ else
                             </button>
                         }
 
+                        <button class="btn btn-sm @(compareJobIds.Contains(job.Id) ? "btn-info" : "btn-outline-info") mb-2 ms-1"
+                                @onclick="() => ToggleCompareJob(job.Id)"
+                                title="@(compareJobIds.Contains(job.Id) ? "Remove from comparison" : "Add to comparison")">
+                            <i class="bi @(compareJobIds.Contains(job.Id) ? "bi-check-square-fill" : "bi-layout-split")"></i> Compare
+                        </button>
+
                         @if (job.LastUpdated.HasValue && job.LastUpdated > job.DateAdded.AddMinutes(5))
                         {
                             <button class="btn btn-sm btn-outline-warning mb-2 ms-1" @onclick="() => ShowChangeTimeline(job)"
@@ -2485,9 +2491,190 @@ else
     </div>
 }
 
+@* Floating Compare Bar *@
+@if (compareJobIds.Count > 0 && !showComparisonModal)
+{
+    <div class="position-fixed bottom-0 start-50 translate-middle-x mb-3 p-3 bg-dark text-white rounded-pill shadow-lg d-flex align-items-center gap-3" style="z-index: 1050;">
+        <span><i class="bi bi-layout-split"></i> @compareJobIds.Count job@(compareJobIds.Count != 1 ? "s" : "") selected</span>
+        <button class="btn btn-sm btn-info" @onclick="OpenComparisonModal" disabled="@(compareJobIds.Count < 2)">
+            <i class="bi bi-columns-gap"></i> Compare
+        </button>
+        <button class="btn btn-sm btn-outline-light" @onclick="() => compareJobIds.Clear()">
+            <i class="bi bi-x-lg"></i> Clear
+        </button>
+    </div>
+}
+
+@* Job Comparison Modal *@
+@if (showComparisonModal)
+{
+    var compareJobs = JobService.GetAllJobListings().Where(j => compareJobIds.Contains(j.Id)).ToList();
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-scrollable" style="max-width: 95vw;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-columns-gap"></i> Job Comparison (@compareJobs.Count jobs)</h5>
+                    <button type="button" class="btn-close" @onclick="CloseComparisonModal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-hover comparison-table">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="min-width: 120px;">Property</th>
+                                    @foreach (var job in compareJobs)
+                                    {
+                                        <th style="min-width: 200px;">
+                                            @job.Title
+                                            <button class="btn btn-sm btn-outline-danger ms-1" @onclick="() => RemoveFromComparison(job.Id)" title="Remove">
+                                                <i class="bi bi-x"></i>
+                                            </button>
+                                        </th>
+                                    }
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><strong>Company</strong></td>
+                                    @foreach (var job in compareJobs)
+                                    {
+                                        <td>
+                                            @job.Company
+                                            @if (job.IsAgency)
+                                            {
+                                                <span class="badge bg-warning text-dark ms-1">Agency</span>
+                                            }
+                                        </td>
+                                    }
+                                </tr>
+                                <tr>
+                                    <td><strong>Location</strong></td>
+                                    @foreach (var job in compareJobs)
+                                    {
+                                        <td>
+                                            @(string.IsNullOrEmpty(job.Location) ? "Not specified" : job.Location)
+                                            @if (job.IsRemote) { <span class="badge bg-success ms-1">Remote</span> }
+                                        </td>
+                                    }
+                                </tr>
+                                <tr>
+                                    <td><strong>Job Type</strong></td>
+                                    @foreach (var job in compareJobs)
+                                    {
+                                        <td><span class="badge @GetJobTypeBadgeClass(job.JobType)">@job.JobType</span></td>
+                                    }
+                                </tr>
+                                <tr>
+                                    <td><strong>Salary</strong></td>
+                                    @foreach (var job in compareJobs)
+                                    {
+                                        <td>@(string.IsNullOrEmpty(job.Salary) ? "Not specified" : job.Salary)</td>
+                                    }
+                                </tr>
+                                <tr>
+                                    <td><strong>Score</strong></td>
+                                    @foreach (var job in compareJobs)
+                                    {
+                                        <td>
+                                            @if (job.SuitabilityScore > 0)
+                                            {
+                                                <span class="badge @GetScoreBadgeClass(job.SuitabilityScore)">@job.SuitabilityScore / 100</span>
+                                            }
+                                            else
+                                            {
+                                                <text>Not scored</text>
+                                            }
+                                        </td>
+                                    }
+                                </tr>
+                                <tr>
+                                    <td><strong>Interest</strong></td>
+                                    @foreach (var job in compareJobs)
+                                    {
+                                        <td><span class="badge @GetInterestBadgeClass(job.Interest)">@job.Interest</span></td>
+                                    }
+                                </tr>
+                                <tr>
+                                    <td><strong>Suitability</strong></td>
+                                    @foreach (var job in compareJobs)
+                                    {
+                                        <td><span class="badge @GetSuitabilityBadgeClass(job.Suitability)">@job.Suitability</span></td>
+                                    }
+                                </tr>
+                                <tr>
+                                    <td><strong>Status</strong></td>
+                                    @foreach (var job in compareJobs)
+                                    {
+                                        <td>
+                                            @if (job.HasApplied)
+                                            {
+                                                <span class="badge bg-primary">@GetStageDisplayName(job.ApplicationStage)</span>
+                                            }
+                                            else
+                                            {
+                                                <text>Not applied</text>
+                                            }
+                                        </td>
+                                    }
+                                </tr>
+                                <tr>
+                                    <td><strong>Skills</strong></td>
+                                    @foreach (var job in compareJobs)
+                                    {
+                                        <td>
+                                            @if (job.Skills?.Any() == true)
+                                            {
+                                                @foreach (var skill in job.Skills)
+                                                {
+                                                    <span class="badge bg-secondary me-1 mb-1">@skill</span>
+                                                }
+                                            }
+                                            else
+                                            {
+                                                <text>None listed</text>
+                                            }
+                                        </td>
+                                    }
+                                </tr>
+                                <tr>
+                                    <td><strong>Source</strong></td>
+                                    @foreach (var job in compareJobs)
+                                    {
+                                        <td>@((MarkupString)GetSourceIcon(job.Source)) @GetSourceDisplayName(job.Source)</td>
+                                    }
+                                </tr>
+                                <tr>
+                                    <td><strong>Date Added</strong></td>
+                                    @foreach (var job in compareJobs)
+                                    {
+                                        <td>@job.DateAdded.ToString("MMM dd, yyyy")</td>
+                                    }
+                                </tr>
+                                <tr>
+                                    <td><strong>Notes</strong></td>
+                                    @foreach (var job in compareJobs)
+                                    {
+                                        <td>@(string.IsNullOrEmpty(job.Notes) ? "—" : job.Notes)</td>
+                                    }
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline-danger" @onclick="() => { compareJobIds.Clear(); showComparisonModal = false; }">
+                        <i class="bi bi-x-lg"></i> Clear All
+                    </button>
+                    <button class="btn btn-secondary" @onclick="CloseComparisonModal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private enum TabType { Browse, Possible, Applied, Pipeline, Unsuitable, Archived }
-    
+
     private TabType activeTab = TabType.Browse;
     private JobListingFilter filter = new() { SortBy = SortOption.DateAddedDesc };
     private IEnumerable<JobListing> filteredJobs = Enumerable.Empty<JobListing>();
@@ -2546,6 +2733,10 @@ else
     private AIAssistantSettings aiSettings = new();
     private List<string> skillPriorities = new();
     private string? aiErrorMessage = null;
+
+    // Job comparison state
+    private HashSet<Guid> compareJobIds = new();
+    private bool showComparisonModal = false;
 
     // Change timeline state
     private bool showChangeTimelineModal = false;
@@ -2691,16 +2882,36 @@ else
         StateHasChanged();
     }
 
-    private void UpdateTabCounts()
+    private void UpdateTabCounts(List<JobListing>? cachedJobs = null)
     {
-        var allJobs = JobService.GetAllJobListings();
-        archivedJobsCount = allJobs.Count(j => j.IsArchived);
-        var activeJobs = allJobs.Where(j => !j.IsArchived).ToList();
-        appliedJobsCount = activeJobs.Count(j => j.HasApplied);
-        possibleJobsCount = activeJobs.Count(j => !j.HasApplied && j.Suitability == SuitabilityStatus.Possible);
-        unsuitableJobsCount = activeJobs.Count(j => !j.HasApplied && j.Suitability == SuitabilityStatus.Unsuitable);
-        browseJobsCount = activeJobs.Count(j => !j.HasApplied && j.Suitability == SuitabilityStatus.NotChecked);
-        followUpsDueCount = activeJobs.Count(j => j.HasApplied && j.FollowUpDate.HasValue && j.FollowUpDate.Value.Date <= DateTime.Now.Date);
+        var allJobs = cachedJobs ?? JobService.GetAllJobListings();
+        archivedJobsCount = 0;
+        appliedJobsCount = 0;
+        possibleJobsCount = 0;
+        unsuitableJobsCount = 0;
+        browseJobsCount = 0;
+        followUpsDueCount = 0;
+        var today = DateTime.UtcNow.Date;
+
+        foreach (var j in allJobs)
+        {
+            if (j.IsArchived) { archivedJobsCount++; continue; }
+            if (j.HasApplied)
+            {
+                appliedJobsCount++;
+                if (j.FollowUpDate.HasValue && j.FollowUpDate.Value.Date <= today)
+                    followUpsDueCount++;
+            }
+            else
+            {
+                switch (j.Suitability)
+                {
+                    case SuitabilityStatus.Possible: possibleJobsCount++; break;
+                    case SuitabilityStatus.Unsuitable: unsuitableJobsCount++; break;
+                    default: browseJobsCount++; break;
+                }
+            }
+        }
     }
 
     private void SetActiveTab(TabType tab)
@@ -3521,6 +3732,13 @@ else
         _ => "bg-secondary"
     };
 
+    private string GetInterestBadgeClass(InterestStatus interest) => interest switch
+    {
+        InterestStatus.Interested => "bg-success",
+        InterestStatus.NotInterested => "bg-danger",
+        _ => "bg-secondary"
+    };
+
     private DateTime? GetLastStageChangeDate(JobListing job)
     {
         if (job.StageHistory == null || !job.StageHistory.Any()) return job.DateApplied;
@@ -4147,6 +4365,30 @@ else
         {
             _restoringViewState = false;
         }
+    }
+
+    private void ToggleCompareJob(Guid jobId)
+    {
+        if (!compareJobIds.Remove(jobId))
+            compareJobIds.Add(jobId);
+    }
+
+    private void OpenComparisonModal()
+    {
+        if (compareJobIds.Count >= 2)
+            showComparisonModal = true;
+    }
+
+    private void CloseComparisonModal()
+    {
+        showComparisonModal = false;
+    }
+
+    private void RemoveFromComparison(Guid jobId)
+    {
+        compareJobIds.Remove(jobId);
+        if (compareJobIds.Count < 2)
+            showComparisonModal = false;
     }
 
     public void Dispose()

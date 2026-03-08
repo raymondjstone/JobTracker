@@ -38,6 +38,18 @@ public class JobListingService
     private Guid CurrentUserId => _currentUser.GetCurrentUserId();
 
     private Guid _loadedForUser = Guid.Empty;
+    private JobStats? _cachedStats;
+    private Guid _cachedStatsUserId = Guid.Empty;
+
+    /// <summary>
+    /// Persists all in-memory jobs for the given user to storage.
+    /// Must be called inside a lock(_lock) block.
+    /// </summary>
+    private void SaveUserJobs(Guid userId)
+    {
+        _cachedStats = null; // Invalidate stats cache on any write
+        _storage.SaveJobs(_jobListings.Where(j => j.UserId == userId).ToList(), userId);
+    }
 
     private void EnsureJobsLoaded(Guid? forUserId = null)
     {
@@ -111,7 +123,7 @@ public class JobListingService
             if (!string.IsNullOrEmpty(result.Period)) job.SalaryPeriod = result.Period;
         }
 
-        _storage.SaveJobs(_jobListings.Where(j => j.UserId == userId).ToList(), userId);
+        SaveUserJobs(userId);
         _logger.LogInformation("Backfilled salary data for {Count} jobs", jobsToBackfill.Count);
     }
 
@@ -129,7 +141,7 @@ public class JobListingService
         }
         if (changed > 0)
         {
-            _storage.SaveJobs(_jobListings.Where(j => j.UserId == userId).ToList(), userId);
+            SaveUserJobs(userId);
             _logger.LogInformation("Normalised company names for {Count} jobs", changed);
         }
     }
@@ -228,6 +240,7 @@ public class JobListingService
             var jobs = _storage.LoadJobs(userId);
             _jobListings.AddRange(jobs.Where(j => j.UserId == userId));
             _loadedForUser = userId;
+            _cachedStats = null;
             _logger.LogDebug("Force reloaded {Count} jobs for user {UserId}", jobs.Count, userId);
         }
     }
@@ -518,7 +531,7 @@ public class JobListingService
 
             if (addedCount > 0)
             {
-                _storage.SaveJobs(_jobListings.Where(j => j.UserId == userId).ToList(), userId);
+                SaveUserJobs(userId);
                 NotifyStateChanged();
             }
 
@@ -1978,7 +1991,7 @@ public class JobListingService
 
             if (cleanedCount > 0)
             {
-                _storage.SaveJobs(_jobListings.Where(j => j.UserId == userId).ToList(), userId);
+                SaveUserJobs(userId);
                 NotifyStateChanged();
                 _logger.LogInformation("Cleaned up {Count} jobs", cleanedCount);
             }
@@ -2016,7 +2029,7 @@ public class JobListingService
 
             if (cleanedCount > 0)
             {
-                _storage.SaveJobs(_jobListings.Where(j => j.UserId == userId).ToList(), userId);
+                SaveUserJobs(userId);
                 NotifyStateChanged();
                 _logger.LogInformation("Cleaned {Count} job descriptions", cleanedCount);
             }
@@ -2305,7 +2318,7 @@ public class JobListingService
 
             if (fixedCount > 0)
             {
-                _storage.SaveJobs(_jobListings.Where(j => j.UserId == userId).ToList(), userId);
+                SaveUserJobs(userId);
                 NotifyStateChanged();
                 _logger.LogInformation("Fixed source for {Count} jobs", fixedCount);
             }
@@ -2333,6 +2346,10 @@ public class JobListingService
         EnsureJobsLoaded(userId);
         lock (_lock)
         {
+            // Return cached stats if available for same user
+            if (_cachedStats != null && _cachedStatsUserId == userId)
+                return _cachedStats;
+
             var userJobs = _jobListings.Where(j => j.UserId == userId).ToList();
 
             // Jobs needing descriptions excludes unsuitable jobs (no point fetching for those)
@@ -2345,7 +2362,7 @@ public class JobListingService
                 .GroupBy(j => string.IsNullOrWhiteSpace(j.Source) ? "Unknown" : j.Source)
                 .ToDictionary(g => g.Key, g => g.Count());
 
-            return new JobStats
+            var result = new JobStats
             {
                 TotalJobs = userJobs.Count,
                 InterestedCount = userJobs.Count(j => j.Interest == InterestStatus.Interested),
@@ -2358,6 +2375,10 @@ public class JobListingService
                 NeedingDescriptionCount = jobsNeedingDescription.Count,
                 NeedingDescriptionBySource = needingBySource
             };
+
+            _cachedStats = result;
+            _cachedStatsUserId = userId;
+            return result;
         }
     }
 
@@ -2778,7 +2799,11 @@ public class JobListingService
         return text.Trim();
     }
 
-    private void NotifyStateChanged() => OnChange?.Invoke();
+    private void NotifyStateChanged()
+    {
+        _cachedStats = null;
+        OnChange?.Invoke();
+    }
 
     /// <summary>
     /// Applies all enabled rules to existing unclassified jobs.
@@ -2822,7 +2847,7 @@ public class JobListingService
 
             if (updatedCount > 0)
             {
-                _storage.SaveJobs(_jobListings.Where(j => j.UserId == userId).ToList(), userId);
+                SaveUserJobs(userId);
                 NotifyStateChanged();
                 _logger.LogInformation("Applied rules to {Count} existing jobs", updatedCount);
             }

@@ -371,3 +371,4 @@ appsettings.*.json
 
 # Portable build output
 # Portable/
+/Data/.seed-lock
