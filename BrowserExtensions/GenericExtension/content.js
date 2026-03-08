@@ -537,6 +537,7 @@
     /\/opportunity\/[^/?#]+/i,             // /opportunity/slug
     /\/rolle\/[^/?#]+/i,                   // German: /rolle/slug
     /\/emploi\/[^/?#]+/i,                  // French: /emploi/slug
+    /\/roles?\/[a-f0-9]{10,}/i,            // Haystack: /roles/hexid
     /[?&](?:jobId|job_id|jk|vjk|id)=/i    // ?jobId=xxx or ?jk=xxx
   ];
 
