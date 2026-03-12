@@ -2286,6 +2286,27 @@ public class JobListingService
         if (urlLower.Contains("s1jobs.com")) return "S1Jobs";
         if (urlLower.Contains("welcometothejungle.com")) return "WTTJ";
         if (urlLower.Contains("energyjobsearch.com")) return "EnergyJobSearch";
+        if (urlLower.Contains("monster.co")) return "Monster";
+        if (urlLower.Contains("jobserve.com")) return "Jobserve";
+        if (urlLower.Contains("haystackapp.io")) return "Haystack";
+        if (urlLower.Contains("reed.co")) return "Reed";
+        if (urlLower.Contains("totaljobs.com")) return "Totaljobs";
+        if (urlLower.Contains("cwjobs.co")) return "CWJobs";
+        if (urlLower.Contains("glassdoor.co")) return "Glassdoor";
+
+        // Try to extract source from hostname for unknown sites
+        try
+        {
+            var uri = new Uri(url);
+            var host = uri.Host.Replace("www.", "");
+            var parts = host.Split('.');
+            if (parts.Length >= 2)
+            {
+                var name = parts[0];
+                return char.ToUpper(name[0]) + name[1..];
+            }
+        }
+        catch { }
 
         return string.Empty;
     }

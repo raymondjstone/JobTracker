@@ -252,11 +252,10 @@
                         <label class="form-label" for="filter-source">Source</label>
                         <select id="filter-source" class="form-select" @bind="selectedSource" @bind:after="ApplyFilter" aria-label="Filter by job source">
                             <option value="">All Sources</option>
-                            <option value="LinkedIn">LinkedIn</option>
-                            <option value="Indeed">Indeed</option>
-                            <option value="S1Jobs">S1Jobs</option>
-                            <option value="WTTJ">WTTJ</option>
-                            <option value="EnergyJobSearch">EnergyJobSearch</option>
+                            @foreach (var src in availableSources)
+                            {
+                                <option value="@src">@GetSourceDisplayName(src)</option>
+                            }
                         </select>
                     </div>
                     <div class="col-md-1">
@@ -2698,6 +2697,7 @@ else
     private string selectedGroupBy = "";
     private HashSet<string> collapsedGroups = new();
     private List<string> availableSkills = new();
+    private List<string> availableSources = new();
     private JobListing? selectedJob = null;
     private JobListing? jobToDelete = null;
     private List<SimilarJob> detailSimilarJobs = new();
@@ -2861,6 +2861,7 @@ else
         JobService.ForceReload(); // Force reload from storage to pick up changes
         stats = JobService.GetStats();
         availableSkills = JobService.GetDistinctSkills().ToList();
+        availableSources = JobService.GetDistinctSources().ToList();
         UpdateTabCounts();
         ApplyFilter();
     }
