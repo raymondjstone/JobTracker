@@ -13,6 +13,7 @@ public class JobListingService
     private readonly Lazy<JobRulesService> _rulesService;
     private readonly Lazy<JobHistoryService> _historyService;
     private readonly Lazy<JobScoringService> _scoringService;
+    private readonly Lazy<AppSettingsService> _settingsService;
 
     public event Action? OnChange;
 
@@ -22,7 +23,8 @@ public class JobListingService
         CurrentUserService currentUser,
         Lazy<JobRulesService> rulesService,
         Lazy<JobHistoryService> historyService,
-        Lazy<JobScoringService> scoringService)
+        Lazy<JobScoringService> scoringService,
+        Lazy<AppSettingsService> settingsService)
     {
         _logger = logger;
         _storage = storage;
@@ -30,6 +32,7 @@ public class JobListingService
         _rulesService = rulesService;
         _historyService = historyService;
         _scoringService = scoringService;
+        _settingsService = settingsService;
 
         // Note: We can't load jobs here as we don't have user context yet
         // Jobs are loaded lazily when GetAllJobListings is called
@@ -1201,24 +1204,38 @@ public class JobListingService
                 changed = true;
             }
 
-            if (parsed.Skills != null && parsed.Skills.Count > 0 &&
-                (job.Skills == null || job.Skills.Count == 0))
+            // Always re-extract skills from description using user's custom settings
+            // so newly added skill definitions are picked up on fetch-details.
+            var descForSkills = job.Description ?? parsed.Description;
+            if (!string.IsNullOrWhiteSpace(descForSkills))
+            {
+                var skillSettings = _settingsService.Value.GetSettings()?.SkillExtraction;
+                var extractedSkills = LinkedInJobExtractor.ExtractSkills(descForSkills, skillSettings);
+
+                // Merge: parsed skills from the page + freshly extracted skills
+                if (parsed.Skills != null && parsed.Skills.Count > 0)
+                {
+                    var merged = new HashSet<string>(extractedSkills, StringComparer.OrdinalIgnoreCase);
+                    foreach (var s in parsed.Skills) merged.Add(s);
+                    extractedSkills = merged.ToList();
+                }
+
+                if (extractedSkills.Count > 0)
+                {
+                    var oldSet = new HashSet<string>(job.Skills ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
+                    var newSet = new HashSet<string>(extractedSkills, StringComparer.OrdinalIgnoreCase);
+                    if (!oldSet.SetEquals(newSet))
+                    {
+                        job.Skills = extractedSkills;
+                        changed = true;
+                    }
+                }
+            }
+            else if (parsed.Skills != null && parsed.Skills.Count > 0 &&
+                     (job.Skills == null || job.Skills.Count == 0))
             {
                 job.Skills = parsed.Skills;
                 changed = true;
-            }
-            else if (overwriteNonEmpty && parsed.Skills != null && parsed.Skills.Count > 0 &&
-                     job.Skills != null && job.Skills.Count > 0)
-            {
-                // Only overwrite if the new set contains skills not already present
-                var existingSet = new HashSet<string>(job.Skills, StringComparer.OrdinalIgnoreCase);
-                var newSkills = parsed.Skills.Where(s => !existingSet.Contains(s)).ToList();
-                if (newSkills.Count > 0)
-                {
-                    // Merge: keep existing skills in their current order, append genuinely new ones
-                    job.Skills = job.Skills.Concat(newSkills).ToList();
-                    changed = true;
-                }
             }
 
             if (parsed.IsRemote && !job.IsRemote)
@@ -1364,10 +1381,11 @@ public class JobListingService
                 job.Description = cleanedDescription;
                 job.LastChecked = DateTime.Now;
 
-                // Extract skills from description if not already populated
-                if ((job.Skills == null || job.Skills.Count == 0) && !string.IsNullOrWhiteSpace(cleanedDescription))
+                // Always (re-)extract skills from description so new skill definitions are picked up
+                if (!string.IsNullOrWhiteSpace(cleanedDescription))
                 {
-                    var extractedSkills = LinkedInJobExtractor.ExtractSkills(cleanedDescription);
+                    var skillSettings = _settingsService.Value.GetSettings()?.SkillExtraction;
+                    var extractedSkills = LinkedInJobExtractor.ExtractSkills(cleanedDescription, skillSettings);
                     if (extractedSkills.Count > 0)
                     {
                         job.Skills = extractedSkills;
@@ -1561,6 +1579,23 @@ public class JobListingService
                 NotifyStateChanged();
                 _logger.LogInformation("Updated job type to {JobType} for '{Title}' (no desc change)", job.JobType, job.Title);
                 return true;
+            }
+
+            // Always re-extract skills even when description didn't change,
+            // so newly added skill definitions are picked up on fetch-details.
+            if (!string.IsNullOrWhiteSpace(job.Description))
+            {
+                var skillSettings = _settingsService.Value.GetSettings()?.SkillExtraction;
+                var extractedSkills = LinkedInJobExtractor.ExtractSkills(job.Description, skillSettings);
+                if (extractedSkills.Count > 0 && !extractedSkills.OrderBy(s => s).SequenceEqual(
+                        (job.Skills ?? new List<string>()).OrderBy(s => s), StringComparer.OrdinalIgnoreCase))
+                {
+                    job.Skills = extractedSkills;
+                    _storage.SaveJob(job);
+                    NotifyStateChanged();
+                    _logger.LogInformation("Re-extracted {Count} skills for '{Title}' (no desc change)", extractedSkills.Count, job.Title);
+                    return true;
+                }
             }
 
             _logger.LogDebug("Skipped description update for {Title}: existing={ExistingLen}, new={NewLen}",
@@ -1962,6 +1997,61 @@ public class JobListingService
                 NotifyStateChanged();
                 _logger.LogInformation("Recalculated scores for {Updated} of {Total} jobs (skipped {Skipped} unsuitable)", 
                     updated, total, userJobs.Count - total);
+            }
+        }
+    }
+
+    public void ReExtractAllSkills(Guid? forUserId = null, Action<int, int>? onProgress = null)
+    {
+        var userId = forUserId ?? CurrentUserId;
+        if (userId == Guid.Empty)
+        {
+            _logger.LogWarning("Cannot re-extract skills without user context");
+            return;
+        }
+
+        EnsureJobsLoaded(userId);
+        var skillSettings = _settingsService.Value.GetSettings()?.SkillExtraction;
+
+        lock (_lock)
+        {
+            var jobsWithDescriptions = _jobListings
+                .Where(j => j.UserId == userId && !string.IsNullOrWhiteSpace(j.Description))
+                .ToList();
+
+            int total = jobsWithDescriptions.Count;
+            int processed = 0;
+            int updated = 0;
+
+            foreach (var job in jobsWithDescriptions)
+            {
+                try
+                {
+                    var newSkills = LinkedInJobExtractor.ExtractSkills(job.Description!, skillSettings);
+                    var oldSkills = job.Skills ?? new List<string>();
+
+                    if (!newSkills.OrderBy(s => s).SequenceEqual(oldSkills.OrderBy(s => s), StringComparer.OrdinalIgnoreCase))
+                    {
+                        job.Skills = newSkills;
+                        _storage.SaveJob(job);
+                        updated++;
+                    }
+
+                    processed++;
+                    onProgress?.Invoke(processed, total);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to re-extract skills for job {Id}", job.Id);
+                    processed++;
+                    onProgress?.Invoke(processed, total);
+                }
+            }
+
+            if (updated > 0)
+            {
+                NotifyStateChanged();
+                _logger.LogInformation("Re-extracted skills for {Updated} of {Total} jobs", updated, total);
             }
         }
     }

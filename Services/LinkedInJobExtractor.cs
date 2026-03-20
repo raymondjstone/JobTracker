@@ -986,150 +986,208 @@ public partial class LinkedInJobExtractor
         return text;
     }
 
+    /// <summary>
+    /// Default boundary-matched skills (regex pattern + display name).
+    /// Exposed as public so the UI can display built-in skills.
+    /// </summary>
+    public static readonly (string Pattern, string Name)[] DefaultBoundarySkills =
+    {
+        // Short/ambiguous language names
+        (@"\bGo\b(?:lang)?", "Go"),
+        (@"\bRust\b", "Rust"),
+        (@"\bR\b(?:\s+programming|\s+language)?", "R"),
+        (@"(?<![.\w])C(?![\+#\w./-])(?=\s*[\(,;/]|\s+(?:programming|language|code|compiler|development))", "C"),  // C language only in technical context
+        (@"\bC\+\+\b", "C++"),
+        (@"\bC#(?!\w)|C\s*Sharp", "C#"),
+        (@"\bF#(?!\w)", "F#"),
+        (@"\bSwift\b", "Swift"),
+        (@"\bDart\b", "Dart"),
+        (@"\bScala\b", "Scala"),
+        (@"\bPerl\b", "Perl"),
+        (@"\bLua\b", "Lua"),
+        (@"\bJulia\b", "Julia"),
+        (@"\bAI\b", "AI"),
+        (@"\bML\b", "Machine Learning"),
+        (@"\bNLP\b", "NLP"),
+        (@"\bETL\b", "ETL"),
+        (@"\bOOP\b", "OOP"),
+        (@"\bTDD\b", "TDD"),
+        (@"\bBDD\b", "BDD"),
+        (@"\bDDD\b", "DDD"),
+        (@"\bSQL\b", "SQL"),
+        (@"\bNoSQL\b", "NoSQL"),
+        (@"\bGit\b(?!Hub)", "Git"),  // Git but not GitHub (handled separately)
+        (@"\bGitHub\b", "GitHub"),
+        (@"\bGitLab\b", "GitLab"),
+        (@"\bJava\b(?!Script)", "Java"),  // Java but not JavaScript
+        (@"\bVue(?:\.?js)?\b", "Vue.js"),
+        (@"\bNode(?:\.?js|JS)?\b", "Node.js"),
+        (@"\bNext(?:\.?js|JS)\b", "Next.js"),
+        (@"\bNuxt(?:\.?js|JS)?\b", "Nuxt.js"),
+        (@"\bExpress(?:\.?js|JS)?\b", "Express.js"),
+        (@"\bNest(?:\.?js|JS)\b", "NestJS"),
+        (@"\bDeno\b", "Deno"),
+        (@"\bBun\b", "Bun"),
+        (@"(?<!\w)\.NET(?:\s*Core|\s*Framework|\s*\d+)?(?!\w)", ".NET"),  // Word boundaries to avoid .network, company.net etc
+        (@"\bASP\.NET(?:\s*Core|\s*MVC|\s*Web\s*API)?", "ASP.NET"),
+        (@"\bWPF\b", "WPF"),
+        (@"\bWinForms\b|Windows\s+Forms", "WinForms"),
+        (@"\bMAUI\b", "MAUI"),
+        (@"\bXamarin\b", "Xamarin"),
+        (@"\bAWS\b|Amazon\s+Web\s+Services", "AWS"),
+        (@"\bGCP\b|Google\s+Cloud(?:\s+Platform)?", "GCP"),
+        (@"\bAzure\b", "Azure"),
+        (@"\bK8s\b|Kubernetes", "Kubernetes"),
+        (@"\bEKS\b", "EKS"),
+        (@"\bAKS\b", "AKS"),
+        (@"\bGKE\b", "GKE"),
+        (@"\bHelm\b", "Helm"),
+        (@"\bIstio\b", "Istio"),
+        (@"\bCI\s*/\s*CD\b|CI/CD", "CI/CD"),
+        (@"\bREST\b(?:\s*API)?|RESTful", "REST API"),
+        (@"\bSOAP\b", "SOAP"),
+        (@"\bgRPC\b", "gRPC"),
+        (@"\bAPI\b(?:\s+Gateway)?", "API"),
+        (@"\bOAuth\b", "OAuth"),
+        (@"\bJWT\b", "JWT"),
+        (@"\bSSO\b", "SSO"),
+        (@"\bSAML\b", "SAML"),
+    };
+
+    /// <summary>
+    /// Default simple-match skills (unambiguous, uses contains matching).
+    /// Exposed as public so the UI can display built-in skills.
+    /// </summary>
+    public static readonly string[] DefaultSimpleSkills =
+    {
+        // Languages
+        "JavaScript", "TypeScript", "Python", "Ruby", "PHP", "Kotlin", "Groovy",
+        "Objective-C", "COBOL", "Fortran", "Haskell", "Erlang", "Elixir", "Clojure",
+
+        // Frontend
+        "React", "Angular", "Svelte", "jQuery", "Ember", "Backbone",
+        "HTML", "CSS", "SASS", "SCSS", "LESS", "Tailwind", "Bootstrap",
+        "Material UI", "Chakra UI", "Styled Components", "Webpack", "Vite", "Rollup",
+        "Redux", "MobX", "Zustand", "Recoil",
+
+        // Backend/Frameworks
+        "Blazor", "Django", "Flask", "FastAPI", "Spring Boot", "Spring Framework",
+        "Ruby on Rails", "Laravel", "Symfony", "CodeIgniter",
+        "Entity Framework", "Dapper", "Hibernate", "Sequelize", "Prisma",
+        "SignalR", "WebSockets",
+
+        // Databases
+        "PostgreSQL", "MySQL", "MariaDB", "Oracle", "SQL Server", "SQLite",
+        "MongoDB", "DynamoDB", "Cassandra", "CouchDB", "Firebase",
+        "Redis", "Memcached", "Elasticsearch", "OpenSearch", "Solr",
+        "Neo4j", "GraphQL", "Hasura",
+
+        // Cloud/DevOps
+        "Docker", "Podman", "Terraform", "Ansible", "Puppet", "Chef",
+        "Jenkins", "CircleCI", "Travis CI", "GitHub Actions", "Azure DevOps",
+        "ArgoCD", "Tekton", "Spinnaker",
+        "Prometheus", "Grafana", "Datadog", "New Relic", "Splunk", "ELK Stack",
+        "CloudFormation", "Pulumi", "Serverless",
+        "Lambda", "Azure Functions", "Cloud Functions",
+
+        // Messaging/Streaming
+        "Kafka", "RabbitMQ", "ActiveMQ", "Amazon SQS", "Azure Service Bus",
+        "Apache Spark", "Apache Flink", "Apache Airflow", "Celery",
+
+        // Mobile
+        "React Native", "Flutter", "Ionic", "Cordova", "SwiftUI", "Jetpack Compose",
+        "Android", "iOS",
+
+        // Testing
+        "Jest", "Mocha", "Cypress", "Playwright", "Selenium", "Puppeteer",
+        "xUnit", "NUnit", "MSTest", "JUnit", "PyTest", "RSpec",
+        "Postman", "SoapUI",
+
+        // Data/ML
+        "Machine Learning", "Deep Learning", "TensorFlow", "PyTorch", "Keras",
+        "Scikit-learn", "Pandas", "NumPy", "Jupyter", "Apache Hadoop",
+        "Power BI", "Tableau", "Looker", "dbt",
+
+        // Architecture/Practices
+        "Microservices", "Monolith", "Event-Driven", "CQRS", "Event Sourcing",
+        "Domain-Driven Design", "Clean Architecture", "Hexagonal Architecture",
+        "Agile", "Scrum", "Kanban", "SAFe", "DevOps", "SRE", "Platform Engineering",
+        "LINQ",
+
+        // OS/Infrastructure
+        "Linux", "Ubuntu", "CentOS", "RHEL", "Debian", "Windows Server",
+        "Nginx", "Apache", "IIS", "HAProxy", "Traefik",
+
+        // Security
+        "OWASP", "Penetration Testing", "Security Scanning", "Vault",
+
+        // Version Control
+        "Bitbucket", "Mercurial", "SVN",
+    };
+
+    /// <summary>
+    /// Extract skills using built-in defaults only.
+    /// </summary>
     public static List<string> ExtractSkills(string text)
     {
+        return ExtractSkills(text, null);
+    }
+
+    /// <summary>
+    /// Extract skills from text, merging built-in defaults with user-configured overrides.
+    /// </summary>
+    public static List<string> ExtractSkills(string text, SkillExtractionSettings? customSettings)
+    {
         var foundSkills = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var removed = customSettings?.RemovedDefaultSkills ?? new List<string>();
+        var removedSet = new HashSet<string>(removed, StringComparer.OrdinalIgnoreCase);
+        int maxSkills = customSettings?.MaxSkillsToExtract ?? 15;
 
-        // Skills that need word boundary matching to avoid false positives
-        // Format: (pattern, display name)
-        var boundarySkills = new (string pattern, string name)[]
+        // Build effective boundary skills: defaults minus removals, plus user additions
+        var boundarySkills = new List<(string pattern, string name)>();
+        foreach (var (pattern, name) in DefaultBoundarySkills)
         {
-            // Short/ambiguous language names
-            (@"\bGo\b(?:lang)?", "Go"),
-            (@"\bRust\b", "Rust"),
-            (@"\bR\b(?:\s+programming|\s+language)?", "R"),
-            (@"(?<![.\w])C(?![\+#\w./-])(?=\s*[\(,;/]|\s+(?:programming|language|code|compiler|development))", "C"),  // C language only in technical context
-            (@"\bC\+\+\b", "C++"),
-            (@"\bC#(?!\w)|C\s*Sharp", "C#"),
-            (@"\bF#(?!\w)", "F#"),
-            (@"\bSwift\b", "Swift"),
-            (@"\bDart\b", "Dart"),
-            (@"\bScala\b", "Scala"),
-            (@"\bPerl\b", "Perl"),
-            (@"\bLua\b", "Lua"),
-            (@"\bJulia\b", "Julia"),
-            (@"\bAI\b", "AI"),
-            (@"\bML\b", "Machine Learning"),
-            (@"\bNLP\b", "NLP"),
-            (@"\bETL\b", "ETL"),
-            (@"\bOOP\b", "OOP"),
-            (@"\bTDD\b", "TDD"),
-            (@"\bBDD\b", "BDD"),
-            (@"\bDDD\b", "DDD"),
-            (@"\bSQL\b", "SQL"),
-            (@"\bNoSQL\b", "NoSQL"),
-            (@"\bGit\b(?!Hub)", "Git"),  // Git but not GitHub (handled separately)
-            (@"\bGitHub\b", "GitHub"),
-            (@"\bGitLab\b", "GitLab"),
-            (@"\bJava\b(?!Script)", "Java"),  // Java but not JavaScript
-            (@"\bVue(?:\.?js)?\b", "Vue.js"),
-            (@"\bNode(?:\.?js|JS)?\b", "Node.js"),
-            (@"\bNext(?:\.?js|JS)\b", "Next.js"),
-            (@"\bNuxt(?:\.?js|JS)?\b", "Nuxt.js"),
-            (@"\bExpress(?:\.?js|JS)?\b", "Express.js"),
-            (@"\bNest(?:\.?js|JS)\b", "NestJS"),
-            (@"\bDeno\b", "Deno"),
-            (@"\bBun\b", "Bun"),
-            (@"(?<!\w)\.NET(?:\s*Core|\s*Framework|\s*\d+)?(?!\w)", ".NET"),  // Word boundaries to avoid .network, company.net etc
-            (@"\bASP\.NET(?:\s*Core|\s*MVC|\s*Web\s*API)?", "ASP.NET"),
-            (@"\bWPF\b", "WPF"),
-            (@"\bWinForms\b|Windows\s+Forms", "WinForms"),
-            (@"\bMAUI\b", "MAUI"),
-            (@"\bXamarin\b", "Xamarin"),
-            (@"\bAWS\b|Amazon\s+Web\s+Services", "AWS"),
-            (@"\bGCP\b|Google\s+Cloud(?:\s+Platform)?", "GCP"),
-            (@"\bAzure\b", "Azure"),
-            (@"\bK8s\b|Kubernetes", "Kubernetes"),
-            (@"\bEKS\b", "EKS"),
-            (@"\bAKS\b", "AKS"),
-            (@"\bGKE\b", "GKE"),
-            (@"\bHelm\b", "Helm"),
-            (@"\bIstio\b", "Istio"),
-            (@"\bCI\s*/\s*CD\b|CI/CD", "CI/CD"),
-            (@"\bREST\b(?:\s*API)?|RESTful", "REST API"),
-            (@"\bSOAP\b", "SOAP"),
-            (@"\bgRPC\b", "gRPC"),
-            (@"\bAPI\b(?:\s+Gateway)?", "API"),
-            (@"\bOAuth\b", "OAuth"),
-            (@"\bJWT\b", "JWT"),
-            (@"\bSSO\b", "SSO"),
-            (@"\bSAML\b", "SAML"),
-        };
+            if (!removedSet.Contains(name))
+                boundarySkills.Add((pattern, name));
+        }
 
-        // Skills that are unambiguous and can use simple contains matching
-        var simpleSkills = new[]
+        var simpleSkills = new List<string>();
+        foreach (var skill in DefaultSimpleSkills)
         {
-            // Languages
-            "JavaScript", "TypeScript", "Python", "Ruby", "PHP", "Kotlin", "Groovy",
-            "Objective-C", "COBOL", "Fortran", "Haskell", "Erlang", "Elixir", "Clojure",
+            if (!removedSet.Contains(skill))
+                simpleSkills.Add(skill);
+        }
 
-            // Frontend
-            "React", "Angular", "Svelte", "jQuery", "Ember", "Backbone",
-            "HTML", "CSS", "SASS", "SCSS", "LESS", "Tailwind", "Bootstrap",
-            "Material UI", "Chakra UI", "Styled Components", "Webpack", "Vite", "Rollup",
-            "Redux", "MobX", "Zustand", "Recoil",
-
-            // Backend/Frameworks
-            "Blazor", "Django", "Flask", "FastAPI", "Spring Boot", "Spring Framework",
-            "Ruby on Rails", "Laravel", "Symfony", "CodeIgniter",
-            "Entity Framework", "Dapper", "Hibernate", "Sequelize", "Prisma",
-            "SignalR", "WebSockets",
-
-            // Databases
-            "PostgreSQL", "MySQL", "MariaDB", "Oracle", "SQL Server", "SQLite",
-            "MongoDB", "DynamoDB", "Cassandra", "CouchDB", "Firebase",
-            "Redis", "Memcached", "Elasticsearch", "OpenSearch", "Solr",
-            "Neo4j", "GraphQL", "Hasura",
-
-            // Cloud/DevOps
-            "Docker", "Podman", "Terraform", "Ansible", "Puppet", "Chef",
-            "Jenkins", "CircleCI", "Travis CI", "GitHub Actions", "Azure DevOps",
-            "ArgoCD", "Tekton", "Spinnaker",
-            "Prometheus", "Grafana", "Datadog", "New Relic", "Splunk", "ELK Stack",
-            "CloudFormation", "Pulumi", "Serverless",
-            "Lambda", "Azure Functions", "Cloud Functions",
-
-            // Messaging/Streaming
-            "Kafka", "RabbitMQ", "ActiveMQ", "Amazon SQS", "Azure Service Bus",
-            "Apache Spark", "Apache Flink", "Apache Airflow", "Celery",
-
-            // Mobile
-            "React Native", "Flutter", "Ionic", "Cordova", "SwiftUI", "Jetpack Compose",
-            "Android", "iOS",
-
-            // Testing
-            "Jest", "Mocha", "Cypress", "Playwright", "Selenium", "Puppeteer",
-            "xUnit", "NUnit", "MSTest", "JUnit", "PyTest", "RSpec",
-            "Postman", "SoapUI",
-
-            // Data/ML
-            "Machine Learning", "Deep Learning", "TensorFlow", "PyTorch", "Keras",
-            "Scikit-learn", "Pandas", "NumPy", "Jupyter", "Apache Hadoop",
-            "Power BI", "Tableau", "Looker", "dbt",
-
-            // Architecture/Practices
-            "Microservices", "Monolith", "Event-Driven", "CQRS", "Event Sourcing",
-            "Domain-Driven Design", "Clean Architecture", "Hexagonal Architecture",
-            "Agile", "Scrum", "Kanban", "SAFe", "DevOps", "SRE", "Platform Engineering",
-            "LINQ",
-
-            // OS/Infrastructure
-            "Linux", "Ubuntu", "CentOS", "RHEL", "Debian", "Windows Server",
-            "Nginx", "Apache", "IIS", "HAProxy", "Traefik",
-
-            // Security
-            "OWASP", "Penetration Testing", "Security Scanning", "Vault",
-
-            // Version Control
-            "Bitbucket", "Mercurial", "SVN",
-        };
+        // Add user-defined custom skills
+        if (customSettings?.AdditionalSkills != null)
+        {
+            foreach (var custom in customSettings.AdditionalSkills)
+            {
+                if (string.IsNullOrWhiteSpace(custom.DisplayName)) continue;
+                if (custom.IsRegex && !string.IsNullOrWhiteSpace(custom.Pattern))
+                {
+                    boundarySkills.Add((custom.Pattern, custom.DisplayName));
+                }
+                else
+                {
+                    simpleSkills.Add(custom.DisplayName);
+                }
+            }
+        }
 
         // Check boundary-matched skills
         foreach (var (pattern, name) in boundarySkills)
         {
-            if (Regex.IsMatch(text, pattern, RegexOptions.IgnoreCase))
+            try
             {
-                foundSkills.Add(name);
+                if (Regex.IsMatch(text, pattern, RegexOptions.IgnoreCase))
+                {
+                    foundSkills.Add(name);
+                }
+            }
+            catch (RegexParseException)
+            {
+                // Skip invalid user-defined regex patterns
             }
         }
 
@@ -1152,7 +1210,7 @@ public partial class LinkedInJobExtractor
             }
         }
 
-        return foundSkills.Take(15).ToList();
+        return foundSkills.Take(maxSkills).ToList();
     }
 
     [GeneratedRegex(@"<script[^>]*type=[""']application/ld\+json[""'][^>]*>(.*?)</script>", RegexOptions.Singleline | RegexOptions.IgnoreCase)]

@@ -39,4 +39,5 @@ public class AppSettingsEntity
     public int AutoArchiveDays { get; set; } = 30;
     public bool DarkMode { get; set; }
     public string CrawlPagesJson { get; set; } = "[]";
+    public string SkillExtractionJson { get; set; } = "{}";
 }

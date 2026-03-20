@@ -63,6 +63,11 @@
                 <i class="bi bi-robot"></i> AI
             </button>
         </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link @(activeTab == "skills" ? "active" : "")" @onclick='() => activeTab = "skills"' type="button">
+                <i class="bi bi-tools"></i> Skills
+            </button>
+        </li>
         @if (StorageBackend is JsonStorageBackend)
         {
             <li class="nav-item" role="presentation">
@@ -913,6 +918,188 @@
             </div>
         }
 
+        @* ==================== SKILLS TAB ==================== *@
+        @if (activeTab == "skills")
+        {
+            <div class="tab-pane fade show active">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-tools"></i> Skill Extraction Settings</h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small mb-3">Configure which skills are detected when job descriptions are processed. Edit or remove any skill, or add your own.</p>
+
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-3">
+                                <label class="form-label">Max Skills to Extract</label>
+                                <input type="number" class="form-control" min="1" max="100" @bind="editMaxSkillsToExtract" />
+                                <small class="text-muted">Per job (default 15)</small>
+                            </div>
+                        </div>
+
+                        <!-- Regex Tester -->
+                        <div class="card card-body bg-light mb-4">
+                            <h6 class="mb-2"><i class="bi bi-bug"></i> Regex Tester</h6>
+                            <div class="row g-2 align-items-end">
+                                <div class="col-md-4">
+                                    <label class="form-label small">Pattern</label>
+                                    <input type="text" class="form-control form-control-sm" @bind="regexTestPattern" @bind:event="oninput" placeholder="e.g. \bC#\b" />
+                                </div>
+                                <div class="col-md-5">
+                                    <label class="form-label small">Test Text</label>
+                                    <input type="text" class="form-control form-control-sm" @bind="regexTestInput" @bind:event="oninput" placeholder="e.g. Looking for a C# developer" />
+                                </div>
+                                <div class="col-md-3 d-flex align-items-end gap-2 flex-wrap">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="RunRegexTest"
+                                            disabled="@(string.IsNullOrWhiteSpace(regexTestPattern) || string.IsNullOrWhiteSpace(regexTestInput))">
+                                        <i class="bi bi-play-fill"></i> Test
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-outline-info" @onclick="ExplainRegex"
+                                            disabled="@(string.IsNullOrWhiteSpace(regexTestPattern))">
+                                        <i class="bi bi-question-circle"></i> Explain
+                                    </button>
+                                    @if (regexTestResult != null)
+                                    {
+                                        @if (regexTestResult == true)
+                                        {
+                                            <span class="badge bg-success"><i class="bi bi-check-circle"></i> Match found</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-danger"><i class="bi bi-x-circle"></i> No match</span>
+                                        }
+                                    }
+                                </div>
+                            </div>
+                            @if (!string.IsNullOrEmpty(regexTestError))
+                            {
+                                <div class="text-danger small mt-1">@regexTestError</div>
+                            }
+                            @if (regexTestResult == true && regexTestMatchValue != null)
+                            {
+                                <div class="small text-muted mt-1">Matched: <code>@regexTestMatchValue</code></div>
+                            }
+                            @if (!string.IsNullOrEmpty(regexExplanation))
+                            {
+                                <div class="mt-2 p-2 border rounded bg-white small" style="white-space:pre-wrap;">@regexExplanation</div>
+                            }
+                        </div>
+
+                        <hr />
+                        <h6 class="mb-3"><i class="bi bi-plus-circle"></i> Add Skill</h6>
+
+                        <div class="row g-2 mb-3 align-items-end">
+                            <div class="col-md-3">
+                                <label class="form-label">Display Name</label>
+                                <input type="text" class="form-control form-control-sm" @bind="newSkillName" placeholder="e.g. Terraform Cloud" />
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Type</label>
+                                <select class="form-select form-select-sm" @bind="newSkillIsRegex">
+                                    <option value="false">Simple (contains)</option>
+                                    <option value="true">Regex</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Pattern <small class="text-muted">(regex only)</small></label>
+                                <input type="text" class="form-control form-control-sm" @bind="newSkillPattern" placeholder="e.g. \bTF\s*Cloud\b" disabled="@(!newSkillIsRegex)" />
+                            </div>
+                            <div class="col-md-2">
+                                <button type="button" class="btn btn-sm btn-outline-primary" @onclick="AddCustomSkill">
+                                    <i class="bi bi-plus-lg"></i> Add
+                                </button>
+                            </div>
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(skillValidationError))
+                        {
+                            <div class="alert alert-danger py-1 small">@skillValidationError</div>
+                        }
+
+                        <hr />
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h6 class="mb-0"><i class="bi bi-list-check"></i> All Skills <small class="text-muted">(@GetFilteredSkillRows().Count visible, @editRemovedDefaultSkills.Count removed)</small></h6>
+                            <div class="d-flex gap-2 align-items-center">
+                                <input type="text" class="form-control form-control-sm" style="width:200px;" placeholder="Filter skills..." @bind="skillFilterText" @bind:event="oninput" />
+                                <button type="button" class="btn btn-sm btn-outline-warning" @onclick="ResetToDefaults">
+                                    <i class="bi bi-arrow-counterclockwise"></i> Reset to Defaults
+                                </button>
+                            </div>
+                        </div>
+
+                        <div style="max-height:400px;overflow-y:auto;border:1px solid var(--bs-border-color);border-radius:6px;">
+                            <table class="table table-sm table-hover align-middle mb-0">
+                                <thead class="table-light" style="position:sticky;top:0;z-index:1;">
+                                    <tr><th>Name</th><th style="width:90px;">Type</th><th>Pattern</th><th style="width:50px;">Origin</th><th style="width:90px;"></th></tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var row in GetFilteredSkillRows())
+                                    {
+                                        @if (editingSkillId == row.Id)
+                                        {
+                                            <tr class="table-active">
+                                                <td><input type="text" class="form-control form-control-sm" @bind="editSkillName" /></td>
+                                                <td>
+                                                    <select class="form-select form-select-sm" @bind="editSkillIsRegex">
+                                                        <option value="false">Simple</option>
+                                                        <option value="true">Regex</option>
+                                                    </select>
+                                                </td>
+                                                <td><input type="text" class="form-control form-control-sm" @bind="editSkillPattern" placeholder="@(editSkillIsRegex ? "regex pattern" : "(uses name)")" disabled="@(!editSkillIsRegex)" /></td>
+                                                <td></td>
+                                                <td>
+                                                    <button class="btn btn-sm btn-success me-1" @onclick="SaveSkillEdit" title="Save"><i class="bi bi-check-lg"></i></button>
+                                                    <button class="btn btn-sm btn-outline-secondary" @onclick="CancelSkillEdit" title="Cancel"><i class="bi bi-x-lg"></i></button>
+                                                </td>
+                                            </tr>
+                                        }
+                                        else
+                                        {
+                                            <tr>
+                                                <td>@row.DisplayName</td>
+                                                <td><span class="badge @(row.IsRegex ? "bg-warning text-dark" : "bg-info")" style="font-size:0.7rem;">@(row.IsRegex ? "Regex" : "Simple")</span></td>
+                                                <td><code class="small text-muted">@(row.IsRegex ? row.Pattern : row.DisplayName)</code></td>
+                                                <td><span class="badge @(row.IsBuiltIn ? "bg-secondary" : "bg-primary")" style="font-size:0.65rem;">@(row.IsBuiltIn ? "built-in" : "custom")</span></td>
+                                                <td>
+                                                    <button class="btn btn-sm btn-outline-secondary me-1" @onclick="() => StartEditSkill(row)" title="Edit"><i class="bi bi-pencil"></i></button>
+                                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteSkill(row)" title="Delete"><i class="bi bi-trash"></i></button>
+                                                </td>
+                                            </tr>
+                                        }
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="d-flex flex-wrap gap-2 mt-4">
+                            <button type="button" class="btn btn-primary" @onclick="SaveSkillSettings">
+                                <i class="bi bi-check-lg"></i> Save Skill Settings
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary" @onclick="ReExtractAllSkills" disabled="@isReExtracting">
+                                @if (isReExtracting)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-1"></span>
+                                    <span>Re-extracting (@reExtractProgress/@reExtractTotal)...</span>
+                                }
+                                else
+                                {
+                                    <i class="bi bi-arrow-repeat"></i>
+                                    <span>Re-extract All Skills</span>
+                                }
+                            </button>
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(skillSaveMessage))
+                        {
+                            <div class="alert @(skillSaveMessage.StartsWith("✓") ? "alert-success" : "alert-danger") mt-3 py-2">
+                                @skillSaveMessage
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+
         @* ==================== DATA TAB ==================== *@
         @if (StorageBackend is JsonStorageBackend && activeTab == "data")
         {
@@ -1146,6 +1333,32 @@
     private string editTemplateName = "";
     private string editTemplateContent = "";
 
+    // Skill extraction settings
+    private List<SkillDefinition> editAdditionalSkills = new();
+    private HashSet<string> editRemovedDefaultSkills = new(StringComparer.OrdinalIgnoreCase);
+    private int editMaxSkillsToExtract = 15;
+    private string newSkillName = "";
+    private string newSkillPattern = "";
+    private bool newSkillIsRegex = false;
+    private string? skillValidationError;
+    private string? skillSaveMessage;
+    private bool isReExtracting = false;
+    private int reExtractProgress = 0;
+    private int reExtractTotal = 0;
+    private string skillFilterText = "";
+    private Guid? editingSkillId;
+    private string editSkillName = "";
+    private bool editSkillIsRegex;
+    private string editSkillPattern = "";
+
+    // Regex tester
+    private string regexTestPattern = "";
+    private string regexTestInput = "";
+    private bool? regexTestResult;
+    private string? regexTestError;
+    private string? regexTestMatchValue;
+    private string? regexExplanation;
+
     // Backup directory
     private string editBackupDirectory = "";
     private int editHistoryMax = 50000;
@@ -1251,6 +1464,15 @@
         editEmailCheckAutoUpdateStage = settings.EmailCheckAutoUpdateStage;
         editEmailCheckParseJobAlerts = settings.EmailCheckParseJobAlerts;
         coverLetterTemplates = settings.CoverLetterTemplates;
+
+        // Load skill extraction settings
+        var skillEx = settings.SkillExtraction;
+        editAdditionalSkills = skillEx.AdditionalSkills.Select(s => new SkillDefinition
+        {
+            Id = s.Id, DisplayName = s.DisplayName, Pattern = s.Pattern, IsRegex = s.IsRegex
+        }).ToList();
+        editRemovedDefaultSkills = new HashSet<string>(skillEx.RemovedDefaultSkills, StringComparer.OrdinalIgnoreCase);
+        editMaxSkillsToExtract = skillEx.MaxSkillsToExtract > 0 ? skillEx.MaxSkillsToExtract : 15;
 
         // Load scoring preferences
         var scoring = settings.ScoringPreferences;
@@ -1867,6 +2089,413 @@
         if (!Directory.Exists(backupDir)) return (backupDir, 0);
         var count = Directory.GetFiles(backupDir, "jobtracker-backup-*.zip").Length;
         return (backupDir, count);
+    }
+
+    private void AddCustomSkill()
+    {
+        skillValidationError = null;
+        if (string.IsNullOrWhiteSpace(newSkillName))
+        {
+            skillValidationError = "Display name is required.";
+            return;
+        }
+
+        if (newSkillIsRegex && !string.IsNullOrWhiteSpace(newSkillPattern))
+        {
+            try { _ = new System.Text.RegularExpressions.Regex(newSkillPattern); }
+            catch (System.Text.RegularExpressions.RegexParseException ex)
+            {
+                skillValidationError = $"Invalid regex: {ex.Message}";
+                return;
+            }
+        }
+
+        if (editAdditionalSkills.Any(s => s.DisplayName.Equals(newSkillName, StringComparison.OrdinalIgnoreCase)))
+        {
+            skillValidationError = $"'{newSkillName}' already exists in custom skills.";
+            return;
+        }
+
+        editAdditionalSkills.Add(new SkillDefinition
+        {
+            DisplayName = newSkillName.Trim(),
+            Pattern = newSkillIsRegex ? newSkillPattern.Trim() : null,
+            IsRegex = newSkillIsRegex
+        });
+
+        newSkillName = "";
+        newSkillPattern = "";
+        newSkillIsRegex = false;
+    }
+
+    private class SkillRow
+    {
+        public Guid Id { get; set; }
+        public string DisplayName { get; set; } = "";
+        public bool IsRegex { get; set; }
+        public string? Pattern { get; set; }
+        public bool IsBuiltIn { get; set; }
+    }
+
+    private List<SkillRow> GetFilteredSkillRows()
+    {
+        var rows = new List<SkillRow>();
+
+        // Add active built-in boundary skills
+        foreach (var (pattern, name) in LinkedInJobExtractor.DefaultBoundarySkills)
+        {
+            if (editRemovedDefaultSkills.Contains(name)) continue;
+            // Check if this built-in was edited (replaced by a custom with same origin)
+            rows.Add(new SkillRow
+            {
+                Id = GuidFromName("boundary:" + name),
+                DisplayName = name,
+                IsRegex = true,
+                Pattern = pattern,
+                IsBuiltIn = true
+            });
+        }
+
+        // Add active built-in simple skills
+        foreach (var name in LinkedInJobExtractor.DefaultSimpleSkills)
+        {
+            if (editRemovedDefaultSkills.Contains(name)) continue;
+            rows.Add(new SkillRow
+            {
+                Id = GuidFromName("simple:" + name),
+                DisplayName = name,
+                IsRegex = false,
+                Pattern = null,
+                IsBuiltIn = true
+            });
+        }
+
+        // Add custom/additional skills
+        foreach (var s in editAdditionalSkills)
+        {
+            rows.Add(new SkillRow
+            {
+                Id = s.Id,
+                DisplayName = s.DisplayName,
+                IsRegex = s.IsRegex,
+                Pattern = s.Pattern,
+                IsBuiltIn = false
+            });
+        }
+
+        // Sort alphabetically
+        rows = rows.OrderBy(r => r.DisplayName, StringComparer.OrdinalIgnoreCase).ToList();
+
+        // Apply filter
+        if (!string.IsNullOrWhiteSpace(skillFilterText))
+        {
+            var filter = skillFilterText.Trim();
+            rows = rows.Where(r => r.DisplayName.Contains(filter, StringComparison.OrdinalIgnoreCase)).ToList();
+        }
+
+        return rows;
+    }
+
+    private static Guid GuidFromName(string name)
+    {
+        // Deterministic GUID from string so built-in rows have stable IDs
+        var bytes = System.Security.Cryptography.MD5.HashData(System.Text.Encoding.UTF8.GetBytes(name));
+        return new Guid(bytes);
+    }
+
+    private void StartEditSkill(SkillRow row)
+    {
+        editingSkillId = row.Id;
+        editSkillName = row.DisplayName;
+        editSkillIsRegex = row.IsRegex;
+        editSkillPattern = row.Pattern ?? "";
+    }
+
+    private void SaveSkillEdit()
+    {
+        skillValidationError = null;
+        if (string.IsNullOrWhiteSpace(editSkillName))
+        {
+            skillValidationError = "Display name is required.";
+            return;
+        }
+
+        if (editSkillIsRegex && !string.IsNullOrWhiteSpace(editSkillPattern))
+        {
+            try { _ = new System.Text.RegularExpressions.Regex(editSkillPattern); }
+            catch (System.Text.RegularExpressions.RegexParseException ex)
+            {
+                skillValidationError = $"Invalid regex: {ex.Message}";
+                return;
+            }
+        }
+
+        // Find if this is a built-in or custom skill
+        var existingCustom = editAdditionalSkills.FirstOrDefault(s => s.Id == editingSkillId);
+        if (existingCustom != null)
+        {
+            // Editing an existing custom skill
+            existingCustom.DisplayName = editSkillName.Trim();
+            existingCustom.IsRegex = editSkillIsRegex;
+            existingCustom.Pattern = editSkillIsRegex ? editSkillPattern.Trim() : null;
+        }
+        else
+        {
+            // Editing a built-in skill — find which one by matching the deterministic GUID
+            string? originalName = null;
+            foreach (var (pattern, name) in LinkedInJobExtractor.DefaultBoundarySkills)
+            {
+                if (GuidFromName("boundary:" + name) == editingSkillId) { originalName = name; break; }
+            }
+            if (originalName == null)
+            {
+                foreach (var name in LinkedInJobExtractor.DefaultSimpleSkills)
+                {
+                    if (GuidFromName("simple:" + name) == editingSkillId) { originalName = name; break; }
+                }
+            }
+
+            if (originalName != null)
+            {
+                // Remove the default and add as custom with the edited values
+                editRemovedDefaultSkills.Add(originalName);
+                editAdditionalSkills.Add(new SkillDefinition
+                {
+                    DisplayName = editSkillName.Trim(),
+                    IsRegex = editSkillIsRegex,
+                    Pattern = editSkillIsRegex ? editSkillPattern.Trim() : null
+                });
+            }
+        }
+
+        editingSkillId = null;
+    }
+
+    private void CancelSkillEdit()
+    {
+        editingSkillId = null;
+        editSkillName = "";
+        editSkillIsRegex = false;
+        editSkillPattern = "";
+    }
+
+    private void DeleteSkill(SkillRow row)
+    {
+        if (row.IsBuiltIn)
+        {
+            // Remove from defaults
+            editRemovedDefaultSkills.Add(row.DisplayName);
+        }
+        else
+        {
+            // Remove from custom list
+            editAdditionalSkills.RemoveAll(s => s.Id == row.Id);
+        }
+    }
+
+    private void RunRegexTest()
+    {
+        regexTestResult = null;
+        regexTestError = null;
+        regexTestMatchValue = null;
+
+        if (string.IsNullOrWhiteSpace(regexTestPattern) || string.IsNullOrWhiteSpace(regexTestInput))
+            return;
+
+        try
+        {
+            var regex = new System.Text.RegularExpressions.Regex(regexTestPattern, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            var match = regex.Match(regexTestInput);
+            regexTestResult = match.Success;
+            if (match.Success)
+                regexTestMatchValue = match.Value;
+        }
+        catch (System.Text.RegularExpressions.RegexParseException ex)
+        {
+            regexTestResult = false;
+            regexTestError = $"Invalid regex: {ex.Message}";
+        }
+    }
+
+    private void ExplainRegex()
+    {
+        regexExplanation = null;
+        if (string.IsNullOrWhiteSpace(regexTestPattern)) return;
+
+        try
+        {
+            _ = new System.Text.RegularExpressions.Regex(regexTestPattern);
+        }
+        catch (System.Text.RegularExpressions.RegexParseException ex)
+        {
+            regexExplanation = $"Invalid regex: {ex.Message}";
+            return;
+        }
+
+        var sb = new System.Text.StringBuilder();
+        var pattern = regexTestPattern;
+        int i = 0;
+
+        while (i < pattern.Length)
+        {
+            char c = pattern[i];
+
+            if (c == '\\' && i + 1 < pattern.Length)
+            {
+                char next = pattern[i + 1];
+                switch (next)
+                {
+                    case 'b': sb.AppendLine(@"\b  — Word boundary"); break;
+                    case 'B': sb.AppendLine(@"\B  — Non-word boundary"); break;
+                    case 'd': sb.AppendLine(@"\d  — Any digit (0-9)"); break;
+                    case 'D': sb.AppendLine(@"\D  — Any non-digit"); break;
+                    case 'w': sb.AppendLine(@"\w  — Any word character (letter, digit, underscore)"); break;
+                    case 'W': sb.AppendLine(@"\W  — Any non-word character"); break;
+                    case 's': sb.AppendLine(@"\s  — Any whitespace (space, tab, newline)"); break;
+                    case 'S': sb.AppendLine(@"\S  — Any non-whitespace"); break;
+                    case 'n': sb.AppendLine(@"\n  — Newline"); break;
+                    case 't': sb.AppendLine(@"\t  — Tab"); break;
+                    case 'r': sb.AppendLine(@"\r  — Carriage return"); break;
+                    default: sb.AppendLine($"\\{next}  — Literal '{next}'"); break;
+                }
+                i += 2;
+                continue;
+            }
+
+            if (c == '[')
+            {
+                int end = pattern.IndexOf(']', i + 1);
+                if (end > i)
+                {
+                    var charClass = pattern.Substring(i, end - i + 1);
+                    bool negated = charClass.Length > 1 && charClass[1] == '^';
+                    sb.AppendLine($"{charClass}  — {(negated ? "Any character NOT in" : "Any character in")} the set");
+                    i = end + 1;
+                    continue;
+                }
+            }
+
+            if (c == '(' && i + 1 < pattern.Length && pattern[i + 1] == '?')
+            {
+                if (i + 2 < pattern.Length)
+                {
+                    if (pattern[i + 2] == ':')
+                    {
+                        sb.AppendLine("(?:  — Non-capturing group start");
+                        i += 3;
+                        continue;
+                    }
+                    if (pattern[i + 2] == '=' || (pattern[i + 2] == '<' && i + 3 < pattern.Length && pattern[i + 3] == '='))
+                    {
+                        sb.AppendLine(pattern[i + 2] == '=' ? "(?=  — Positive lookahead" : "(?<=  — Positive lookbehind");
+                        i += pattern[i + 2] == '=' ? 3 : 4;
+                        continue;
+                    }
+                    if (pattern[i + 2] == '!' || (pattern[i + 2] == '<' && i + 3 < pattern.Length && pattern[i + 3] == '!'))
+                    {
+                        sb.AppendLine(pattern[i + 2] == '!' ? "(?!  — Negative lookahead" : "(?<!  — Negative lookbehind");
+                        i += pattern[i + 2] == '!' ? 3 : 4;
+                        continue;
+                    }
+                }
+            }
+
+            switch (c)
+            {
+                case '.': sb.AppendLine(".   — Any character (except newline)"); break;
+                case '*': sb.AppendLine("*   — Zero or more of the previous"); break;
+                case '+': sb.AppendLine("+   — One or more of the previous"); break;
+                case '?': sb.AppendLine("?   — Zero or one of the previous (optional)"); break;
+                case '^': sb.AppendLine("^   — Start of string/line"); break;
+                case '$': sb.AppendLine("$   — End of string/line"); break;
+                case '|': sb.AppendLine("|   — OR (alternative)"); break;
+                case '(': sb.AppendLine("(   — Capturing group start"); break;
+                case ')': sb.AppendLine(")   — Group end"); break;
+                case '{':
+                    int braceEnd = pattern.IndexOf('}', i + 1);
+                    if (braceEnd > i)
+                    {
+                        var quantifier = pattern.Substring(i, braceEnd - i + 1);
+                        sb.AppendLine($"{quantifier}  — Repeat count");
+                        i = braceEnd + 1;
+                        continue;
+                    }
+                    sb.AppendLine("{   — Literal '{'");
+                    break;
+                default:
+                    sb.AppendLine($"{c}   — Literal '{c}'");
+                    break;
+            }
+            i++;
+        }
+
+        regexExplanation = sb.ToString().TrimEnd();
+    }
+
+    private void ResetToDefaults()
+    {
+        // Re-enable all removed defaults
+        editRemovedDefaultSkills.Clear();
+
+        // Remove any custom skills that were created by editing a built-in
+        var defaultNames = new HashSet<string>(
+            LinkedInJobExtractor.DefaultBoundarySkills.Select(b => b.Name)
+                .Concat(LinkedInJobExtractor.DefaultSimpleSkills),
+            StringComparer.OrdinalIgnoreCase);
+        editAdditionalSkills.RemoveAll(s => defaultNames.Contains(s.DisplayName));
+    }
+
+    private void SaveSkillSettings()
+    {
+        var settings = SettingsService.GetSettings();
+        settings.SkillExtraction = new SkillExtractionSettings
+        {
+            AdditionalSkills = editAdditionalSkills.ToList(),
+            RemovedDefaultSkills = editRemovedDefaultSkills.ToList(),
+            MaxSkillsToExtract = editMaxSkillsToExtract
+        };
+        SettingsService.Save();
+        skillSaveMessage = "✓ Skill settings saved.";
+    }
+
+    private async Task ReExtractAllSkills()
+    {
+        if (currentUser == null) return;
+
+        // Save first so the extraction uses updated settings
+        SaveSkillSettings();
+
+        isReExtracting = true;
+        skillSaveMessage = null;
+        reExtractProgress = 0;
+        reExtractTotal = 0;
+        StateHasChanged();
+
+        try
+        {
+            await Task.Run(() =>
+            {
+                JobService.ReExtractAllSkills(currentUser.Id, (processed, total) =>
+                {
+                    reExtractProgress = processed;
+                    reExtractTotal = total;
+                    InvokeAsync(StateHasChanged);
+                });
+            });
+
+            skillSaveMessage = $"✓ Re-extracted skills for {reExtractProgress} jobs.";
+            _logger.LogInformation("Re-extracted skills for user {UserId}", currentUser.Id);
+        }
+        catch (Exception ex)
+        {
+            skillSaveMessage = $"Error: {ex.Message}";
+            _logger.LogError(ex, "Failed to re-extract skills for user {UserId}", currentUser?.Id);
+        }
+        finally
+        {
+            isReExtracting = false;
+            StateHasChanged();
+        }
     }
 
     private class NameModel

@@ -261,6 +261,12 @@ public class SqlServerStorageBackend : IStorageBackend
                     entity.CrawlPagesJson ?? "[]") ?? new();
             }
             catch { settings.CrawlPages = new(); }
+            try
+            {
+                settings.SkillExtraction = JsonSerializer.Deserialize<SkillExtractionSettings>(
+                    entity.SkillExtractionJson ?? "{}") ?? new();
+            }
+            catch { settings.SkillExtraction = new(); }
         }
         else
         {
@@ -315,6 +321,7 @@ public class SqlServerStorageBackend : IStorageBackend
         entity.DarkMode = settings.DarkMode;
         entity.CoverLetterTemplatesJson = JsonSerializer.Serialize(settings.CoverLetterTemplates ?? new());
         entity.CrawlPagesJson = JsonSerializer.Serialize(settings.CrawlPages ?? new());
+        entity.SkillExtractionJson = JsonSerializer.Serialize(settings.SkillExtraction ?? new());
 
         // Sync rules for this user: diff-based
         var existingRules = db.JobRules.Where(r => r.UserId == userId).ToList();
@@ -567,7 +574,8 @@ public class SqlServerStorageBackend : IStorageBackend
             AutoArchiveDays = settings.AutoArchiveDays,
             DarkMode = settings.DarkMode,
             CoverLetterTemplatesJson = JsonSerializer.Serialize(settings.CoverLetterTemplates ?? new()),
-            CrawlPagesJson = JsonSerializer.Serialize(settings.CrawlPages ?? new())
+            CrawlPagesJson = JsonSerializer.Serialize(settings.CrawlPages ?? new()),
+            SkillExtractionJson = JsonSerializer.Serialize(settings.SkillExtraction ?? new())
         };
         db.AppSettings.Add(entity);
 

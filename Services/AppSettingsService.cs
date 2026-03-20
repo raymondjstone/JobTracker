@@ -143,6 +143,7 @@ public class AppSettingsService
             HistoryMaxEntries = settings.HistoryMaxEntries,
             CrawlPages = settings.CrawlPages,
             SearchQueries = settings.SearchQueries,
+            SkillExtraction = settings.SkillExtraction,
             LastViewState = settings.LastViewState,
         };
     }

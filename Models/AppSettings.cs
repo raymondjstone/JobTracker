@@ -47,6 +47,7 @@ public class AppSettings
     public int HistoryMaxEntries { get; set; } = 50000;
     public List<CrawlPage> CrawlPages { get; set; } = new();
     public List<JobSearchQuery> SearchQueries { get; set; } = new();
+    public SkillExtractionSettings SkillExtraction { get; set; } = new();
     public JobViewState LastViewState { get; set; } = new();
 }
 
@@ -180,6 +181,21 @@ public class ScoringPreferences
 
     // Auto-score threshold
     public int MinScoreToShow { get; set; } = 0; // Hide jobs below this score
+}
+
+public class SkillDefinition
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string DisplayName { get; set; } = "";
+    public string? Pattern { get; set; }  // Regex pattern; if null, uses simple contains on DisplayName
+    public bool IsRegex { get; set; }     // true = use Pattern as regex, false = simple contains
+}
+
+public class SkillExtractionSettings
+{
+    public List<SkillDefinition> AdditionalSkills { get; set; } = new();
+    public List<string> RemovedDefaultSkills { get; set; } = new();
+    public int MaxSkillsToExtract { get; set; } = 15;
 }
 
 public class AIAssistantSettings

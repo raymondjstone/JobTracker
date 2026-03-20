@@ -100,6 +100,7 @@ builder.Services.AddHttpClient<AIJobAssistantService>(client =>
 builder.Services.AddScoped(sp => new Lazy<JobRulesService>(() => sp.GetRequiredService<JobRulesService>()));
 builder.Services.AddScoped(sp => new Lazy<JobHistoryService>(() => sp.GetRequiredService<JobHistoryService>()));
 builder.Services.AddScoped(sp => new Lazy<JobScoringService>(() => sp.GetRequiredService<JobScoringService>()));
+builder.Services.AddScoped(sp => new Lazy<AppSettingsService>(() => sp.GetRequiredService<AppSettingsService>()));
 
 // Configure HttpClient for LinkedIn job extraction
 builder.Services.AddHttpClient<LinkedInJobExtractor>(client =>

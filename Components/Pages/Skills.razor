@@ -140,7 +140,16 @@
 
     private void RefreshDiscoveredSkills()
     {
-        var allSkills = JobService.GetDistinctSkills();
+        var allSkills = new HashSet<string>(JobService.GetDistinctSkills(), StringComparer.OrdinalIgnoreCase);
+
+        // Include custom skill names from extraction settings so they're selectable
+        var settings = SettingsService.GetSettings();
+        foreach (var custom in settings.SkillExtraction.AdditionalSkills)
+        {
+            if (!string.IsNullOrWhiteSpace(custom.DisplayName))
+                allSkills.Add(custom.DisplayName);
+        }
+
         var prioritySet = new HashSet<string>(skillPriorities, StringComparer.OrdinalIgnoreCase);
         discoveredSkills = allSkills
             .Where(s => !prioritySet.Contains(s))
