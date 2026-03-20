@@ -5,6 +5,8 @@
   var totalDuplicates = 0;
   var sending = false;
   var sentJobIds = {};
+  var extensionPaused = false;
+  var pauseStorageKey = 'paused_' + window.location.hostname;
   var uiCreated = false;
   var lastUrl = window.location.href;
   var extractionInterval = null;
@@ -73,7 +75,7 @@
 
   // Load settings from storage, then decide whether to activate or show prompt
   if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-    chrome.storage.local.get(['serverUrl', 'apiKey', 'allowedSites', 'blockedSites'], function(result) {
+    chrome.storage.local.get(['serverUrl', 'apiKey', 'allowedSites', 'blockedSites', pauseStorageKey], function(result) {
       if (result.serverUrl) {
         SERVER_URL = result.serverUrl.replace(/\/+$/, '');
         console.log('[GEN] Using server URL from settings:', SERVER_URL);
@@ -81,6 +83,10 @@
       if (result.apiKey) {
         API_KEY = result.apiKey;
         console.log('[GEN] API key loaded');
+      }
+      if (result[pauseStorageKey]) {
+        extensionPaused = true;
+        updatePauseUI();
       }
 
       var allowedSites = (result.allowedSites && Array.isArray(result.allowedSites))
@@ -1265,19 +1271,54 @@
     if (document.getElementById('gen-ui')) return;
     var el = document.createElement('div');
     el.id = 'gen-ui';
-    el.innerHTML = '<span id="gen-dot"></span><span id="gen-text">Ready</span><span id="gen-count">0</span>';
+    el.innerHTML = '<span id="gen-dot"></span><span id="gen-text">Ready</span><span id="gen-count">0</span><span id="gen-pause" title="Pause/Resume">&#10074;&#10074;</span>';
     el.style.cssText = 'position:fixed;bottom:20px;right:20px;background:#4A90D9;color:#fff;padding:8px 16px;border-radius:20px;font:bold 12px Arial;z-index:2147483647;display:flex;align-items:center;gap:8px;box-shadow:0 4px 15px rgba(0,0,0,0.3);cursor:pointer;';
     el.querySelector('#gen-dot').style.cssText = 'width:10px;height:10px;background:#4ade80;border-radius:50%;';
     el.querySelector('#gen-count').style.cssText = 'background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:10px;';
+    el.querySelector('#gen-pause').style.cssText = 'background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:10px;font-size:10px;letter-spacing:-2px;';
+    el.querySelector('#gen-pause').onclick = function(e) { e.stopPropagation(); togglePause(); };
     document.body.appendChild(el);
     el.onclick = function() { doExtract(true); };
+    if (extensionPaused) updatePauseUI();
   }
 
   function updateUI(text, count) {
+    if (extensionPaused) return;
     var t = document.getElementById('gen-text');
     var c = document.getElementById('gen-count');
     if (t) t.textContent = text;
     if (c) c.textContent = count;
+  }
+
+  function togglePause() {
+    extensionPaused = !extensionPaused;
+    var data = {};
+    if (extensionPaused) {
+      data[pauseStorageKey] = true;
+    } else {
+      data[pauseStorageKey] = false;
+    }
+    chrome.storage.local.set(data);
+    updatePauseUI();
+    console.log('[GEN] Extension ' + (extensionPaused ? 'paused' : 'resumed'));
+  }
+
+  function updatePauseUI() {
+    var dot = document.getElementById('gen-dot');
+    var text = document.getElementById('gen-text');
+    var btn = document.getElementById('gen-pause');
+    var container = document.getElementById('gen-ui');
+    if (extensionPaused) {
+      if (dot) dot.style.background = '#f87171';
+      if (text) text.textContent = 'Paused';
+      if (btn) btn.innerHTML = '&#9654;';
+      if (container) container.style.opacity = '0.7';
+    } else {
+      if (dot) dot.style.background = '#4ade80';
+      if (text) text.textContent = 'Ready';
+      if (btn) btn.innerHTML = '&#10074;&#10074;';
+      if (container) container.style.opacity = '1';
+    }
   }
 
   // === Extraction & Sending ===
@@ -1432,6 +1473,7 @@
   }
 
   function doExtract(includeHeuristic) {
+    if (extensionPaused) return;
     if (sending) return;
 
     var jobs = [];

@@ -6,7 +6,9 @@
   var sending = false;
   var sentJobIds = {}; // Track jobs already sent to server across extractions
   var fetchingDescriptions = false;
-  
+  var extensionPaused = false;
+  var pauseStorageKey = 'paused_' + window.location.hostname;
+
   // Auto-fetch settings
   var autoFetchEnabled = false;
   var autoFetchDelay = 3000; // milliseconds between navigations
@@ -17,7 +19,7 @@
 
   // Load server URL and API key from storage
   if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-    chrome.storage.local.get(['serverUrl', 'apiKey'], function(result) {
+    chrome.storage.local.get(['serverUrl', 'apiKey', pauseStorageKey], function(result) {
       if (result.serverUrl) {
         SERVER_URL = result.serverUrl.replace(/\/+$/, '');
         console.log('[LJE] Using server URL from settings:', SERVER_URL);
@@ -25,6 +27,10 @@
       if (result.apiKey) {
         API_KEY = result.apiKey;
         console.log('[LJE] API key loaded');
+      }
+      if (result[pauseStorageKey]) {
+        extensionPaused = true;
+        updatePauseUI();
       }
     });
   }
@@ -75,19 +81,54 @@
     if (document.getElementById('lje-ui')) return;
     var el = document.createElement('div');
     el.id = 'lje-ui';
-    el.innerHTML = '<span id="lje-dot"></span><span id="lje-text">Ready</span><span id="lje-count">0</span>';
+    el.innerHTML = '<span id="lje-dot"></span><span id="lje-text">Ready</span><span id="lje-count">0</span><span id="lje-pause" title="Pause/Resume">&#10074;&#10074;</span>';
     el.style.cssText = 'position:fixed;bottom:20px;right:20px;background:#0a66c2;color:#fff;padding:8px 16px;border-radius:20px;font:bold 12px Arial;z-index:2147483647;display:flex;align-items:center;gap:8px;box-shadow:0 4px 15px rgba(0,0,0,0.3);cursor:pointer;';
     el.querySelector('#lje-dot').style.cssText = 'width:10px;height:10px;background:#4ade80;border-radius:50%;';
     el.querySelector('#lje-count').style.cssText = 'background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:10px;';
+    el.querySelector('#lje-pause').style.cssText = 'background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:10px;font-size:10px;letter-spacing:-2px;';
+    el.querySelector('#lje-pause').onclick = function(e) { e.stopPropagation(); togglePause(); };
     document.body.appendChild(el);
     el.onclick = doExtract;
+    if (extensionPaused) updatePauseUI();
   }
 
   function updateUI(text, count) {
+    if (extensionPaused) return;
     var t = document.getElementById('lje-text');
     var c = document.getElementById('lje-count');
     if (t) t.textContent = text;
     if (c) c.textContent = count;
+  }
+
+  function togglePause() {
+    extensionPaused = !extensionPaused;
+    var data = {};
+    if (extensionPaused) {
+      data[pauseStorageKey] = true;
+    } else {
+      data[pauseStorageKey] = false;
+    }
+    chrome.storage.local.set(data);
+    updatePauseUI();
+    console.log('[LJE] Extension ' + (extensionPaused ? 'paused' : 'resumed'));
+  }
+
+  function updatePauseUI() {
+    var dot = document.getElementById('lje-dot');
+    var text = document.getElementById('lje-text');
+    var btn = document.getElementById('lje-pause');
+    var container = document.getElementById('lje-ui');
+    if (extensionPaused) {
+      if (dot) dot.style.background = '#f87171';
+      if (text) text.textContent = 'Paused';
+      if (btn) btn.innerHTML = '&#9654;';
+      if (container) container.style.opacity = '0.7';
+    } else {
+      if (dot) dot.style.background = '#4ade80';
+      if (text) text.textContent = 'Ready';
+      if (btn) btn.innerHTML = '&#10074;&#10074;';
+      if (container) container.style.opacity = '1';
+    }
   }
   
   function showAutoFetchUI() {
@@ -289,6 +330,10 @@
       '.jobs-details__main-content',
       '.jobs-details-top-card__job-description',
       '.jobs-company__description',
+      // Guest/public job view selectors (email links, logged-out view)
+      '.description__text',
+      '.decorated-job-posting__details',
+      '.show-more-less-html__markup--clamp-after-5',
       // Generic pattern matches
       '[class*="jobs-description"]',
       '[class*="job-details"]',
@@ -383,7 +428,11 @@
       '.jobs-unified-top-card__company-name',
       '.artdeco-entity-lockup__subtitle',
       '.topcard__org-name-link',
-      '.topcard__flavor--black-link'
+      '.topcard__flavor--black-link',
+      // Guest/public view selectors
+      '.top-card-layout__company-name',
+      '.top-card-layout__second-subline a',
+      '.decorated-job-posting__company-name'
     ];
     for (var i = 0; i < companySelectors.length; i++) {
       try {
@@ -793,6 +842,7 @@
   }
 
   function doExtract() {
+    if (extensionPaused) return;
     // Skip extraction if auto-fetch or crawl is running
     if (autoFetchEnabled) {
       console.log('[LJE] Skipping extraction - auto-fetch is running');
@@ -853,12 +903,12 @@
 
     // If viewing a job detail, also add it if not in list
     if (getCurrentJobId() && !seenIds[getCurrentJobId()]) {
-      var h1 = document.querySelector('h1');
+      var h1 = document.querySelector('h1.top-card-layout__title, h1.topcard__title, h1[class*="job-title"], h1');
       if (h1) {
         var detailTitle = cleanText(h1.textContent);
         if (detailTitle && detailTitle.length > 3) {
-          var compEl = document.querySelector('[class*="company-name"] a, [class*="company-name"]');
-          var locEl = document.querySelector('[class*="bullet"], [class*="location"]');
+          var compEl = document.querySelector('.top-card-layout__company-name, .topcard__org-name-link, .top-card-layout__second-subline a, [class*="company-name"] a, [class*="company-name"]');
+          var locEl = document.querySelector('.top-card-layout__first-subline .topcard__flavor, .topcard__flavor--bullet, .top-card-layout__bullet, [class*="bullet"], [class*="location"]');
           var detailCompany = getPosterCompany() || (compEl ? cleanText(compEl.textContent) : '') || getCompanyFromPageTitle();
 
           var detailJob = {
@@ -1040,6 +1090,7 @@
 
   // Function to check server for jobs needing descriptions and fetch them
   function checkAndFetchDescriptions() {
+    if (extensionPaused) return;
     if (fetchingDescriptions || sending || inPageFetchRunning) return;
 
     // Only proceed if we're on a LinkedIn jobs page
@@ -1201,6 +1252,7 @@
   }
   
   function checkAutoFetchState() {
+    if (extensionPaused) return;
     var state = sessionStorage.getItem('lje-autofetch');
     if (!state) return;
     

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Job Tracker - Universal Extractor",
-  "version": "1.0.20",
+  "version": "1.0.21",
   "description": "Automatically extract job listings from any site with schema.org JobPosting metadata and send them to your Job Tracker app",
   "permissions": [
     "activeTab",

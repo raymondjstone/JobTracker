@@ -6,6 +6,8 @@
   var sending = false;
   var fetchingDescriptions = false;
   var sentJobIds = {}; // Track jobs already sent to server across extractions
+  var extensionPaused = false;
+  var pauseStorageKey = 'paused_' + window.location.hostname;
 
   // Auto-fetch settings
   var autoFetchEnabled = false;
@@ -17,7 +19,7 @@
 
   // Load server URL and API key from storage
   if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-    chrome.storage.local.get(['serverUrl', 'apiKey'], function(result) {
+    chrome.storage.local.get(['serverUrl', 'apiKey', pauseStorageKey], function(result) {
       if (result.serverUrl) {
         SERVER_URL = result.serverUrl.replace(/\/+$/, '');
         console.log('[S1J] Using server URL from settings:', SERVER_URL);
@@ -25,6 +27,10 @@
       if (result.apiKey) {
         API_KEY = result.apiKey;
         console.log('[S1J] API key loaded');
+      }
+      if (result[pauseStorageKey]) {
+        extensionPaused = true;
+        updatePauseUI();
       }
     });
   }
@@ -58,19 +64,54 @@
     if (document.getElementById('s1j-ui')) return;
     var el = document.createElement('div');
     el.id = 's1j-ui';
-    el.innerHTML = '<span id="s1j-dot"></span><span id="s1j-text">Ready</span><span id="s1j-count">0</span>';
+    el.innerHTML = '<span id="s1j-dot"></span><span id="s1j-text">Ready</span><span id="s1j-count">0</span><span id="s1j-pause" title="Pause/Resume">&#10074;&#10074;</span>';
     el.style.cssText = 'position:fixed;bottom:20px;right:20px;background:#0072CE;color:#fff;padding:8px 16px;border-radius:20px;font:bold 12px Arial;z-index:2147483647;display:flex;align-items:center;gap:8px;box-shadow:0 4px 15px rgba(0,0,0,0.3);cursor:pointer;';
     el.querySelector('#s1j-dot').style.cssText = 'width:10px;height:10px;background:#4ade80;border-radius:50%;';
     el.querySelector('#s1j-count').style.cssText = 'background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:10px;';
+    el.querySelector('#s1j-pause').style.cssText = 'background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:10px;font-size:10px;letter-spacing:-2px;';
+    el.querySelector('#s1j-pause').onclick = function(e) { e.stopPropagation(); togglePause(); };
     document.body.appendChild(el);
     el.onclick = doExtract;
+    if (extensionPaused) updatePauseUI();
   }
 
   function updateUI(text, count) {
+    if (extensionPaused) return;
     var t = document.getElementById('s1j-text');
     var c = document.getElementById('s1j-count');
     if (t) t.textContent = text;
     if (c) c.textContent = count;
+  }
+
+  function togglePause() {
+    extensionPaused = !extensionPaused;
+    var data = {};
+    if (extensionPaused) {
+      data[pauseStorageKey] = true;
+    } else {
+      data[pauseStorageKey] = false;
+    }
+    chrome.storage.local.set(data);
+    updatePauseUI();
+    console.log('[S1J] Extension ' + (extensionPaused ? 'paused' : 'resumed'));
+  }
+
+  function updatePauseUI() {
+    var dot = document.getElementById('s1j-dot');
+    var text = document.getElementById('s1j-text');
+    var btn = document.getElementById('s1j-pause');
+    var container = document.getElementById('s1j-ui');
+    if (extensionPaused) {
+      if (dot) dot.style.background = '#f87171';
+      if (text) text.textContent = 'Paused';
+      if (btn) btn.innerHTML = '&#9654;';
+      if (container) container.style.opacity = '0.7';
+    } else {
+      if (dot) dot.style.background = '#4ade80';
+      if (text) text.textContent = 'Ready';
+      if (btn) btn.innerHTML = '&#10074;&#10074;';
+      if (container) container.style.opacity = '1';
+    }
   }
 
   function showAutoFetchUI() {
@@ -450,6 +491,7 @@
   }
 
   function doExtract() {
+    if (extensionPaused) return;
     if (autoFetchEnabled || crawlEnabled) return;
     if (sending) return;
     updateUI('Scanning', totalSent);
@@ -577,6 +619,7 @@
   }
 
   function checkAndFetchDescriptions() {
+    if (extensionPaused) return;
     if (fetchingDescriptions || sending) return;
     if (!window.location.href.includes('s1jobs.com')) return;
 
@@ -673,6 +716,7 @@
   }
 
   function checkAutoFetchState() {
+    if (extensionPaused) return;
     var state = sessionStorage.getItem('s1j-autofetch');
     if (!state) return;
 

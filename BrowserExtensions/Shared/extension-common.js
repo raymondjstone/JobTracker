@@ -20,6 +20,8 @@ var JobTrackerCommon = (function() {
   var SERVER_URL = 'https://localhost:7046';
   var API_KEY = '';
   var _prefix = 'jt'; // UI element prefix, set per-extension
+  var _paused = false;
+  var _pauseStorageKey = 'paused_' + window.location.hostname;
 
   /**
    * Initialize common settings from chrome.storage.
@@ -28,13 +30,18 @@ var JobTrackerCommon = (function() {
    */
   function init(prefix, callback) {
     _prefix = prefix || 'jt';
+    _pauseStorageKey = 'paused_' + window.location.hostname;
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-      chrome.storage.local.get(['serverUrl', 'apiKey'], function(result) {
+      chrome.storage.local.get(['serverUrl', 'apiKey', _pauseStorageKey], function(result) {
         if (result.serverUrl) {
           SERVER_URL = result.serverUrl.replace(/\/+$/, '');
         }
         if (result.apiKey) {
           API_KEY = result.apiKey;
+        }
+        if (result[_pauseStorageKey]) {
+          _paused = true;
+          updatePauseUI();
         }
         if (callback) callback();
       });
@@ -148,12 +155,16 @@ var JobTrackerCommon = (function() {
     el.id = _prefix + '-ui';
     el.innerHTML = '<span id="' + _prefix + '-dot"></span>' +
                    '<span id="' + _prefix + '-text">Ready</span>' +
-                   '<span id="' + _prefix + '-count">0</span>';
+                   '<span id="' + _prefix + '-count">0</span>' +
+                   '<span id="' + _prefix + '-pause" title="Pause/Resume">&#10074;&#10074;</span>';
     el.style.cssText = 'position:fixed;bottom:20px;right:20px;background:' + color + ';color:#fff;padding:8px 16px;border-radius:20px;font:bold 12px Arial;z-index:2147483647;display:flex;align-items:center;gap:8px;box-shadow:0 4px 15px rgba(0,0,0,0.3);cursor:pointer;';
     el.querySelector('#' + _prefix + '-dot').style.cssText = 'width:10px;height:10px;background:#4ade80;border-radius:50%;';
     el.querySelector('#' + _prefix + '-count').style.cssText = 'background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:10px;';
+    el.querySelector('#' + _prefix + '-pause').style.cssText = 'background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:10px;font-size:10px;letter-spacing:-2px;';
+    el.querySelector('#' + _prefix + '-pause').onclick = function(e) { e.stopPropagation(); togglePause(); };
     document.body.appendChild(el);
     if (onClick) el.onclick = onClick;
+    if (_paused) updatePauseUI();
   }
 
   /**
@@ -162,10 +173,51 @@ var JobTrackerCommon = (function() {
    * @param {number|string} count - Count to display
    */
   function updateBadge(text, count) {
+    if (_paused) return;
     var t = document.getElementById(_prefix + '-text');
     var c = document.getElementById(_prefix + '-count');
     if (t) t.textContent = text;
     if (c) c.textContent = count;
+  }
+
+  /**
+   * Toggle the pause state for this hostname.
+   */
+  function togglePause() {
+    _paused = !_paused;
+    var data = {};
+    data[_pauseStorageKey] = _paused ? true : false;
+    chrome.storage.local.set(data);
+    updatePauseUI();
+  }
+
+  /**
+   * Update the badge UI to reflect pause state.
+   */
+  function updatePauseUI() {
+    var dot = document.getElementById(_prefix + '-dot');
+    var text = document.getElementById(_prefix + '-text');
+    var btn = document.getElementById(_prefix + '-pause');
+    var container = document.getElementById(_prefix + '-ui');
+    if (_paused) {
+      if (dot) dot.style.background = '#f87171';
+      if (text) text.textContent = 'Paused';
+      if (btn) btn.innerHTML = '&#9654;';
+      if (container) container.style.opacity = '0.7';
+    } else {
+      if (dot) dot.style.background = '#4ade80';
+      if (text) text.textContent = 'Ready';
+      if (btn) btn.innerHTML = '&#10074;&#10074;';
+      if (container) container.style.opacity = '1';
+    }
+  }
+
+  /**
+   * Check if the extension is currently paused.
+   * @returns {boolean}
+   */
+  function isPaused() {
+    return _paused;
   }
 
   /**
@@ -301,6 +353,8 @@ var JobTrackerCommon = (function() {
     getJobsNeedingDescriptions: getJobsNeedingDescriptions,
     createBadge: createBadge,
     updateBadge: updateBadge,
+    togglePause: togglePause,
+    isPaused: isPaused,
     showAutoFetchUI: showAutoFetchUI,
     updateAutoFetchUI: updateAutoFetchUI,
     removeAutoFetchUI: removeAutoFetchUI,
