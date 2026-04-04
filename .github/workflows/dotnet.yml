@@ -1,4 +1,4 @@
-# Build, test, and create portable releases + MSI installer
+# Build, test, create portable releases + MSI installer, and publish a GitHub Release
 # https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-net
 
 name: .NET
@@ -72,3 +72,42 @@ jobs:
         name: JobTracker-MSI
         path: Installer/JobTracker-Setup-*.msi
         if-no-files-found: error
+
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    needs: [build, msi]
+    permissions:
+      contents: write
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Download portable builds
+      uses: actions/download-artifact@v4
+      with:
+        name: JobTracker-Portable
+        path: artifacts/portable
+
+    - name: Download MSI installers
+      uses: actions/download-artifact@v4
+      with:
+        name: JobTracker-MSI
+        path: artifacts/msi
+
+    - name: Generate version tag
+      id: version
+      run: |
+        TAG="v1.$(date -u +%y).$(date -u +%m%d).${{ github.run_number }}"
+        echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+        echo "Version: $TAG"
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ steps.version.outputs.tag }}
+        name: JobTracker ${{ steps.version.outputs.tag }}
+        generate_release_notes: true
+        files: |
+          artifacts/portable/*
+          artifacts/msi/*
