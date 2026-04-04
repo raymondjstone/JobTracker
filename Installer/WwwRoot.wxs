@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <!--
+    Auto-harvest wwwroot from the publish output.
+    WiX v5 'Files' element recursively includes all files and subdirectories.
+  -->
+
+  <Fragment>
+    <ComponentGroup Id="WwwRootFiles" Directory="WwwRootDir">
+      <Files Include="$(var.PublishDir)\wwwroot\**" />
+    </ComponentGroup>
+  </Fragment>
+
+</Wix>

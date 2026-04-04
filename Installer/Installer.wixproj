@@ -1,0 +1,18 @@
+<Project Sdk="WixToolset.Sdk/5.0.2">
+
+  <PropertyGroup>
+    <OutputName>JobTracker-Setup</OutputName>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <!-- Default publish directory; override via -p:PublishDir=... -->
+    <PublishDir Condition="'$(PublishDir)' == ''">$(MSBuildProjectDirectory)\..\bin\installer-publish-win-x64\</PublishDir>
+    <!-- Suppress ICE validation warnings standard for per-user installs to AppData -->
+    <!-- ICE38: file KeyPath in user profile; ICE64: RemoveFile for user profile dirs; ICE91: per-user dir advisory -->
+    <SuppressIces>ICE38;ICE64;ICE91</SuppressIces>
+  </PropertyGroup>
+
+  <!-- Pass PublishDir as a WiX preprocessor variable via DefineConstants -->
+  <PropertyGroup>
+    <DefineConstants>PublishDir=$(PublishDir)</DefineConstants>
+  </PropertyGroup>
+
+</Project>

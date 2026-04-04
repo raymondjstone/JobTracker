@@ -44,7 +44,12 @@
       "Bash(dotnet add:*)",
       "Bash(xargs:*)",
       "Bash(rm:*)",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Bash(powershell -Command ':*)",
+      "Bash(dotnet publish:*)",
+      "Bash(dotnet tool:*)",
+      "Bash(powershell -ExecutionPolicy Bypass -File build/build-msi.ps1)",
+      "Bash(powershell:*)"
     ]
   }
 }

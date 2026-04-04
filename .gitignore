@@ -371,4 +371,8 @@ appsettings.*.json
 
 # Portable build output
 # Portable/
+
+# Installer MSI output
+Installer/*.msi
+
 /Data/.seed-lock

@@ -14,6 +14,7 @@
 @inject NavigationManager Navigation
 @inject IStorageBackend StorageBackend
 @inject EmailInboxService EmailInboxService
+@inject IServiceProvider ServiceProvider
 @rendermode InteractiveServer
 
 <PageTitle>Settings - Job Tracker</PageTitle>
@@ -2024,6 +2025,12 @@
                 using var fileStream = new FileStream(targetPath, FileMode.Create, FileAccess.Write);
                 await entryStream.CopyToAsync(fileStream);
             }
+
+            // Invalidate in-memory caches so restored data is picked up
+            SettingsService.InvalidateCache();
+            var bgService = ServiceProvider.GetServices<Microsoft.Extensions.Hosting.IHostedService>()
+                .OfType<LocalBackgroundService>().FirstOrDefault();
+            bgService?.ReloadConfig();
 
             backupRestoreMessage = $"Restore complete ({archive.Entries.Count} file(s)). Please refresh the page to reload data.";
             backupRestoreIsError = false;

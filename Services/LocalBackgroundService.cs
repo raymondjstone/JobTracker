@@ -110,6 +110,12 @@ public class LocalBackgroundService : BackgroundService
     public DateTime? StartedAt => _startedAt;
 
     /// <summary>
+    /// Reloads background job configuration from disk.
+    /// Call after restoring a backup to pick up the restored config.
+    /// </summary>
+    public void ReloadConfig() => LoadConfig();
+
+    /// <summary>
     /// Returns job statuses grouped by category, with jobs sorted alphabetically within each category.
     /// </summary>
     public IEnumerable<IGrouping<JobCategory, KeyValuePair<string, BackgroundJobStatus>>> GetJobsByCategory()

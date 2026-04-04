@@ -69,6 +69,18 @@ public class AppSettingsService
         }
     }
 
+    /// <summary>
+    /// Forces a reload of settings from storage on the next access.
+    /// Call after restoring a backup to pick up the restored files.
+    /// </summary>
+    public void InvalidateCache()
+    {
+        lock (_lock)
+        {
+            _loadedForUser = Guid.Empty;
+        }
+    }
+
     public virtual AppSettings GetSettings(Guid? forUserId = null)
     {
         EnsureSettingsLoaded(forUserId);

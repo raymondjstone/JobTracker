@@ -1,4 +1,4 @@
-# Build, test, and create portable releases
+# Build, test, and create portable releases + MSI installer
 # https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-net
 
 name: .NET
@@ -26,6 +26,8 @@ jobs:
 
     - name: Build and create portable zips
       run: dotnet build -c Release
+      env:
+        BUILD_NUMBER: ${{ github.run_number }}
 
     - name: Test
       run: dotnet test -c Release --no-build --verbosity normal
@@ -35,4 +37,38 @@ jobs:
       with:
         name: JobTracker-Portable
         path: Portable/JobTracker-*.zip.*
+        if-no-files-found: error
+
+  msi:
+    runs-on: windows-latest
+    needs: build
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.0.x
+
+    - name: Restore local tools
+      run: dotnet tool restore
+
+    - name: Build MSI (x64)
+      run: .\build\build-msi.ps1 -Runtime win-x64
+      shell: pwsh
+      env:
+        BUILD_NUMBER: ${{ github.run_number }}
+
+    - name: Build MSI (x86)
+      run: .\build\build-msi.ps1 -Runtime win-x86
+      shell: pwsh
+      env:
+        BUILD_NUMBER: ${{ github.run_number }}
+
+    - name: Upload MSI installers
+      uses: actions/upload-artifact@v4
+      with:
+        name: JobTracker-MSI
+        path: Installer/JobTracker-Setup-*.msi
         if-no-files-found: error

@@ -5,8 +5,12 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
-    <Version>1.$([System.DateTime]::Now.ToString("yy")).$([System.DateTime]::Now.ToString("MMdd")).$([System.DateTime]::Now.ToString("HHmm"))</Version>
+    <!-- Version: 1.YY.MMdd.BuildNumber — uses CI run number when available, HHmm locally -->
+    <BuildRevision Condition="'$(BUILD_NUMBER)' != ''">$(BUILD_NUMBER)</BuildRevision>
+    <BuildRevision Condition="'$(BUILD_NUMBER)' == ''">$([System.DateTime]::Now.ToString("HHmm"))</BuildRevision>
+    <Version>1.$([System.DateTime]::Now.ToString("yy")).$([System.DateTime]::Now.ToString("MMdd")).$(BuildRevision)</Version>
     <DefaultItemExcludes>$(DefaultItemExcludes);JobTracker.Tests\**</DefaultItemExcludes>
+    <ApplicationIcon>wwwroot\favicon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
