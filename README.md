@@ -196,18 +196,33 @@ A **comprehensive AI-powered** Blazor application with browser extensions that a
 - **Run in Browser** - Opens each enabled crawl page in a new tab and automatically closes it after its delay (requires allowing popups for `https://localhost:7046`).
 - **Reorder pages** - Use up/down arrows to control crawl order.
 
-## Portable / Pre-built (No SDK Required)
+## Installation
 
-Pre-built self-contained executables are available in the `Portable/` folder. No .NET SDK or runtime install is needed.
+### Option 1: MSI Installer (Recommended)
+
+The easiest way to get started. No .NET SDK, no build tools, no command line needed.
+
+1. Go to the [Releases](../../releases) page and download the latest **JobTracker-Setup-win-x64.msi** (or x86 for 32-bit)
+2. Run the installer — it installs to `%LOCALAPPDATA%\JobTracker`
+3. Launch **JobTracker** from the desktop shortcut or Start Menu
+4. The app starts automatically and opens in your default browser at `http://localhost:7046`
+
+The installer creates desktop and Start Menu shortcuts, and includes an uninstaller accessible via Windows **Add or Remove Programs**.
+
+> **Upgrading:** Just run the new MSI — it automatically replaces the previous version. Your data in the `Data/` folder is preserved.
+
+### Option 2: Portable / Pre-built (No Install)
+
+Pre-built self-contained executables are available in the `Portable/` folder or from the [Releases](../../releases) page. No .NET SDK or runtime install is needed.
 
 | Files | Platform |
 |-------|----------|
-| `Portable/JobTracker-x86.zip.001`, `.002` | Windows 32-bit |
-| `Portable/JobTracker-x64.zip.001`, `.002` | Windows 64-bit |
+| `JobTracker-x86.zip.001`, `.002` | Windows 32-bit |
+| `JobTracker-x64.zip.001`, `.002` | Windows 64-bit |
 
 The archives are split into 80MB parts for easier distribution. You need [7-Zip](https://www.7-zip.org/) to extract them.
 
-### Quick Start
+#### Quick Start
 
 1. Download all `.zip.001`, `.zip.002`, etc. parts for your platform into the same folder
 2. Right-click the `.zip.001` file and choose **7-Zip > Extract Here** (or run `7z x JobTracker-x86.zip.001`)
@@ -220,15 +235,13 @@ The app creates a `Data/` folder alongside the executable for storing jobs, sett
 
 > **Note:** These zips are rebuilt automatically on every Release build. If you're building from source, run `dotnet build -c Release` and the split zips appear in `Portable/`.
 
-## Prerequisites
+### Option 3: Build from Source
 
-- [.NET 10 SDK](https://dotnet.microsoft.com/download) or later (only needed if building from source)
+#### Prerequisites
+
+- [.NET 10 SDK](https://dotnet.microsoft.com/download) or later
 - Google Chrome or Microsoft Edge browser
 - Accounts on job sites you want to use
-
-## Installation (From Source)
-
-### 1. Set Up the Blazor Application
 
 ```bash
 # Navigate to the project directory
@@ -242,6 +255,21 @@ dotnet run
 ```
 
 The app will start at `https://localhost:7046`.
+
+#### Building the MSI Installer Locally
+
+```powershell
+# Restore the WiX tool
+dotnet tool restore
+
+# Build the MSI (x64)
+.\build\build-msi.ps1 -Runtime win-x64
+
+# Or build via Visual Studio publish profile
+dotnet publish -p:PublishProfile=MSI-x64
+```
+
+The MSI is output to `Installer/JobTracker-Setup-win-x64.msi`.
 
 ### 2. Install Browser Extensions
 
@@ -434,6 +462,17 @@ Jobs, history, and settings are stored as JSON files in the `Data/` directory:
 
 No configuration needed - this is the default when `StorageProvider` is `"Json"` or not set.
 
+#### Backup & Restore
+
+All data can be backed up and restored from **Settings** > **Backup & Restore**:
+
+- **Download Backup** - Creates a ZIP of all JSON data files (jobs, settings, history, contacts, background job config, etc.)
+- **Restore from Backup** - Upload a previously downloaded ZIP to overwrite current data
+- **Scheduled Backups** - Automatic daily backups with configurable retention (default: keep 10)
+- **Startup Backup** - Optional backup on every app start
+
+All user-configurable settings are included: crawl pages, scoring preferences, job rules, filter presets, cover letter templates, SMTP/IMAP config, AI assistant settings, skill extraction, and background job schedules.
+
 ### SQL Server
 
 To switch to SQL Server, update `appsettings.json`:
@@ -536,6 +575,16 @@ JobTracker/
 │       ├── background.js
 │       ├── popup.html
 │       └── popup.js
+├── Installer/
+│   ├── Installer.wixproj           # WiX MSI installer project
+│   ├── Package.wxs                 # Installer definition (shortcuts, registry)
+│   ├── WwwRoot.wxs                 # Auto-harvested static assets
+│   └── LaunchJobTracker.vbs        # Launcher script (starts server + opens browser)
+├── build/
+│   ├── build-msi.ps1               # MSI build script
+│   └── update-extension-version.ps1
+├── .github/workflows/
+│   └── dotnet.yml                  # CI/CD: build, test, MSI, GitHub Release
 └── Program.cs                      # App configuration and API endpoints
 ```
 
@@ -917,6 +966,12 @@ Click the stage badge on a job card to cycle through stages, or use the dropdown
 - **Recurring Jobs** - Crawling, email, cleanup
 - **CRON Scheduling** - Flexible job timing
 
+### Packaging & CI/CD
+- **WiX Toolset** - MSI installer with desktop/Start Menu shortcuts
+- **GitHub Actions** - Automated build, test, and release on every push to master
+- **Auto-Versioning** - `1.YY.MMdd.BuildNumber` version scheme tied to CI run number
+- **GitHub Releases** - MSI and portable builds published automatically
+
 ---
 
 ## 📊 Stats & Metrics
@@ -931,7 +986,7 @@ Click the stage badge on a job card to cycle through stages, or use the dropdown
 - **Background Jobs** - 7 automated tasks
 - **Dual Storage** - JSON or SQL Server
 - **Browser Extensions** - 5 dedicated extractors + 1 universal fallback
-- **184 Unit Tests** - EmailReplyMatcher, JsonStorageBackend, SalaryParser, JobScoring, JobRules, CompanyNormalization, JobTypeDetection
+- **246 Unit Tests** - EmailReplyMatcher, JsonStorageBackend, SalaryParser, JobScoring, JobRules, CompanyNormalization, JobTypeDetection, BackupRestore, SettingsEncryption, Security
 
 ---
 
