@@ -3010,7 +3010,7 @@ else
     /// </summary>
     private async Task OpenTabAndAutoClose(string url, int delaySeconds = 10)
     {
-        await JSRuntime.InvokeVoidAsync("crawlPagesRunner.openAndScheduleClose", url, delaySeconds);
+        await JSRuntime.InvokeVoidAsync("crawlPagesRunner.openAndScheduleClose", url, delaySeconds, true);
     }
 
     private async Task ShareToWhatsApp(JobListing job)

@@ -272,25 +272,15 @@
                 return;
             }
 
+            // Build flat list of (url, label, delaySeconds) to crawl
+            var crawlItems = new List<(string Url, string Label, int Delay)>();
             foreach (var page in pages)
             {
                 var delaySeconds = page.DelayAfterSeconds <= 0 ? 0 : page.DelayAfterSeconds;
 
                 if (!page.UseSubstitutionNumber)
                 {
-                    browserCrawlStatus = $"Running: {page.Label} ({delaySeconds}s)";
-                    StateHasChanged();
-
-                    var opened = await JS.InvokeAsync<bool>("crawlPagesRunner.openAndScheduleClose", page.Url, delaySeconds);
-                    if (!opened)
-                    {
-                        browserCrawlStatus = $"Popup blocked while opening '{page.Label}'. Please allow popups for this site and try again.";
-                        browserCrawlIsError = true;
-                        return;
-                    }
-
-                    if (delaySeconds > 0)
-                        await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
+                    crawlItems.Add((page.Url!, page.Label!, delaySeconds));
                     continue;
                 }
 
@@ -306,20 +296,29 @@
                 {
                     var url = (page.Url ?? "").Replace("{n}", n.ToString());
                     var label = string.IsNullOrWhiteSpace(page.Label) ? url : page.Label;
-                    browserCrawlStatus = $"Running: {label} [n={n}] ({delaySeconds}s)";
-                    StateHasChanged();
-
-                    var opened = await JS.InvokeAsync<bool>("crawlPagesRunner.openAndScheduleClose", url, delaySeconds);
-                    if (!opened)
-                    {
-                        browserCrawlStatus = $"Popup blocked while opening '{label}'. Please allow popups for this site and try again.";
-                        browserCrawlIsError = true;
-                        return;
-                    }
-
-                    if (delaySeconds > 0)
-                        await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
+                    crawlItems.Add((url, $"{label} [n={n}]", delaySeconds));
                 }
+            }
+
+            // Open each URL in the same browser tab (reuses window to avoid popup blocking)
+            for (var i = 0; i < crawlItems.Count; i++)
+            {
+                var (url, label, delay) = crawlItems[i];
+                var isLast = i == crawlItems.Count - 1;
+
+                browserCrawlStatus = $"Running: {label} ({delay}s)";
+                StateHasChanged();
+
+                var opened = await JS.InvokeAsync<bool>("crawlPagesRunner.openAndScheduleClose", url, delay, isLast);
+                if (!opened)
+                {
+                    browserCrawlStatus = $"Popup blocked while opening '{label}'. Please allow popups for this site and try again.";
+                    browserCrawlIsError = true;
+                    return;
+                }
+
+                if (delay > 0)
+                    await Task.Delay(TimeSpan.FromSeconds(delay));
             }
 
             browserCrawlStatus = $"Completed browser crawl for {pages.Count} page(s).";

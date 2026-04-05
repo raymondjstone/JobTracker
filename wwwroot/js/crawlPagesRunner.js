@@ -1,12 +1,27 @@
 window.crawlPagesRunner = {
-  openAndScheduleClose: function (url, delaySeconds) {
-    const seconds = Math.max(0, Number(delaySeconds) || 0);
-    const w = window.open(url, '_blank');
-    if (!w) return false;
+  _win: null,
 
-    window.setTimeout(() => {
-      try { w.close(); } catch { }
-    }, seconds * 1000);
+  openAndScheduleClose: function (url, delaySeconds, isLast) {
+    const seconds = Math.max(0, Number(delaySeconds) || 0);
+
+    // Reuse existing window if still open, otherwise open a new one
+    if (!this._win || this._win.closed) {
+      this._win = window.open(url, '_blank');
+      if (!this._win) return false;
+    } else {
+      this._win.location = url;
+      try { this._win.focus(); } catch { }
+    }
+
+    // Close the window after the last page's delay
+    if (isLast) {
+      const w = this._win;
+      const self = this;
+      window.setTimeout(() => {
+        try { w.close(); } catch { }
+        self._win = null;
+      }, seconds * 1000);
+    }
 
     return true;
   }
