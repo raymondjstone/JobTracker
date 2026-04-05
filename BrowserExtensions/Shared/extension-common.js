@@ -17,7 +17,7 @@
 var JobTrackerCommon = (function() {
   'use strict';
 
-  var SERVER_URL = 'https://localhost:7046';
+  var SERVER_URL = 'http://localhost:7046';
   var API_KEY = '';
   var _prefix = 'jt'; // UI element prefix, set per-extension
   var _paused = false;

@@ -15,7 +15,7 @@ if (builder.Configuration["Urls"] == null &&
     builder.Configuration["Kestrel:Endpoints:Https:Url"] == null &&
     Environment.GetEnvironmentVariable("ASPNETCORE_URLS") == null)
 {
-    builder.WebHost.UseUrls("https://localhost:7046");
+    builder.WebHost.UseUrls("http://localhost:7046");
 }
 
 // One-off migration: SQL Server -> Local JSON storage
@@ -47,7 +47,7 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         options.ExpireTimeSpan = TimeSpan.FromDays(30);
         options.SlidingExpiration = true;
         options.Cookie.HttpOnly = true;
-        options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
         options.Cookie.SameSite = SameSiteMode.Strict;
     });
 
@@ -65,11 +65,20 @@ if (string.Equals(storageProvider, "SqlServer", StringComparison.OrdinalIgnoreCa
 }
 else
 {
+    // Resolve data directory: custom path from data-directory.config, or default Data/ subfolder
+    var defaultDataDir = Path.Combine(builder.Environment.ContentRootPath, "Data");
+    var dataDirConfigPath = Path.Combine(builder.Environment.ContentRootPath, "data-directory.config");
+    var dataDir = defaultDataDir;
+    if (File.Exists(dataDirConfigPath))
+    {
+        var customDir = File.ReadAllText(dataDirConfigPath).Trim();
+        if (!string.IsNullOrEmpty(customDir) && Directory.Exists(customDir))
+            dataDir = customDir;
+    }
+
     builder.Services.AddSingleton<IStorageBackend>(sp =>
     {
-        var env = sp.GetRequiredService<IWebHostEnvironment>();
         var logger = sp.GetRequiredService<ILogger<JsonStorageBackend>>();
-        var dataDir = Path.Combine(env.ContentRootPath, "Data");
         var historyMax = builder.Configuration.GetValue<int>("HistoryMax", 50000);
         return new JsonStorageBackend(dataDir, logger, historyMax);
     });

@@ -374,5 +374,6 @@ appsettings.*.json
 
 # Installer MSI output
 Installer/*.msi
+data-directory.config
 
 /Data/.seed-lock

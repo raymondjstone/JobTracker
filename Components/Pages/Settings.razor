@@ -15,6 +15,7 @@
 @inject IStorageBackend StorageBackend
 @inject EmailInboxService EmailInboxService
 @inject IServiceProvider ServiceProvider
+@inject IWebHostEnvironment WebHostEnvironment
 @rendermode InteractiveServer
 
 <PageTitle>Settings - Job Tracker</PageTitle>
@@ -1105,6 +1106,51 @@
         @if (StorageBackend is JsonStorageBackend && activeTab == "data")
         {
             <div class="tab-pane fade show active">
+                <!-- Data Directory -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-folder"></i> Data Directory</h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small">All JSON data files (jobs, history, settings, contacts) are stored in this directory.</p>
+                        <div class="mb-3">
+                            <label class="form-label">Current Location</label>
+                            <div class="input-group" style="max-width: 600px;">
+                                <span class="input-group-text"><i class="bi bi-folder2-open"></i></span>
+                                <input type="text" class="form-control font-monospace" value="@GetCurrentDataDirectory()" readonly />
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">New Location</label>
+                            <div class="input-group" style="max-width: 600px;">
+                                <input type="text" class="form-control" @bind="editDataDirectory"
+                                       placeholder="Leave empty to use default" />
+                            </div>
+                            <small class="text-muted">Set a custom directory for data storage. Leave empty to reset to the default location next to the application. All existing files will be moved to the new location.</small>
+                        </div>
+
+                        <button class="btn btn-primary" @onclick="ChangeDataDirectory" disabled="@isMovingData">
+                            @if (isMovingData)
+                            {
+                                <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                                <span>Moving data...</span>
+                            }
+                            else
+                            {
+                                <i class="bi bi-arrow-right-circle me-1"></i>
+                                <span>Move Data</span>
+                            }
+                        </button>
+
+                        @if (!string.IsNullOrEmpty(dataDirectoryMessage))
+                        {
+                            <div class="alert @(dataDirectoryIsError ? "alert-danger" : "alert-success") mt-3">
+                                @((MarkupString)dataDirectoryMessage)
+                            </div>
+                        }
+                    </div>
+                </div>
+
                 <!-- Backup Settings -->
                 <div class="card mb-4">
                     <div class="card-header">
@@ -1359,6 +1405,12 @@
     private string? regexTestError;
     private string? regexTestMatchValue;
     private string? regexExplanation;
+
+    // Data directory
+    private string editDataDirectory = "";
+    private bool isMovingData = false;
+    private string? dataDirectoryMessage = null;
+    private bool dataDirectoryIsError = false;
 
     // Backup directory
     private string editBackupDirectory = "";
@@ -2096,6 +2148,119 @@
         if (!Directory.Exists(backupDir)) return (backupDir, 0);
         var count = Directory.GetFiles(backupDir, "jobtracker-backup-*.zip").Length;
         return (backupDir, count);
+    }
+
+    private string GetCurrentDataDirectory()
+    {
+        if (StorageBackend is JsonStorageBackend jsonBackend)
+            return jsonBackend.GetDataDirectory();
+        return "N/A";
+    }
+
+    private async Task ChangeDataDirectory()
+    {
+        if (StorageBackend is not JsonStorageBackend jsonBackend) return;
+
+        dataDirectoryMessage = null;
+        dataDirectoryIsError = false;
+
+        var currentDir = jsonBackend.GetDataDirectory();
+        var defaultDir = System.IO.Path.Combine(WebHostEnvironment.ContentRootPath, "Data");
+        var newDir = string.IsNullOrWhiteSpace(editDataDirectory) ? defaultDir : editDataDirectory.Trim();
+
+        // Normalize paths for comparison
+        var currentNorm = System.IO.Path.GetFullPath(currentDir).TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar);
+        var newNorm = System.IO.Path.GetFullPath(newDir).TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar);
+
+        if (string.Equals(currentNorm, newNorm, StringComparison.OrdinalIgnoreCase))
+        {
+            dataDirectoryMessage = "The new directory is the same as the current one.";
+            dataDirectoryIsError = true;
+            return;
+        }
+
+        isMovingData = true;
+        StateHasChanged();
+
+        try
+        {
+            // Create the target directory
+            Directory.CreateDirectory(newDir);
+
+            // Verify the target is writable
+            var testFile = System.IO.Path.Combine(newDir, ".write-test");
+            try
+            {
+                await File.WriteAllTextAsync(testFile, "test");
+                File.Delete(testFile);
+            }
+            catch
+            {
+                dataDirectoryMessage = "Cannot write to the target directory. Check permissions.";
+                dataDirectoryIsError = true;
+                return;
+            }
+
+            // Move all files from current to new
+            var movedCount = 0;
+            foreach (var file in Directory.GetFiles(currentDir, "*.json"))
+            {
+                var fileName = System.IO.Path.GetFileName(file);
+                var destPath = System.IO.Path.Combine(newDir, fileName);
+                if (File.Exists(destPath))
+                    File.Delete(destPath);
+                File.Move(file, destPath);
+                movedCount++;
+            }
+
+            // Also move seed-lock and any other non-json data files
+            foreach (var file in Directory.GetFiles(currentDir))
+            {
+                var fileName = System.IO.Path.GetFileName(file);
+                if (fileName.EndsWith(".json", StringComparison.OrdinalIgnoreCase)) continue; // already moved
+                var destPath = System.IO.Path.Combine(newDir, fileName);
+                if (File.Exists(destPath))
+                    File.Delete(destPath);
+                File.Move(file, destPath);
+                movedCount++;
+            }
+
+            // Move subdirectories (e.g. Backups)
+            foreach (var dir in Directory.GetDirectories(currentDir))
+            {
+                var dirName = System.IO.Path.GetFileName(dir);
+                var destDir = System.IO.Path.Combine(newDir, dirName);
+                if (Directory.Exists(destDir))
+                    Directory.Delete(destDir, true);
+                Directory.Move(dir, destDir);
+            }
+
+            // Write the config file so the app uses the new directory on next start
+            var configPath = System.IO.Path.Combine(WebHostEnvironment.ContentRootPath, "data-directory.config");
+            if (string.Equals(newNorm, System.IO.Path.GetFullPath(defaultDir).TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar), StringComparison.OrdinalIgnoreCase))
+            {
+                // Resetting to default — remove the config file
+                if (File.Exists(configPath))
+                    File.Delete(configPath);
+            }
+            else
+            {
+                await File.WriteAllTextAsync(configPath, newDir);
+            }
+
+            dataDirectoryMessage = $"Moved {movedCount} file(s) to <code>{System.Web.HttpUtility.HtmlEncode(newDir)}</code>.<br/><strong>Please restart the application</strong> for the change to take full effect.";
+            dataDirectoryIsError = false;
+        }
+        catch (Exception ex)
+        {
+            dataDirectoryMessage = $"Failed to move data: {ex.Message}";
+            dataDirectoryIsError = true;
+        }
+        finally
+        {
+            isMovingData = false;
+            StateHasChanged();
+        }
     }
 
     private void AddCustomSkill()

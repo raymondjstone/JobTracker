@@ -1,4 +1,4 @@
-var SERVER_URL = 'https://localhost:7046';
+var SERVER_URL = 'http://localhost:7046';
 var API_KEY = '';
 var allowedSites = [];
 var blockedSites = [];
@@ -66,7 +66,7 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 
   document.getElementById('server-url').addEventListener('change', function() {
-    var url = (this.value.trim() || 'https://localhost:7046').replace(/\/+$/, '');
+    var url = (this.value.trim() || 'http://localhost:7046').replace(/\/+$/, '');
     chrome.storage.local.set({ serverUrl: url });
     SERVER_URL = url;
     checkServerStatus();

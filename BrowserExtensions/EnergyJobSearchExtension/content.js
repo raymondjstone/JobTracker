@@ -1,5 +1,5 @@
 (function() {
-  var SERVER_URL = 'https://localhost:7046';
+  var SERVER_URL = 'http://localhost:7046';
   var API_KEY = '';
   var totalSent = 0;
   var totalDuplicates = 0;

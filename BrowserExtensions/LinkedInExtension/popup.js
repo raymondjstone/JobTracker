@@ -1,6 +1,6 @@
 // Popup script for LinkedIn Job Extractor
 
-var SERVER_URL = 'https://localhost:7046';
+var SERVER_URL = 'http://localhost:7046';
 var API_KEY = '';
 var autoFetchCheckInterval = null;
 
