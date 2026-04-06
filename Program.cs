@@ -167,6 +167,15 @@ builder.Services.AddTransient<EmailJobAlertParser>();
 builder.Services.AddTransient<EmailCheckJob>();
 builder.Services.AddSingleton<AppShutdownService>();
 
+// Update check — lightweight singleton that queries GitHub releases once
+builder.Services.AddHttpClient("UpdateCheck", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(10);
+    client.DefaultRequestHeaders.Add("User-Agent", "JobTracker-UpdateCheck");
+    client.DefaultRequestHeaders.Add("Accept", "application/vnd.github+json");
+});
+builder.Services.AddSingleton<UpdateCheckService>();
+
 // In LocalMode, use a BackgroundService for recurring jobs
 if (localMode)
 {
@@ -897,6 +906,19 @@ if (localMode)
         return Results.Ok();
     }).DisableAntiforgery();
 }
+
+// Update-and-download endpoint — opens the download URL then shuts down the server
+app.MapPost("/api/update-download", (AppShutdownService shutdownService, UpdateCheckService updateService) =>
+{
+    var url = updateService.DownloadUrl;
+    // Shut down after a short delay so the response gets sent
+    Task.Run(async () =>
+    {
+        await Task.Delay(1500);
+        shutdownService.Shutdown();
+    });
+    return Results.Ok(new { url });
+}).DisableAntiforgery();
 
 app.Run();
 

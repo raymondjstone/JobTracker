@@ -4,6 +4,9 @@
 @inject AuthenticationStateProvider AuthStateProvider
 @inject AuthService AuthService
 @inject IConfiguration Configuration
+@inject UpdateCheckService UpdateCheckService
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JS
 
 <div class="page">
     <div class="sidebar">
@@ -11,6 +14,14 @@
     </div>
 
     <main>
+        @if (UpdateCheckService.UpdateAvailable)
+        {
+            <div class="update-banner">
+                <i class="bi bi-arrow-up-circle-fill"></i>
+                A new version (<strong>@UpdateCheckService.LatestVersion</strong>) is available!
+                <a href="javascript:void(0)" @onclick="DownloadUpdate">Download &amp; restart</a>
+            </div>
+        }
         <div class="top-row px-4">
             <a href="" class="header-logo">
                 <img src="images/logo.png" alt="Job Tracker" />
@@ -58,3 +69,27 @@
     <a href="." class="reload">Reload</a>
     <span class="dismiss">X</span>
 </div>
+
+@code {
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await UpdateCheckService.CheckForUpdateAsync();
+            StateHasChanged();
+        }
+    }
+
+    private async Task DownloadUpdate()
+    {
+        var url = UpdateCheckService.DownloadUrl;
+        if (!string.IsNullOrEmpty(url))
+        {
+            await JS.InvokeVoidAsync("open", url, "_blank");
+        }
+
+        using var http = new HttpClient();
+        var baseUri = new Uri(NavigationManager.BaseUri);
+        await http.PostAsync(new Uri(baseUri, "/api/update-download"), null);
+    }
+}
