@@ -156,3 +156,8 @@
         flex-direction: column;
     }
 }
+
+.version-label {
+    color: rgba(255, 255, 255, 0.35);
+    font-size: 0.75rem;
+}

@@ -1,6 +1,7 @@
 @using Microsoft.AspNetCore.Components.Authorization
 @inject IConfiguration Configuration
 @inject JobTracker.Services.AppShutdownService ShutdownService
+@inject JobTracker.Services.UpdateCheckService UpdateCheckService
 @inject IJSRuntime JS
 @rendermode InteractiveServer
 
@@ -106,13 +107,16 @@
                         </div>
                     }
                     <div class="nav-item px-3">
-                        <a class="btn btn-warning w-100 d-flex align-items-center justify-content-center" 
-                           href="https://buymeacoffee.com/raymondjstone" 
-                           target="_blank" 
-                           rel="noopener noreferrer" 
+                        <a class="btn btn-warning w-100 d-flex align-items-center justify-content-center"
+                           href="https://buymeacoffee.com/raymondjstone"
+                           target="_blank"
+                           rel="noopener noreferrer"
                            style="background-color: #FFDD00; color: #000; border: none; font-weight: 500; padding: 10px;">
                             <i class="bi bi-cup-hot-fill me-2"></i> Support Development
                         </a>
+                    </div>
+                    <div class="nav-item px-3 text-center mt-2">
+                        <small class="version-label">v@(UpdateCheckService.CurrentVersion)</small>
                     </div>
                 </div>
             </nav>
