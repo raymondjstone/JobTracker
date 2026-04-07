@@ -24,7 +24,7 @@ public interface IStorageBackend
     // History operations (now user-scoped)
     List<JobHistoryEntry> LoadHistory(Guid userId);
     void SaveHistory(List<JobHistoryEntry> history, Guid userId);
-    void AddHistoryEntry(JobHistoryEntry entry);
+    void AddHistoryEntry(JobHistoryEntry entry, int maxEntries = 0);
     void DeleteAllHistory(Guid userId);
 
     // Settings operations (now user-scoped)

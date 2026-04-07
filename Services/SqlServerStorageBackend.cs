@@ -174,20 +174,21 @@ public class SqlServerStorageBackend : IStorageBackend
         _logger.LogDebug("Saved history to SQL Server for user {UserId} (appended={Added})", userId, toAdd.Count);
     }
 
-    public void AddHistoryEntry(JobHistoryEntry entry)
+    public void AddHistoryEntry(JobHistoryEntry entry, int maxEntries = 0)
     {
+        var limit = maxEntries > 0 ? maxEntries : _historyMax;
         using var db = _factory.CreateDbContext();
         db.HistoryEntries.Add(entry);
         db.SaveChanges();
 
-        // Enforce 50k cap per user
+        // Enforce per-user cap
         var totalCount = db.HistoryEntries.Where(h => h.UserId == entry.UserId).Count();
-        if (totalCount > _historyMax)
+        if (totalCount > limit)
         {
             db.HistoryEntries
                 .Where(h => h.UserId == entry.UserId)
                 .OrderBy(h => h.Timestamp)
-                .Take(totalCount - _historyMax)
+                .Take(totalCount - limit)
                 .ExecuteDelete();
         }
     }

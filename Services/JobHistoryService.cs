@@ -355,7 +355,7 @@ public class JobHistoryService
                 }
             }
 
-            _storage.AddHistoryEntry(entry);
+            _storage.AddHistoryEntry(entry, HistoryLimit);
         }
 
         _logger.LogDebug("History: {Action} - {Title} ({Source}) for user {UserId}",

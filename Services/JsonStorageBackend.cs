@@ -336,15 +336,16 @@ public class JsonStorageBackend : IStorageBackend
         }
     }
 
-    public void AddHistoryEntry(JobHistoryEntry entry)
+    public void AddHistoryEntry(JobHistoryEntry entry, int maxEntries = 0)
     {
+        var limit = maxEntries > 0 ? maxEntries : _historyMax;
         lock (_historyLock)
         {
             var allHistory = LoadAllHistoryUnsafe();
             allHistory.Insert(0, entry);
 
             // Enforce per-user cap
-            var userHistory = allHistory.Where(h => h.UserId == entry.UserId).Take(_historyMax).ToList();
+            var userHistory = allHistory.Where(h => h.UserId == entry.UserId).Take(limit).ToList();
             var otherHistory = allHistory.Where(h => h.UserId != entry.UserId).ToList();
             allHistory = otherHistory.Concat(userHistory).ToList();
 
