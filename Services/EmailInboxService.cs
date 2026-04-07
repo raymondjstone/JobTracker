@@ -89,7 +89,7 @@ public class EmailInboxService
         catch (Exception ex)
         {
             _logger.LogError(ex, "[EmailInbox] Error fetching emails from {Host}", host);
-            try { await client.DisconnectAsync(false); } catch { }
+            try { await client.DisconnectAsync(false); } catch (Exception disconnectEx) { _logger.LogDebug(disconnectEx, "[EmailInbox] Error during disconnect cleanup"); }
             throw;
         }
 
@@ -125,7 +125,7 @@ public class EmailInboxService
         }
         catch (Exception ex)
         {
-            try { await client.DisconnectAsync(false); } catch { }
+            try { await client.DisconnectAsync(false); } catch (Exception disconnectEx) { _logger.LogDebug(disconnectEx, "[EmailInbox] Error during disconnect cleanup"); }
             return (false, $"Connection failed: {ex.Message}");
         }
     }

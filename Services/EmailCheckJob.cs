@@ -136,9 +136,7 @@ public class EmailCheckJob
                     var normalizedUrl = url;
                     if (string.Equals(source, "LinkedIn", StringComparison.OrdinalIgnoreCase))
                     {
-                        // Canonicalize LinkedIn comm links so other fetchers/normalizers match.
-                        normalizedUrl = normalizedUrl.Replace("linkedin.com/comm/jobs/view/", "linkedin.com/jobs/view/", StringComparison.OrdinalIgnoreCase);
-                        normalizedUrl = normalizedUrl.TrimEnd('.');
+                        normalizedUrl = UrlHelper.NormalizeLinkedInJobUrl(normalizedUrl);
                     }
 
                     var newJob = new JobListing

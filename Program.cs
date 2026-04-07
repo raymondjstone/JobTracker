@@ -308,13 +308,12 @@ var startupLogger = app.Services.GetRequiredService<ILogger<Program>>();
         }
     }
 
-    // Backfill ApiKey for existing users that don't have one persisted yet.
+    // Backfill ApiKey for existing users — old user records may not have an ApiKey
+    // in the stored JSON. The User model generates one on deserialization, so we
+    // re-save every user once to ensure the generated key is persisted.
     foreach (var existingUser in authService.GetAllUsers())
     {
-        if (!string.IsNullOrEmpty(existingUser.ApiKey))
-        {
-            storage.SaveUser(existingUser);
-        }
+        storage.SaveUser(existingUser);
     }
 } // seedLock released here
 

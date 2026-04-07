@@ -75,9 +75,7 @@ public class EmailProcessingService
                             foreach (var job in alertResult.Jobs)
                             {
                                 // Normalize URL for duplicate check
-                                var normalizedUrl = job.Url
-                                    .Replace("linkedin.com/comm/jobs/view/", "linkedin.com/jobs/view/", StringComparison.OrdinalIgnoreCase)
-                                    .TrimEnd('.');
+                                var normalizedUrl = UrlHelper.NormalizeLinkedInJobUrl(job.Url);
 
                                 // Skip URLs that already exist in the user's jobs
                                 if (userJobs.Any(j => !string.IsNullOrWhiteSpace(j.Url) &&

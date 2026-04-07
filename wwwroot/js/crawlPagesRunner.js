@@ -33,5 +33,29 @@ window.jobTracker = {
     document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:system-ui;color:#666;"><div style="text-align:center;"><h2>JobTracker has shut down</h2><p>You can close this tab.</p></div></div>';
     fetch('/api/shutdown', { method: 'POST' });
     setTimeout(function () { window.close(); }, 200);
+  },
+
+  downloadFile: function (base64, mimeType, fileName) {
+    var a = document.createElement('a');
+    a.href = 'data:' + mimeType + ';base64,' + base64;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  },
+
+  getLocalStorage: function (key) {
+    return localStorage.getItem(key);
+  },
+
+  setLocalStorage: function (key, value) {
+    localStorage.setItem(key, value);
+  },
+
+  hasAnyAttribute: function (attrNames) {
+    for (var i = 0; i < attrNames.length; i++) {
+      if (document.documentElement.hasAttribute(attrNames[i])) return true;
+    }
+    return false;
   }
 };

@@ -81,7 +81,7 @@ public class JobAvailabilityService
 
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, job.Url);
+            using var request = new HttpRequestMessage(HttpMethod.Get, job.Url);
             request.Headers.Add("User-Agent",
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
             request.Headers.Add("Accept",
@@ -463,7 +463,8 @@ public class JobAvailabilityService
         }
 
         // 1. Fetch main profile page (for headline from <title>)
-        var response = await _httpClient.SendAsync(CreateBrowserRequest(profileUrl), cancellationToken);
+        using var profileRequest = CreateBrowserRequest(profileUrl);
+        var response = await _httpClient.SendAsync(profileRequest, cancellationToken);
         var profileHtml = await response.Content.ReadAsStringAsync(cancellationToken);
 
         var details = new ContactProfileDetails();
@@ -487,7 +488,8 @@ public class JobAvailabilityService
             _logger.LogDebug("Fetching contact info overlay: {Url}", overlayUrl);
             try
             {
-                var overlayResponse = await _httpClient.SendAsync(CreateBrowserRequest(overlayUrl), cancellationToken);
+                using var overlayRequest = CreateBrowserRequest(overlayUrl);
+                var overlayResponse = await _httpClient.SendAsync(overlayRequest, cancellationToken);
                 var overlayHtml = await overlayResponse.Content.ReadAsStringAsync(cancellationToken);
 
                 if (overlayHtml.Length > 0)

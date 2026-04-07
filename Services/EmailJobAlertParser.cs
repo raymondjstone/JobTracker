@@ -160,9 +160,7 @@ public class EmailJobAlertParser
             var rawUrl = m.Groups["url"].Value;
             var url = CleanUrl(rawUrl);
 
-            // Normalize LinkedIn comm URLs
-            url = url.Replace("linkedin.com/comm/jobs/view/", "linkedin.com/jobs/view/", StringComparison.OrdinalIgnoreCase);
-            url = url.TrimEnd('.');
+            url = UrlHelper.NormalizeLinkedInJobUrl(url);
 
             if (processedUrls.Contains(url))
                 continue;
@@ -187,7 +185,7 @@ public class EmailJobAlertParser
         // For any URLs we didn't extract details for, create basic entries
         foreach (var url in urls)
         {
-            var normalizedUrl = url.Replace("linkedin.com/comm/jobs/view/", "linkedin.com/jobs/view/", StringComparison.OrdinalIgnoreCase).TrimEnd('.');
+            var normalizedUrl = UrlHelper.NormalizeLinkedInJobUrl(url);
 
             if (!processedUrls.Contains(normalizedUrl) && !jobs.Any(j => j.Url.Equals(normalizedUrl, StringComparison.OrdinalIgnoreCase)))
             {

@@ -152,13 +152,18 @@ else
     [Inject] private IServiceProvider ServiceProvider { get; set; } = default!;
     private LocalBackgroundService? _service;
     private Timer? _refreshTimer;
+    private CancellationTokenSource _cts = new();
 
     protected override void OnInitialized()
     {
         var hostedServices = ServiceProvider.GetServices<Microsoft.Extensions.Hosting.IHostedService>();
         _service = hostedServices.OfType<LocalBackgroundService>().FirstOrDefault();
 
-        _refreshTimer = new Timer(_ => InvokeAsync(StateHasChanged), null, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
+        _refreshTimer = new Timer(_ =>
+        {
+            if (_cts.IsCancellationRequested) return;
+            _ = InvokeAsync(StateHasChanged);
+        }, null, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
     }
 
     private void ToggleEnabled(string key, bool enabled)
@@ -227,6 +232,8 @@ else
 
     public void Dispose()
     {
+        _cts.Cancel();
         _refreshTimer?.Dispose();
+        _cts.Dispose();
     }
 }

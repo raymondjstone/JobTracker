@@ -577,12 +577,12 @@ Respond ONLY with valid JSON in this format:
         };
 
         var json = JsonSerializer.Serialize(requestBody);
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-        _httpClient.DefaultRequestHeaders.Clear();
-        _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/chat/completions");
+        request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
 
-        var response = await _httpClient.PostAsync("https://api.openai.com/v1/chat/completions", content);
+        var response = await _httpClient.SendAsync(request);
 
         if (!response.IsSuccessStatusCode)
         {
@@ -594,13 +594,16 @@ Respond ONLY with valid JSON in this format:
         var responseJson = await response.Content.ReadAsStringAsync();
         var result = JsonSerializer.Deserialize<JsonElement>(responseJson);
 
-        var messageContent = result
-            .GetProperty("choices")[0]
-            .GetProperty("message")
-            .GetProperty("content")
-            .GetString();
+        if (result.TryGetProperty("choices", out var choices)
+            && choices.GetArrayLength() > 0
+            && choices[0].TryGetProperty("message", out var message)
+            && message.TryGetProperty("content", out var contentProp))
+        {
+            return contentProp.GetString();
+        }
 
-        return messageContent;
+        _logger.LogWarning("OpenAI response missing expected structure");
+        return null;
     }
 
     private async Task<string?> CallClaudeAsync(string prompt, string apiKey, string model)
@@ -618,13 +621,13 @@ Respond ONLY with valid JSON in this format:
         };
 
         var json = JsonSerializer.Serialize(requestBody);
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-        _httpClient.DefaultRequestHeaders.Clear();
-        _httpClient.DefaultRequestHeaders.Add("x-api-key", apiKey);
-        _httpClient.DefaultRequestHeaders.Add("anthropic-version", "2023-06-01");
+        using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.anthropic.com/v1/messages");
+        request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+        request.Headers.Add("x-api-key", apiKey);
+        request.Headers.Add("anthropic-version", "2023-06-01");
 
-        var response = await _httpClient.PostAsync("https://api.anthropic.com/v1/messages", content);
+        var response = await _httpClient.SendAsync(request);
 
         if (!response.IsSuccessStatusCode)
         {
@@ -636,12 +639,15 @@ Respond ONLY with valid JSON in this format:
         var responseJson = await response.Content.ReadAsStringAsync();
         var result = JsonSerializer.Deserialize<JsonElement>(responseJson);
 
-        var messageContent = result
-            .GetProperty("content")[0]
-            .GetProperty("text")
-            .GetString();
+        if (result.TryGetProperty("content", out var contentArray)
+            && contentArray.GetArrayLength() > 0
+            && contentArray[0].TryGetProperty("text", out var textProp))
+        {
+            return textProp.GetString();
+        }
 
-        return messageContent;
+        _logger.LogWarning("Claude response missing expected structure");
+        return null;
     }
 
     private static readonly HashSet<string> CommonStopWords = new()

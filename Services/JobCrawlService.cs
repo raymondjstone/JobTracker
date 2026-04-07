@@ -645,7 +645,7 @@ public class JobCrawlService
                 if (!string.IsNullOrEmpty(filters))
                     requestBody["filters"] = filters;
 
-                var request = new HttpRequestMessage(HttpMethod.Post, algoliaUrl)
+                using var request = new HttpRequestMessage(HttpMethod.Post, algoliaUrl)
                 {
                     Content = new StringContent(
                         JsonSerializer.Serialize(requestBody),

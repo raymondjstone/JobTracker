@@ -850,6 +850,6 @@
     private static string Truncate(string text, int maxLen)
     {
         if (string.IsNullOrWhiteSpace(text)) return "";
-        return text.Length <= maxLen ? text : text.Substring(0, maxLen) + "...";
+        return text.Length <= maxLen ? text : string.Concat(text.AsSpan(0, maxLen), "...");
     }
 }

@@ -1955,7 +1955,7 @@
             var bytes = memoryStream.ToArray();
             var base64 = Convert.ToBase64String(bytes);
             var fileName2 = $"jobtracker-backup-{DateTime.Now:yyyy-MM-dd}.zip";
-            await JS.InvokeVoidAsync("eval", $"(function(){{var a=document.createElement('a');a.href='data:application/zip;base64,{base64}';a.download='{fileName2}';document.body.appendChild(a);a.click();document.body.removeChild(a);}})()");
+            await JS.InvokeVoidAsync("jobTracker.downloadFile", base64, "application/zip", fileName2);
 
             backupRestoreMessage = $"Backup downloaded with {jsonFiles.Length} file(s).";
             backupRestoreIsError = false;
