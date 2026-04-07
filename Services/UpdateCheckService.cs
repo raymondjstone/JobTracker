@@ -16,7 +16,7 @@ public class UpdateCheckService
     public string? LatestVersion => _latestVersion;
     public string? DownloadUrl => _downloadUrl;
     public bool UpdateAvailable => _checked && _latestVersion != null
-        && CompareVersions(_latestVersion, CurrentVersion, segments: 3) > 0;
+        && CompareVersions(_latestVersion, CurrentVersion) > 0;
 
     public UpdateCheckService(
         IHttpClientFactory httpClientFactory,
@@ -62,9 +62,9 @@ public class UpdateCheckService
             _downloadUrl = root.GetProperty("html_url").GetString();
             _latestVersion = latestVersion;
 
-            if (UpdateAvailable)
-                _logger.LogInformation("Update available: {Latest} (current: {Current})",
-                    _latestVersion, CurrentVersion);
+            _logger.LogInformation("Version check: current={Current}, latest={Latest}, updateAvailable={Available}",
+                CurrentVersion, _latestVersion, UpdateAvailable);
+
         }
         catch (Exception ex)
         {
@@ -74,16 +74,17 @@ public class UpdateCheckService
 
     /// <summary>
     /// Compare two dotted version strings (e.g. "1.26.0406.42" vs "1.26.0405.10").
-    /// Only the first <paramref name="segments"/> segments are compared — the 4th segment
-    /// is a CI run number in releases but HHmm locally, so it isn't comparable.
-    /// Returns positive if a > b, negative if a &lt; b, zero if equal.
+    /// All segments are compared. The 4th segment is a CI run number in releases
+    /// (small incrementing int) but HHmm in local dev builds (900-2359), so local
+    /// dev builds will always appear newer than releases — this is acceptable since
+    /// devs don't need the update banner.
     /// </summary>
-    private static int CompareVersions(string a, string b, int segments = 4)
+    private static int CompareVersions(string a, string b)
     {
         var partsA = a.Split('.').Select(s => int.TryParse(s, out var n) ? n : 0).ToArray();
         var partsB = b.Split('.').Select(s => int.TryParse(s, out var n) ? n : 0).ToArray();
 
-        var len = Math.Min(segments, Math.Max(partsA.Length, partsB.Length));
+        var len = Math.Max(partsA.Length, partsB.Length);
         for (int i = 0; i < len; i++)
         {
             var pa = i < partsA.Length ? partsA[i] : 0;
