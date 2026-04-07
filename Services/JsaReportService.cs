@@ -1,15 +1,12 @@
 using JobTracker.Models;
 using ClosedXML.Excel;
-using QuestPDF.Fluent;
-using QuestPDF.Helpers;
-using QuestPDF.Infrastructure;
+using PdfSharpCore.Drawing;
+using PdfSharpCore.Drawing.Layout;
+using PdfSharpCore.Pdf;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
 
-// Resolve ambiguities between QuestPDF and OpenXml
-using QuestDocument = QuestPDF.Fluent.Document;
-using QuestPageSize = QuestPDF.Helpers.PageSize;
 using WordDocument = DocumentFormat.OpenXml.Wordprocessing.Document;
 using WordPageSize = DocumentFormat.OpenXml.Wordprocessing.PageSize;
 using WordColor = DocumentFormat.OpenXml.Wordprocessing.Color;
@@ -220,100 +217,161 @@ public class JsaReportService
 
     public byte[] ExportToPdf(List<JsaReportGroup> groups, JsaReportSummary summary, string appBaseUrl)
     {
-        QuestPDF.Settings.License = LicenseType.Community;
+        var document = new PdfDocument();
+        document.Info.Title = "JSA Job Search Activity Report";
 
-        var document = QuestDocument.Create(container =>
+        var fontTitle = new XFont("Arial", 16, XFontStyle.Bold);
+        var fontSubtitle = new XFont("Arial", 9, XFontStyle.Regular);
+        var fontJobHeader = new XFont("Arial", 10, XFontStyle.Bold);
+        var fontJobSource = new XFont("Arial", 8, XFontStyle.Regular);
+        var fontUrl = new XFont("Arial", 7, XFontStyle.Regular);
+        var fontTableHeader = new XFont("Arial", 7.5, XFontStyle.Bold);
+        var fontTableCell = new XFont("Arial", 7.5, XFontStyle.Regular);
+        var fontFooter = new XFont("Arial", 7, XFontStyle.Regular);
+
+        // Column widths for the activity table (landscape A4 ~802 usable points at 40pt margins)
+        double[] colWidths = { 65, 40, 80, 380, 110 };
+        string[] colHeaders = { "Date", "Time", "Activity", "Details", "Change" };
+
+        const double marginLeft = 40;
+        const double marginTop = 40;
+        const double marginBottom = 50;
+        const double pageWidth = 842; // A4 landscape
+        const double pageHeight = 595;
+        const double usableHeight = pageHeight - marginTop - marginBottom;
+        const double rowHeight = 14;
+        const double headerRowHeight = 16;
+
+        double y = marginTop;
+        var page = document.AddPage();
+        page.Width = pageWidth;
+        page.Height = pageHeight;
+        var gfx = XGraphics.FromPdfPage(page);
+        int pageNum = 1;
+
+        void DrawFooter(XGraphics g, int pNum)
         {
-            container.Page(page =>
+            g.DrawString($"Page {pNum}  |  Generated {DateTime.Now:dd/MM/yyyy HH:mm}",
+                fontFooter, XBrushes.Gray,
+                new XRect(0, pageHeight - 30, pageWidth, 20), XStringFormats.Center);
+        }
+
+        void NewPage()
+        {
+            DrawFooter(gfx, pageNum);
+            page = document.AddPage();
+            page.Width = pageWidth;
+            page.Height = pageHeight;
+            gfx = XGraphics.FromPdfPage(page);
+            y = marginTop;
+            pageNum++;
+        }
+
+        void EnsureSpace(double needed)
+        {
+            if (y + needed > marginTop + usableHeight)
+                NewPage();
+        }
+
+        // Title
+        gfx.DrawString("JSA Job Search Activity Report", fontTitle, XBrushes.Black,
+            new XPoint(marginLeft, y + 16));
+        y += 26;
+
+        gfx.DrawString($"Report Period: {summary.DateFrom:dd/MM/yyyy} - {summary.DateTo:dd/MM/yyyy}", fontSubtitle, XBrushes.DarkGray,
+            new XPoint(marginLeft, y + 10));
+        y += 16;
+
+        gfx.DrawString($"Total Jobs: {summary.TotalJobs}  |  Applied: {summary.JobsAppliedTo}  |  Activities: {summary.TotalActivities}  |  Avg/Week: {summary.ActivitiesPerWeek}",
+            fontSubtitle, XBrushes.DarkGray, new XPoint(marginLeft, y + 10));
+        y += 24;
+
+        foreach (var group in groups)
+        {
+            // Estimate space needed: header + URL + table header + at least 1 row
+            double estimatedSpace = 18 + (string.IsNullOrEmpty(group.JobUrl) ? 0 : 12) + headerRowHeight + rowHeight + 16;
+            EnsureSpace(estimatedSpace);
+
+            // Job header
+            var headerText = group.JobTitle;
+            if (!string.IsNullOrEmpty(group.Company))
+                headerText += $"  -  {group.Company}";
+
+            gfx.DrawString(headerText, fontJobHeader, XBrushes.Black, new XPoint(marginLeft, y + 10));
+
+            if (!string.IsNullOrEmpty(group.Source))
             {
-                page.Size(PageSizes.A4.Landscape());
-                page.Margin(1.5f, Unit.Centimetre);
-                page.DefaultTextStyle(x => x.FontSize(9));
+                gfx.DrawString(group.Source, fontJobSource, XBrushes.SteelBlue,
+                    new XPoint(pageWidth - marginLeft - 80, y + 10));
+            }
+            y += 16;
 
-                page.Header().Column(col =>
+            if (!string.IsNullOrEmpty(group.JobUrl))
+            {
+                gfx.DrawString(group.JobUrl, fontUrl, XBrushes.Blue, new XPoint(marginLeft, y + 8));
+                y += 12;
+            }
+
+            // Table header
+            EnsureSpace(headerRowHeight + rowHeight);
+            double x = marginLeft;
+            gfx.DrawRectangle(new XSolidBrush(XColor.FromArgb(220, 228, 240)), x, y, colWidths.Sum(), headerRowHeight);
+            for (int i = 0; i < colHeaders.Length; i++)
+            {
+                gfx.DrawString(colHeaders[i], fontTableHeader, XBrushes.Black,
+                    new XRect(x + 3, y, colWidths[i] - 6, headerRowHeight), XStringFormats.CenterLeft);
+                x += colWidths[i];
+            }
+            y += headerRowHeight;
+
+            // Table rows
+            bool alternate = false;
+            foreach (var entry in group.Entries)
+            {
+                EnsureSpace(rowHeight);
+
+                if (alternate)
+                    gfx.DrawRectangle(new XSolidBrush(XColor.FromArgb(245, 245, 250)), marginLeft, y, colWidths.Sum(), rowHeight);
+
+                x = marginLeft;
+                var cells = new[]
                 {
-                    col.Item().Text("JSA Job Search Activity Report").Bold().FontSize(18);
-                    col.Item().Text($"Report Period: {summary.DateFrom:dd/MM/yyyy} - {summary.DateTo:dd/MM/yyyy}").FontSize(10);
-                    col.Item().Text($"Total Jobs: {summary.TotalJobs} | Applied: {summary.JobsAppliedTo} | Activities: {summary.TotalActivities} | Avg/Week: {summary.ActivitiesPerWeek}").FontSize(10);
-                    col.Item().PaddingBottom(10);
-                });
+                    entry.Timestamp.ToString("dd/MM/yyyy"),
+                    entry.Timestamp.ToString("HH:mm"),
+                    GetActionTypeDisplay(entry.ActionType),
+                    TruncateText(entry.Details ?? "", 80),
+                    !string.IsNullOrEmpty(entry.OldValue) && !string.IsNullOrEmpty(entry.NewValue)
+                        ? $"{entry.OldValue} -> {entry.NewValue}" : ""
+                };
 
-                page.Content().Column(col =>
+                for (int i = 0; i < cells.Length; i++)
                 {
-                    foreach (var group in groups)
-                    {
-                        col.Item().BorderBottom(1).BorderColor(Colors.Grey.Lighten2).PaddingBottom(8).PaddingTop(8).Column(jobCol =>
-                        {
-                            jobCol.Item().Row(r =>
-                            {
-                                r.RelativeItem(3).Text(text =>
-                                {
-                                    text.Span(group.JobTitle).Bold().FontSize(11);
-                                    if (!string.IsNullOrEmpty(group.Company))
-                                        text.Span($"  -  {group.Company}").FontSize(10).FontColor(Colors.Grey.Darken1);
-                                });
-                                if (!string.IsNullOrEmpty(group.Source))
-                                {
-                                    r.RelativeItem(1).AlignRight().Text(group.Source).FontSize(9).FontColor(Colors.Blue.Medium);
-                                }
-                            });
+                    gfx.DrawString(cells[i], fontTableCell, XBrushes.Black,
+                        new XRect(x + 3, y, colWidths[i] - 6, rowHeight), XStringFormats.CenterLeft);
+                    x += colWidths[i];
+                }
 
-                            if (!string.IsNullOrEmpty(group.JobUrl))
-                            {
-                                jobCol.Item().Text(group.JobUrl).FontSize(7).FontColor(Colors.Blue.Darken1);
-                            }
+                y += rowHeight;
+                alternate = !alternate;
+            }
 
-                            jobCol.Item().PaddingTop(4).Table(table =>
-                            {
-                                table.ColumnsDefinition(columns =>
-                                {
-                                    columns.ConstantColumn(75);  // Date
-                                    columns.ConstantColumn(45);  // Time
-                                    columns.ConstantColumn(100); // Activity
-                                    columns.RelativeColumn();    // Details
-                                    columns.ConstantColumn(90);  // Change
-                                });
+            // Separator line
+            y += 6;
+            gfx.DrawLine(XPens.LightGray, marginLeft, y, pageWidth - marginLeft, y);
+            y += 8;
+        }
 
-                                table.Header(header =>
-                                {
-                                    header.Cell().Background(Colors.Grey.Lighten3).Padding(3).Text("Date").Bold().FontSize(8);
-                                    header.Cell().Background(Colors.Grey.Lighten3).Padding(3).Text("Time").Bold().FontSize(8);
-                                    header.Cell().Background(Colors.Grey.Lighten3).Padding(3).Text("Activity").Bold().FontSize(8);
-                                    header.Cell().Background(Colors.Grey.Lighten3).Padding(3).Text("Details").Bold().FontSize(8);
-                                    header.Cell().Background(Colors.Grey.Lighten3).Padding(3).Text("Change").Bold().FontSize(8);
-                                });
-
-                                foreach (var entry in group.Entries)
-                                {
-                                    table.Cell().Padding(3).Text(entry.Timestamp.ToString("dd/MM/yyyy")).FontSize(8);
-                                    table.Cell().Padding(3).Text(entry.Timestamp.ToString("HH:mm")).FontSize(8);
-                                    table.Cell().Padding(3).Text(GetActionTypeDisplay(entry.ActionType)).FontSize(8);
-                                    table.Cell().Padding(3).Text(entry.Details ?? "").FontSize(8);
-                                    table.Cell().Padding(3).Text(
-                                        !string.IsNullOrEmpty(entry.OldValue) && !string.IsNullOrEmpty(entry.NewValue)
-                                            ? $"{entry.OldValue} -> {entry.NewValue}"
-                                            : ""
-                                    ).FontSize(8);
-                                }
-                            });
-                        });
-                    }
-                });
-
-                page.Footer().AlignCenter().Text(text =>
-                {
-                    text.Span("Page ");
-                    text.CurrentPageNumber();
-                    text.Span(" of ");
-                    text.TotalPages();
-                    text.Span($"  |  Generated {DateTime.Now:dd/MM/yyyy HH:mm}");
-                });
-            });
-        });
+        DrawFooter(gfx, pageNum);
 
         using var ms = new MemoryStream();
-        document.GeneratePdf(ms);
+        document.Save(ms, false);
         return ms.ToArray();
+    }
+
+    private static string TruncateText(string text, int maxLength)
+    {
+        if (text.Length <= maxLength) return text;
+        return text[..(maxLength - 3)] + "...";
     }
 
     public byte[] ExportToWord(List<JsaReportGroup> groups, JsaReportSummary summary, string appBaseUrl)

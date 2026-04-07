@@ -50,7 +50,8 @@
       "Bash(dotnet tool:*)",
       "Bash(powershell -ExecutionPolicy Bypass -File build/build-msi.ps1)",
       "Bash(powershell:*)",
-      "Bash(python3 -c ':*)"
+      "Bash(python3 -c ':*)",
+      "Bash(dotnet remove:*)"
     ]
   }
 }
