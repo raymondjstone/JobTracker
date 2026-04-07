@@ -98,6 +98,7 @@ builder.Services.AddScoped<JobRulesService>();
 builder.Services.AddScoped<JobHistoryService>();
 builder.Services.AddScoped<JobScoringService>();
 builder.Services.AddScoped<JobSimilarityService>();
+builder.Services.AddScoped<JsaReportService>();
 
 // AI Assistant service with HttpClient
 builder.Services.AddHttpClient<AIJobAssistantService>(client =>

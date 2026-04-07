@@ -15,6 +15,8 @@
 
   <ItemGroup>
     <PackageReference Include="Azure.Identity" Version="1.17.1" />
+    <PackageReference Include="ClosedXML" Version="0.105.0" />
+    <PackageReference Include="DocumentFormat.OpenXml" Version="3.5.1" />
     <PackageReference Include="MailKit" Version="4.15.1" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.0" />
@@ -23,6 +25,7 @@
     <PackageReference Include="Hangfire.SqlServer" Version="1.8.*" />
     <PackageReference Include="Hangfire.AspNetCore" Version="1.8.*" />
     <PackageReference Include="Otp.NET" Version="1.4.0" />
+    <PackageReference Include="QuestPDF" Version="2026.2.4" />
   </ItemGroup>
 
   <!-- Extension directories to zip -->
@@ -72,8 +75,7 @@
 
   <!-- Publish self-contained x86 and x64 builds, zip into Portable/.
        Skips when already inside a publish (to avoid recursion). -->
-  <Target Name="CreatePortableZip" AfterTargets="Build"
-          Condition="'$(CreatePortableZip)' != 'false'">
+  <Target Name="CreatePortableZip" AfterTargets="Build" Condition="'$(CreatePortableZip)' != 'false'">
 
     <PropertyGroup>
       <PortableOutputDir>$(MSBuildProjectDirectory)\Portable</PortableOutputDir>
