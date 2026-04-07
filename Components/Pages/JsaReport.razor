@@ -1,0 +1,473 @@
+@page "/jsa-report"
+@using JobTracker.Models
+@using JobTracker.Services
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject JsaReportService ReportService
+@inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
+@rendermode InteractiveServer
+
+<PageTitle>JSA Report - Job Tracker</PageTitle>
+
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1><i class="bi bi-file-earmark-text"></i> JSA Job Search Report</h1>
+        <div class="d-flex gap-2">
+            @if (reportGroups.Count > 0)
+            {
+                <div class="btn-group">
+                    <button class="btn btn-success" @onclick="ExportExcel" disabled="@isExporting">
+                        <i class="bi bi-file-earmark-spreadsheet"></i> Excel
+                    </button>
+                    <button class="btn btn-primary" @onclick="ExportWord" disabled="@isExporting">
+                        <i class="bi bi-file-earmark-word"></i> Word
+                    </button>
+                    <button class="btn btn-danger" @onclick="ExportPdf" disabled="@isExporting">
+                        <i class="bi bi-file-earmark-pdf"></i> PDF
+                    </button>
+                </div>
+            }
+            <button class="btn btn-outline-secondary" @onclick="GenerateReport">
+                <i class="bi bi-arrow-clockwise"></i> Refresh
+            </button>
+        </div>
+    </div>
+
+    <!-- Info banner -->
+    <div class="alert alert-info mb-4">
+        <i class="bi bi-info-circle"></i>
+        <strong>New Style JSA Evidence Report</strong> &mdash; Use this report to evidence your job search activity for your Jobcentre Plus work coach appointments.
+        It shows all tracked job search activities grouped by job listing, with dates, companies, and application status. Export to take to your appointment.
+    </div>
+
+    <!-- Filters -->
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="bi bi-funnel"></i> Report Filters</h5>
+            @if (HasActiveFilters)
+            {
+                <button class="btn btn-sm btn-outline-secondary" @onclick="ClearFilters">
+                    <i class="bi bi-x"></i> Clear Filters
+                </button>
+            }
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label">From Date</label>
+                    <input type="date" class="form-control" @bind="filterFromDate" @bind:after="GenerateReport" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">To Date</label>
+                    <input type="date" class="form-control" @bind="filterToDate" @bind:after="GenerateReport" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Change Source</label>
+                    <select class="form-select" @bind="filterChangeSource" @bind:after="GenerateReport">
+                        <option value="">All Sources</option>
+                        @foreach (var source in Enum.GetValues<HistoryChangeSource>())
+                        {
+                            <option value="@source">@source</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Search</label>
+                    <input type="text" class="form-control" placeholder="Job title, company..."
+                           @bind="filterSearchTerm" @bind:event="oninput" @bind:after="GenerateReportDebounced" />
+                </div>
+            </div>
+
+            <!-- Activity type checkboxes -->
+            <div class="mt-3">
+                <label class="form-label fw-bold">Activity Types to Include:</label>
+                <div class="d-flex flex-wrap gap-3">
+                    @foreach (var actionType in availableActionTypes)
+                    {
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="@($"at_{actionType.Key}")"
+                                   checked="@selectedActionTypes.Contains(actionType.Key)"
+                                   @onchange="e => ToggleActionType(actionType.Key, (bool)e.Value!)" />
+                            <label class="form-check-label" for="@($"at_{actionType.Key}")">@actionType.Value</label>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <!-- Quick date range buttons -->
+            <div class="mt-3">
+                <label class="form-label fw-bold">Quick Range:</label>
+                <div class="d-flex gap-2 flex-wrap">
+                    <button class="btn btn-sm btn-outline-primary" @onclick="() => SetDateRange(7)">Last 7 days</button>
+                    <button class="btn btn-sm btn-outline-primary" @onclick="() => SetDateRange(14)">Last 2 weeks</button>
+                    <button class="btn btn-sm btn-outline-primary" @onclick="() => SetDateRange(30)">Last 30 days</button>
+                    <button class="btn btn-sm btn-outline-primary" @onclick="() => SetDateRange(90)">Last 3 months</button>
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="SetCurrentSigningPeriod">Current Signing Period</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2 text-muted">Generating report...</p>
+        </div>
+    }
+    else
+    {
+        <!-- Summary Stats -->
+        @if (summary != null)
+        {
+            <div class="row mb-4">
+                <div class="col-md-2">
+                    <div class="card bg-light">
+                        <div class="card-body text-center py-2">
+                            <h4 class="mb-0">@summary.TotalJobs</h4>
+                            <small class="text-muted">Jobs Tracked</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="card bg-light">
+                        <div class="card-body text-center py-2">
+                            <h4 class="mb-0">@summary.JobsAppliedTo</h4>
+                            <small class="text-muted">Applied To</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="card bg-light">
+                        <div class="card-body text-center py-2">
+                            <h4 class="mb-0">@summary.TotalActivities</h4>
+                            <small class="text-muted">Total Activities</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="card bg-light">
+                        <div class="card-body text-center py-2">
+                            <h4 class="mb-0">@summary.ActivitiesPerWeek</h4>
+                            <small class="text-muted">Avg / Week</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="card bg-light">
+                        <div class="card-body text-center py-2">
+                            <h4 class="mb-0">@summary.JobsAddedCount</h4>
+                            <small class="text-muted">Jobs Added</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="card bg-light">
+                        <div class="card-body text-center py-2">
+                            <h4 class="mb-0">@(summary.DateFrom?.ToString("dd/MM") ?? "-") - @(summary.DateTo?.ToString("dd/MM") ?? "-")</h4>
+                            <small class="text-muted">Period</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <!-- Report Content -->
+        @if (reportGroups.Count == 0)
+        {
+            <div class="text-center py-5 text-muted">
+                <i class="bi bi-inbox display-4"></i>
+                <p class="mt-3">No job search activity found for the selected filters.</p>
+                <p><small>Try adjusting the date range or activity type filters above.</small></p>
+            </div>
+        }
+        else
+        {
+            @foreach (var group in reportGroups)
+            {
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <h5 class="mb-1">
+                                    @group.JobTitle
+                                    @if (!string.IsNullOrEmpty(group.Company))
+                                    {
+                                        <small class="text-muted ms-2">@("@") @group.Company</small>
+                                    }
+                                </h5>
+                                <div class="d-flex gap-3 flex-wrap">
+                                    @if (!string.IsNullOrEmpty(group.Source))
+                                    {
+                                        <span class="badge bg-info"><i class="bi bi-globe"></i> @group.Source</span>
+                                    }
+                                    <span class="badge bg-secondary"><i class="bi bi-clock"></i> @group.Entries.Count activities</span>
+                                    <span class="badge bg-light text-dark">Latest: @group.LatestActivity.ToString("dd/MM/yyyy HH:mm")</span>
+                                </div>
+                            </div>
+                            <div class="d-flex gap-2">
+                                @if (!string.IsNullOrEmpty(group.JobUrl))
+                                {
+                                    <a href="@group.JobUrl" target="_blank" rel="noopener noreferrer"
+                                       class="btn btn-sm btn-outline-primary" title="View original job posting">
+                                        <i class="bi bi-box-arrow-up-right"></i> Original
+                                    </a>
+                                }
+                                @if (group.JobExists)
+                                {
+                                    <a href="@($"/?jobId={group.JobId}")"
+                                       class="btn btn-sm btn-outline-secondary" title="View in Job Tracker">
+                                        <i class="bi bi-eye"></i> View in App
+                                    </a>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover table-sm mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th style="width: 100px;">Date</th>
+                                        <th style="width: 60px;">Time</th>
+                                        <th style="width: 120px;">Activity</th>
+                                        <th>Details</th>
+                                        <th style="width: 150px;">Change</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var entry in group.Entries)
+                                    {
+                                        <tr>
+                                            <td><small>@entry.Timestamp.ToString("dd/MM/yyyy")</small></td>
+                                            <td><small class="text-muted">@entry.Timestamp.ToString("HH:mm")</small></td>
+                                            <td>
+                                                <span class="badge @GetActionBadgeClass(entry.ActionType)">
+                                                    @JsaReportService.GetActionTypeDisplay(entry.ActionType)
+                                                </span>
+                                            </td>
+                                            <td><small>@entry.Details</small></td>
+                                            <td>
+                                                @if (!string.IsNullOrEmpty(entry.OldValue) && !string.IsNullOrEmpty(entry.NewValue))
+                                                {
+                                                    <small class="text-muted">@entry.OldValue &rarr; @entry.NewValue</small>
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            }
+        }
+    }
+</div>
+
+@if (isExporting)
+{
+    <div class="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center" style="background: rgba(0,0,0,0.3); z-index: 9999;">
+        <div class="card p-4 text-center">
+            <div class="spinner-border text-primary mb-2" role="status"></div>
+            <p class="mb-0">Generating export...</p>
+        </div>
+    </div>
+}
+
+@code {
+    private List<JsaReportGroup> reportGroups = new();
+    private JsaReportSummary? summary;
+    private bool isLoading = true;
+    private bool isExporting = false;
+
+    // Filters
+    private DateTime? filterFromDate;
+    private DateTime? filterToDate;
+    private string filterChangeSource = "";
+    private string filterSearchTerm = "";
+    private HashSet<HistoryActionType> selectedActionTypes = new(JsaReportService.DefaultJsaActionTypes);
+
+    private System.Timers.Timer? debounceTimer;
+
+    // All available action types that can be selected
+    private readonly Dictionary<HistoryActionType, string> availableActionTypes = new()
+    {
+        { HistoryActionType.JobAdded, "Job Added" },
+        { HistoryActionType.AppliedStatusChanged, "Applied" },
+        { HistoryActionType.ApplicationStageChanged, "Stage Changes" },
+        { HistoryActionType.InterestChanged, "Interest" },
+        { HistoryActionType.SuitabilityChanged, "Suitability" },
+        { HistoryActionType.DescriptionUpdated, "Description Updated" },
+        { HistoryActionType.TitleUpdated, "Title Updated" },
+        { HistoryActionType.CompanyUpdated, "Company Updated" },
+        { HistoryActionType.NotesUpdated, "Notes Updated" },
+        { HistoryActionType.ContactAdded, "Contact Added" },
+        { HistoryActionType.InteractionAdded, "Interaction Added" }
+    };
+
+    private bool HasActiveFilters => filterFromDate.HasValue || filterToDate.HasValue ||
+        !string.IsNullOrEmpty(filterChangeSource) || !string.IsNullOrEmpty(filterSearchTerm) ||
+        !selectedActionTypes.SetEquals(JsaReportService.DefaultJsaActionTypes);
+
+    protected override void OnInitialized()
+    {
+        // Default to last 14 days (typical signing period)
+        filterFromDate = DateTime.Today.AddDays(-14);
+        filterToDate = DateTime.Today;
+        GenerateReport();
+    }
+
+    private void GenerateReport()
+    {
+        isLoading = true;
+
+        var filter = new JsaReportFilter
+        {
+            SelectedActionTypes = selectedActionTypes,
+            FromDate = filterFromDate,
+            ToDate = filterToDate,
+            ChangeSource = string.IsNullOrEmpty(filterChangeSource) ? null : Enum.Parse<HistoryChangeSource>(filterChangeSource),
+            SearchTerm = filterSearchTerm
+        };
+
+        reportGroups = ReportService.GenerateReport(filter);
+        summary = ReportService.GetSummary(reportGroups, filter);
+        isLoading = false;
+    }
+
+    private void GenerateReportDebounced()
+    {
+        debounceTimer?.Stop();
+        debounceTimer?.Dispose();
+        debounceTimer = new System.Timers.Timer(300);
+        debounceTimer.Elapsed += (s, e) =>
+        {
+            debounceTimer?.Stop();
+            InvokeAsync(() =>
+            {
+                GenerateReport();
+                StateHasChanged();
+            });
+        };
+        debounceTimer.Start();
+    }
+
+    private void ToggleActionType(HistoryActionType type, bool isChecked)
+    {
+        if (isChecked)
+            selectedActionTypes.Add(type);
+        else
+            selectedActionTypes.Remove(type);
+        GenerateReport();
+    }
+
+    private void SetDateRange(int days)
+    {
+        filterFromDate = DateTime.Today.AddDays(-days);
+        filterToDate = DateTime.Today;
+        GenerateReport();
+    }
+
+    private void SetCurrentSigningPeriod()
+    {
+        // Typical JSA signing is fortnightly
+        filterFromDate = DateTime.Today.AddDays(-14);
+        filterToDate = DateTime.Today;
+        GenerateReport();
+    }
+
+    private void ClearFilters()
+    {
+        filterFromDate = null;
+        filterToDate = null;
+        filterChangeSource = "";
+        filterSearchTerm = "";
+        selectedActionTypes = new(JsaReportService.DefaultJsaActionTypes);
+        GenerateReport();
+    }
+
+    private string GetAppBaseUrl()
+    {
+        return Navigation.BaseUri;
+    }
+
+    private async Task ExportExcel()
+    {
+        isExporting = true;
+        StateHasChanged();
+        await Task.Delay(50); // Let UI update
+
+        try
+        {
+            var bytes = ReportService.ExportToExcel(reportGroups, summary!, GetAppBaseUrl());
+            var base64 = Convert.ToBase64String(bytes);
+            await JSRuntime.InvokeVoidAsync("jobTracker.downloadFile", base64,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                $"JSA-Report-{DateTime.Now:yyyy-MM-dd}.xlsx");
+        }
+        finally
+        {
+            isExporting = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ExportWord()
+    {
+        isExporting = true;
+        StateHasChanged();
+        await Task.Delay(50);
+
+        try
+        {
+            var bytes = ReportService.ExportToWord(reportGroups, summary!, GetAppBaseUrl());
+            var base64 = Convert.ToBase64String(bytes);
+            await JSRuntime.InvokeVoidAsync("jobTracker.downloadFile", base64,
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                $"JSA-Report-{DateTime.Now:yyyy-MM-dd}.docx");
+        }
+        finally
+        {
+            isExporting = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ExportPdf()
+    {
+        isExporting = true;
+        StateHasChanged();
+        await Task.Delay(50);
+
+        try
+        {
+            var bytes = ReportService.ExportToPdf(reportGroups, summary!, GetAppBaseUrl());
+            var base64 = Convert.ToBase64String(bytes);
+            await JSRuntime.InvokeVoidAsync("jobTracker.downloadFile", base64,
+                "application/pdf",
+                $"JSA-Report-{DateTime.Now:yyyy-MM-dd}.pdf");
+        }
+        finally
+        {
+            isExporting = false;
+            StateHasChanged();
+        }
+    }
+
+    private static string GetActionBadgeClass(HistoryActionType action)
+    {
+        return action switch
+        {
+            HistoryActionType.JobAdded => "bg-success",
+            HistoryActionType.AppliedStatusChanged => "bg-primary",
+            HistoryActionType.ApplicationStageChanged => "bg-info",
+            HistoryActionType.InterestChanged => "bg-warning text-dark",
+            HistoryActionType.SuitabilityChanged => "bg-secondary",
+            _ => "bg-light text-dark"
+        };
+    }
+}
