@@ -20,7 +20,7 @@ public class JobHistoryServiceTests
     {
         _storageMock = new Mock<IStorageBackend>();
         _storageMock.Setup(s => s.LoadHistory(It.IsAny<Guid>())).Returns(new List<JobHistoryEntry>());
-        _storageMock.Setup(s => s.AddHistoryEntry(It.IsAny<JobHistoryEntry>()));
+        _storageMock.Setup(s => s.AddHistoryEntry(It.IsAny<JobHistoryEntry>(), It.IsAny<int>()));
 
         _currentUserMock = new Mock<CurrentUserService>(
             MockBehavior.Loose,
@@ -61,7 +61,7 @@ public class JobHistoryServiceTests
             e.Company == "Acme" &&
             e.ChangeSource == HistoryChangeSource.BrowserExtension &&
             e.UserId == _userId
-        )), Times.Once);
+        ), It.IsAny<int>()), Times.Once);
     }
 
     [Fact]
@@ -73,7 +73,7 @@ public class JobHistoryServiceTests
         _storageMock.Verify(s => s.AddHistoryEntry(It.Is<JobHistoryEntry>(e =>
             e.ActionType == HistoryActionType.JobDeleted &&
             e.ChangeSource == HistoryChangeSource.Manual
-        )), Times.Once);
+        ), It.IsAny<int>()), Times.Once);
     }
 
     [Fact]
@@ -86,7 +86,7 @@ public class JobHistoryServiceTests
             e.OldValue == "NotRated" &&
             e.NewValue == "Interested" &&
             e.ActionType == HistoryActionType.InterestChanged
-        )), Times.Once);
+        ), It.IsAny<int>()), Times.Once);
     }
 
     [Fact]
@@ -99,7 +99,7 @@ public class JobHistoryServiceTests
             e.OldValue == "NotRated" &&
             e.RuleName == "Test Rule" &&
             e.Details!.Contains("Test Rule")
-        )), Times.Once);
+        ), It.IsAny<int>()), Times.Once);
     }
 
     [Fact]
@@ -112,7 +112,7 @@ public class JobHistoryServiceTests
         _storageMock.Verify(s => s.AddHistoryEntry(It.Is<JobHistoryEntry>(e =>
             e.Details == "Job expired" &&
             e.NewValue == "Unsuitable"
-        )), Times.Once);
+        ), It.IsAny<int>()), Times.Once);
     }
 
     [Fact]
@@ -125,7 +125,7 @@ public class JobHistoryServiceTests
             e.Details == "Marked as applied" &&
             e.OldValue == "Not Applied" &&
             e.NewValue == "Applied"
-        )), Times.Once);
+        ), It.IsAny<int>()), Times.Once);
     }
 
     [Fact]
@@ -138,7 +138,7 @@ public class JobHistoryServiceTests
             e.OldValue == "Empty" &&
             e.NewValue == "500 chars" &&
             e.ActionType == HistoryActionType.DescriptionUpdated
-        )), Times.Once);
+        ), It.IsAny<int>()), Times.Once);
     }
 
     [Fact]
@@ -232,7 +232,7 @@ public class JobHistoryServiceTests
             e.JobId == Guid.Empty &&
             e.ActionType == HistoryActionType.BulkImport &&
             e.Details!.Contains("42")
-        )), Times.Once);
+        ), It.IsAny<int>()), Times.Once);
     }
 
     [Fact]
@@ -243,7 +243,7 @@ public class JobHistoryServiceTests
         _service.RecordJobAdded(job, HistoryChangeSource.Manual);
 
         // Entry should still be stored because AddEntry uses the job's UserId
-        _storageMock.Verify(s => s.AddHistoryEntry(It.IsAny<JobHistoryEntry>()), Times.Once);
+        _storageMock.Verify(s => s.AddHistoryEntry(It.IsAny<JobHistoryEntry>(), It.IsAny<int>()), Times.Once);
     }
 
     [Fact]
@@ -279,7 +279,7 @@ public class JobHistoryServiceTests
             e.OldValue == "Onsite" &&
             e.NewValue == "Remote" &&
             e.RuleName == "Remote Rule"
-        )), Times.Once);
+        ), It.IsAny<int>()), Times.Once);
     }
 
     [Fact]
