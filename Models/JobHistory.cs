@@ -22,6 +22,11 @@ public class JobHistoryEntry
     public string? NewValue { get; set; }
     public string? Details { get; set; }
     public string? RuleName { get; set; } // If changed by a rule
+
+    // Contact/Discussion fields (lightweight job-spec-style tracking)
+    public string? ContactName { get; set; }
+    public string? ContactReason { get; set; }
+    public string? ContactResult { get; set; }
 }
 
 public enum HistoryActionType
@@ -45,7 +50,8 @@ public enum HistoryActionType
     Modified,             // Generic field modification (for change timeline)
     ContactAdded,
     ContactRemoved,
-    InteractionAdded
+    InteractionAdded,
+    ContactDiscussion
 }
 
 public enum HistoryChangeSource

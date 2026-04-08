@@ -8,6 +8,7 @@ window.crawlPagesRunner = {
     if (!this._win || this._win.closed) {
       this._win = window.open(url, '_blank');
       if (!this._win) return false;
+      try { this._win.opener = null; } catch { }
     } else {
       this._win.location = url;
       try { this._win.focus(); } catch { }
@@ -30,8 +31,12 @@ window.crawlPagesRunner = {
 window.jobTracker = {
   shutdown: function () {
     document.title = 'JobTracker - Shut Down';
-    // Send shutdown request BEFORE destroying the DOM / Blazor circuit
-    fetch('/api/shutdown', { method: 'POST' }).catch(function () { /* server may drop connection */ });
+    // Send shutdown request reliably — sendBeacon survives page unload; fetch+keepalive as fallback
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon('/api/shutdown');
+    } else {
+      fetch('/api/shutdown', { method: 'POST', keepalive: true }).catch(function () { });
+    }
     // Show goodbye message after request is dispatched
     document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:system-ui;color:#666;"><div style="text-align:center;"><h2>JobTracker has shut down</h2><p>You can close this tab.</p></div></div>';
     setTimeout(function () { window.close(); }, 500);

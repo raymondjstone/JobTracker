@@ -3,13 +3,14 @@
 @inject UpdateCheckService UpdateCheckService
 @inject NavigationManager NavigationManager
 @inject IJSRuntime JS
+@inject IHttpClientFactory HttpClientFactory
 
 @if (UpdateCheckService.UpdateAvailable)
 {
     <div class="update-banner">
         <i class="bi bi-arrow-up-circle-fill"></i>
         A new version (<strong>@UpdateCheckService.LatestVersion</strong>) is available!
-        <a href="javascript:void(0)" @onclick="DownloadUpdate">Download &amp; restart</a>
+        <button type="button" class="btn btn-link p-0 align-baseline" @onclick="DownloadUpdate">Download &amp; restart</button>
     </div>
 }
 
@@ -27,7 +28,7 @@
             await JS.InvokeVoidAsync("open", url, "_blank");
         }
 
-        using var http = new HttpClient();
+        using var http = HttpClientFactory.CreateClient();
         var baseUri = new Uri(NavigationManager.BaseUri);
         await http.PostAsync(new Uri(baseUri, "/api/update-download"), null);
     }

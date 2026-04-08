@@ -228,6 +228,9 @@ if (!builder.Environment.IsDevelopment())
     builder.WebHost.UseStaticWebAssets();
 }
 
+// Configure PDFsharp font resolver once at startup (required for the base PDFsharp package)
+PdfSharp.Fonts.GlobalFontSettings.FontResolver ??= new JobTracker.Services.WindowsFontResolver();
+
 var app = builder.Build();
 var log = app.Logger;
 

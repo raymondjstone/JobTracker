@@ -4,6 +4,9 @@
 @using Microsoft.AspNetCore.Authorization
 @attribute [Authorize]
 @inject JsaReportService ReportService
+@inject JobHistoryService HistoryService
+@inject AppSettingsService SettingsService
+@inject EmailService EmailService
 @inject NavigationManager Navigation
 @inject IJSRuntime JSRuntime
 @rendermode InteractiveServer
@@ -27,9 +30,18 @@
                         <i class="bi bi-file-earmark-pdf"></i> PDF
                     </button>
                 </div>
+                @if (!string.IsNullOrEmpty(jsaSettings.WorkCoachEmail))
+                {
+                    <button class="btn btn-outline-primary" @onclick="EmailReport" disabled="@isExporting" title="Email PDF report to @jsaSettings.WorkCoachName">
+                        <i class="bi bi-envelope"></i> Email to @(string.IsNullOrEmpty(jsaSettings.WorkCoachName) ? "Work Coach" : jsaSettings.WorkCoachName)
+                    </button>
+                }
             }
             <button class="btn btn-outline-secondary" @onclick="GenerateReport">
                 <i class="bi bi-arrow-clockwise"></i> Refresh
+            </button>
+            <button class="btn btn-outline-primary" @onclick="() => showAddContactModal = true">
+                <i class="bi bi-person-plus"></i> Add Contact/Discussion
             </button>
         </div>
     </div>
@@ -104,6 +116,10 @@
                     <button class="btn btn-sm btn-outline-primary" @onclick="() => SetDateRange(30)">Last 30 days</button>
                     <button class="btn btn-sm btn-outline-primary" @onclick="() => SetDateRange(90)">Last 3 months</button>
                     <button class="btn btn-sm btn-outline-secondary" @onclick="SetCurrentSigningPeriod">Current Signing Period</button>
+                    @if (jsaSettings.SigningStartDate.HasValue && jsaSettings.PeriodLengthDays > 0)
+                    {
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="SetPreviousSigningPeriod">Previous Signing Period</button>
+                    }
                 </div>
             </div>
         </div>
@@ -249,7 +265,21 @@
                                                     @JsaReportService.GetActionTypeDisplay(entry.ActionType)
                                                 </span>
                                             </td>
-                                            <td><small>@entry.Details</small></td>
+                                            <td>
+                                                <small>@entry.Details</small>
+                                                @if (!string.IsNullOrEmpty(entry.ContactName))
+                                                {
+                                                    <br /><small class="text-muted"><strong>Contact:</strong> @entry.ContactName</small>
+                                                }
+                                                @if (!string.IsNullOrEmpty(entry.ContactReason))
+                                                {
+                                                    <br /><small class="text-muted"><strong>Reason:</strong> @entry.ContactReason</small>
+                                                }
+                                                @if (!string.IsNullOrEmpty(entry.ContactResult))
+                                                {
+                                                    <br /><small class="text-muted"><strong>Result:</strong> @entry.ContactResult</small>
+                                                }
+                                            </td>
                                             <td>
                                                 @if (!string.IsNullOrEmpty(entry.OldValue) && !string.IsNullOrEmpty(entry.NewValue))
                                                 {
@@ -269,9 +299,16 @@
 
     @if (!string.IsNullOrEmpty(exportError))
     {
-        <div class="alert alert-danger alert-dismissible mt-3">
+        <div class="alert alert-danger alert-dismissible mt-3" role="alert">
             <i class="bi bi-exclamation-triangle"></i> @exportError
-            <button type="button" class="btn-close" @onclick="() => exportError = null"></button>
+            <button type="button" class="btn-close" aria-label="Close" @onclick="() => exportError = null"></button>
+        </div>
+    }
+    @if (!string.IsNullOrEmpty(emailSuccessMessage))
+    {
+        <div class="alert alert-success alert-dismissible mt-3" role="alert">
+            <i class="bi bi-check-circle"></i> @emailSuccessMessage
+            <button type="button" class="btn-close" aria-label="Close" @onclick="() => emailSuccessMessage = null"></button>
         </div>
     }
 </div>
@@ -286,12 +323,74 @@
     </div>
 }
 
+@if (showAddContactModal)
+{
+    <div class="modal fade show" style="display: block; background: rgba(0,0,0,0.5);" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-person-plus"></i> Add Contact/Discussion</h5>
+                    <button type="button" class="btn-close" @onclick="CloseAddContactModal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Job Title or Role</label>
+                        <input type="text" class="form-control" @bind="newContactJobTitle" placeholder="e.g., Senior Developer" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Company/Recruiter</label>
+                        <input type="text" class="form-control" @bind="newContactCompany" placeholder="e.g., Tech Corp Ltd" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Contact Name</label>
+                        <input type="text" class="form-control" @bind="newContactName" placeholder="e.g., John Smith" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Reason for Contact</label>
+                        <input type="text" class="form-control" @bind="newContactReason" placeholder="e.g., Phone screening, Follow-up email" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Result/Outcome</label>
+                        <textarea class="form-control" rows="3" @bind="newContactResult" placeholder="e.g., Arranged interview for next week"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Date/Time (optional)</label>
+                        <input type="datetime-local" class="form-control" @bind="newContactTimestamp" />
+                        <small class="form-text text-muted">Leave blank to use current date/time</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseAddContactModal">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="SaveContactDiscussion" disabled="@(!IsContactFormValid)">
+                        <i class="bi bi-save"></i> Save
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private List<JsaReportGroup> reportGroups = new();
     private JsaReportSummary? summary;
     private bool isLoading = true;
     private bool isExporting = false;
     private string? exportError;
+    private string? emailSuccessMessage;
+
+    // Add Contact/Discussion modal
+    private bool showAddContactModal = false;
+    private string newContactJobTitle = "";
+    private string newContactCompany = "";
+    private string newContactName = "";
+    private string newContactReason = "";
+    private string newContactResult = "";
+    private DateTime? newContactTimestamp;
+
+    private bool IsContactFormValid =>
+        !string.IsNullOrWhiteSpace(newContactJobTitle) &&
+        !string.IsNullOrWhiteSpace(newContactCompany) &&
+        !string.IsNullOrWhiteSpace(newContactName);
 
     // Filters
     private DateTime? filterFromDate;
@@ -315,19 +414,43 @@
         { HistoryActionType.CompanyUpdated, "Company Updated" },
         { HistoryActionType.NotesUpdated, "Notes Updated" },
         { HistoryActionType.ContactAdded, "Contact Added" },
-        { HistoryActionType.InteractionAdded, "Interaction Added" }
+        { HistoryActionType.InteractionAdded, "Interaction Added" },
+        { HistoryActionType.ContactDiscussion, "Contact/Discussion" }
     };
 
     private bool HasActiveFilters => filterFromDate.HasValue || filterToDate.HasValue ||
         !string.IsNullOrEmpty(filterChangeSource) || !string.IsNullOrEmpty(filterSearchTerm) ||
         !selectedActionTypes.SetEquals(JsaReportService.DefaultJsaActionTypes);
 
+    private JsaSettings jsaSettings = new();
+
     protected override void OnInitialized()
     {
-        // Default to last 14 days (typical signing period)
-        filterFromDate = DateTime.Today.AddDays(-14);
-        filterToDate = DateTime.Today;
+        jsaSettings = SettingsService.GetSettings().Jsa;
+        var period = GetCurrentSigningDates();
+        filterFromDate = period.from;
+        filterToDate = period.to;
         GenerateReport();
+    }
+
+    private (DateTime from, DateTime to) GetCurrentSigningDates()
+    {
+        if (jsaSettings.SigningStartDate.HasValue && jsaSettings.PeriodLengthDays > 0)
+        {
+            var start = jsaSettings.SigningStartDate.Value.Date;
+            var periodDays = jsaSettings.PeriodLengthDays;
+            var daysSinceStart = (DateTime.Today - start).Days;
+            if (daysSinceStart >= 0)
+            {
+                var currentPeriodIndex = daysSinceStart / periodDays;
+                var periodStart = start.AddDays(currentPeriodIndex * periodDays);
+                var periodEnd = periodStart.AddDays(periodDays - 1);
+                // Return full period even if end date is in the future
+                return (periodStart, periodEnd);
+            }
+        }
+        // Fallback: last 14 days
+        return (DateTime.Today.AddDays(-14), DateTime.Today);
     }
 
     private void GenerateReport()
@@ -383,10 +506,36 @@
 
     private void SetCurrentSigningPeriod()
     {
-        // Typical JSA signing is fortnightly
-        filterFromDate = DateTime.Today.AddDays(-14);
-        filterToDate = DateTime.Today;
+        var period = GetCurrentSigningDates();
+        filterFromDate = period.from;
+        filterToDate = period.to;
         GenerateReport();
+    }
+
+    private void SetPreviousSigningPeriod()
+    {
+        if (jsaSettings.SigningStartDate.HasValue && jsaSettings.PeriodLengthDays > 0)
+        {
+            var start = jsaSettings.SigningStartDate.Value.Date;
+            var periodDays = jsaSettings.PeriodLengthDays;
+            var daysSinceStart = (DateTime.Today - start).Days;
+            if (daysSinceStart >= 0)
+            {
+                var currentPeriodIndex = daysSinceStart / periodDays;
+                var previousPeriodIndex = currentPeriodIndex - 1;
+                if (previousPeriodIndex >= 0)
+                {
+                    var periodStart = start.AddDays(previousPeriodIndex * periodDays);
+                    var periodEnd = periodStart.AddDays(periodDays - 1);
+                    filterFromDate = periodStart;
+                    filterToDate = periodEnd;
+                    GenerateReport();
+                    return;
+                }
+            }
+        }
+        // Fallback if no previous period available
+        SetDateRange(14);
     }
 
     private void ClearFilters()
@@ -482,6 +631,85 @@
         }
     }
 
+    private async Task EmailReport()
+    {
+        isExporting = true;
+        exportError = null;
+        emailSuccessMessage = null;
+        StateHasChanged();
+        await Task.Delay(50);
+
+        try
+        {
+            var smtpSettings = SettingsService.GetSettingsDecrypted();
+            if (string.IsNullOrEmpty(smtpSettings.SmtpHost))
+            {
+                exportError = "SMTP is not configured. Please configure email settings first.";
+                return;
+            }
+
+            var pdfBytes = ReportService.ExportToPdf(reportGroups, summary!, GetAppBaseUrl());
+            var fileName = $"JSA-Report-{DateTime.Now:yyyy-MM-dd}.pdf";
+            var periodText = $"{summary!.DateFrom:dd/MM/yyyy} - {summary.DateTo:dd/MM/yyyy}";
+
+            var htmlBody = $@"<p>Please find attached my JSA Job Search Activity Report for the period <strong>{periodText}</strong>.</p>
+<p>Summary: {summary.TotalJobs} jobs tracked, {summary.JobsAppliedTo} applied to, {summary.TotalActivities} total activities.</p>
+<p>Kind regards</p>";
+
+            var sent = await EmailService.SendEmailWithAttachmentAsync(
+                jsaSettings.WorkCoachEmail,
+                $"JSA Job Search Report - {periodText}",
+                htmlBody,
+                smtpSettings.SmtpHost, smtpSettings.SmtpPort,
+                smtpSettings.SmtpUsername, smtpSettings.SmtpPassword,
+                smtpSettings.SmtpFromEmail, smtpSettings.SmtpFromName,
+                pdfBytes, fileName, "application/pdf");
+
+            if (sent)
+                emailSuccessMessage = $"Report emailed to {jsaSettings.WorkCoachEmail}";
+            else
+                exportError = "Failed to send email. Check SMTP settings.";
+        }
+        catch (Exception ex)
+        {
+            exportError = $"Email failed: {ex.Message}";
+        }
+        finally
+        {
+            isExporting = false;
+            StateHasChanged();
+        }
+    }
+
+    private void CloseAddContactModal()
+    {
+        showAddContactModal = false;
+        newContactJobTitle = "";
+        newContactCompany = "";
+        newContactName = "";
+        newContactReason = "";
+        newContactResult = "";
+        newContactTimestamp = null;
+    }
+
+    private void SaveContactDiscussion()
+    {
+        if (!IsContactFormValid)
+            return;
+
+        HistoryService.RecordStandaloneContactDiscussion(
+            newContactJobTitle,
+            newContactCompany,
+            newContactName,
+            newContactReason,
+            newContactResult,
+            newContactTimestamp
+        );
+
+        CloseAddContactModal();
+        GenerateReport(); // Refresh the report to show the new entry
+    }
+
     private static string GetActionBadgeClass(HistoryActionType action)
     {
         return action switch
@@ -491,6 +719,7 @@
             HistoryActionType.ApplicationStageChanged => "bg-info",
             HistoryActionType.InterestChanged => "bg-warning text-dark",
             HistoryActionType.SuitabilityChanged => "bg-secondary",
+            HistoryActionType.ContactDiscussion => "bg-dark",
             _ => "bg-light text-dark"
         };
     }

@@ -291,6 +291,31 @@ public class JobHistoryService
         }, job.UserId);
     }
 
+    public void RecordStandaloneContactDiscussion(string jobTitle, string company, string contactName, string reason, string result, DateTime? timestamp = null)
+    {
+        var userId = CurrentUserId;
+        if (userId == Guid.Empty)
+        {
+            _logger.LogWarning("Cannot add standalone contact/discussion - no user context");
+            return;
+        }
+
+        AddEntry(new JobHistoryEntry
+        {
+            JobId = Guid.Empty, // No associated job listing
+            JobTitle = jobTitle,
+            Company = company,
+            JobUrl = null,
+            ActionType = HistoryActionType.ContactDiscussion,
+            ChangeSource = HistoryChangeSource.Manual,
+            ContactName = contactName,
+            ContactReason = reason,
+            ContactResult = result,
+            Details = $"Contact: {contactName} - {reason}",
+            Timestamp = timestamp ?? DateTime.Now
+        }, userId);
+    }
+
     public void RecordChange(Guid jobId, Guid userId, string fieldName, string? oldValue, string? newValue, string description, string jobTitle, string company, string? jobUrl)
     {
         AddEntry(new JobHistoryEntry

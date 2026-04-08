@@ -1,10 +1,11 @@
+using System.Collections.Concurrent;
 using JobTracker.Models;
 using ClosedXML.Excel;
 using PdfSharp;
 using PdfSharp.Drawing;
-using PdfSharp.Drawing.Layout;
 using PdfSharp.Fonts;
 using PdfSharp.Pdf;
+using PdfSharp.Pdf.Annotations;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
@@ -27,7 +28,8 @@ public class JsaReportService
         HistoryActionType.AppliedStatusChanged,
         HistoryActionType.ApplicationStageChanged,
         HistoryActionType.InterestChanged,
-        HistoryActionType.SuitabilityChanged
+        HistoryActionType.SuitabilityChanged,
+        HistoryActionType.ContactDiscussion
     };
 
     public JsaReportService(JobHistoryService historyService, JobListingService jobService)
@@ -71,8 +73,8 @@ public class JsaReportService
 
         var filteredEntries = entries.ToList();
 
-        // Group by JobId
-        var groups = filteredEntries
+        // Group by JobId for job-related entries
+        var jobGroups = filteredEntries
             .Where(e => e.JobId != Guid.Empty)
             .GroupBy(e => e.JobId)
             .Select(g =>
@@ -93,7 +95,25 @@ public class JsaReportService
                     Entries = g.OrderByDescending(e => e.Timestamp).ToList(),
                     JobExists = job != null
                 };
-            })
+            });
+
+        // Handle standalone entries (JobId = Guid.Empty) - each gets its own group
+        var standaloneGroups = filteredEntries
+            .Where(e => e.JobId == Guid.Empty)
+            .Select(e => new JsaReportGroup
+            {
+                JobId = Guid.Empty,
+                JobTitle = e.JobTitle,
+                Company = e.Company,
+                JobUrl = e.JobUrl,
+                Source = "Standalone Entry",
+                LatestActivity = e.Timestamp,
+                Entries = new List<JobHistoryEntry> { e },
+                JobExists = false
+            });
+
+        // Combine and sort all groups
+        var groups = jobGroups.Concat(standaloneGroups)
             .OrderByDescending(g => g.LatestActivity)
             .ToList();
 
@@ -167,7 +187,7 @@ public class JsaReportService
 
         // Detail sheet
         var detailSheet = workbook.Worksheets.Add("Job Search Activity");
-        var headers = new[] { "Job Title", "Company/Advertiser", "Job Site", "Date", "Time", "Activity", "Details", "Old Value", "New Value", "Job Posting URL", "App Link" };
+        var headers = new[] { "Job Title", "Company/Advertiser", "Job Site", "Date", "Time", "Activity", "Details", "Old Value", "New Value", "Contact", "Reason", "Result", "Job Posting URL", "App Link" };
         for (int i = 0; i < headers.Length; i++)
         {
             detailSheet.Cell(1, i + 1).Value = headers[i];
@@ -189,20 +209,23 @@ public class JsaReportService
                 detailSheet.Cell(row, 7).Value = entry.Details ?? "";
                 detailSheet.Cell(row, 8).Value = entry.OldValue ?? "";
                 detailSheet.Cell(row, 9).Value = entry.NewValue ?? "";
+                detailSheet.Cell(row, 10).Value = entry.ContactName ?? "";
+                detailSheet.Cell(row, 11).Value = entry.ContactReason ?? "";
+                detailSheet.Cell(row, 12).Value = entry.ContactResult ?? "";
 
                 if (!string.IsNullOrEmpty(group.JobUrl))
                 {
-                    detailSheet.Cell(row, 10).SetHyperlink(new XLHyperlink(group.JobUrl));
-                    detailSheet.Cell(row, 10).Value = group.JobUrl;
-                    detailSheet.Cell(row, 10).Style.Font.FontColor = XLColor.Blue;
+                    detailSheet.Cell(row, 13).SetHyperlink(new XLHyperlink(group.JobUrl));
+                    detailSheet.Cell(row, 13).Value = group.JobUrl;
+                    detailSheet.Cell(row, 13).Style.Font.FontColor = XLColor.Blue;
                 }
 
                 if (group.JobExists)
                 {
                     var appLink = $"{appBaseUrl.TrimEnd('/')}/?jobId={group.JobId}";
-                    detailSheet.Cell(row, 11).SetHyperlink(new XLHyperlink(appLink));
-                    detailSheet.Cell(row, 11).Value = "Open in App";
-                    detailSheet.Cell(row, 11).Style.Font.FontColor = XLColor.Blue;
+                    detailSheet.Cell(row, 14).SetHyperlink(new XLHyperlink(appLink));
+                    detailSheet.Cell(row, 14).Value = "Open in App";
+                    detailSheet.Cell(row, 14).Style.Font.FontColor = XLColor.Blue;
                 }
 
                 row++;
@@ -219,10 +242,6 @@ public class JsaReportService
 
     public byte[] ExportToPdf(List<JsaReportGroup> groups, JsaReportSummary summary, string appBaseUrl)
     {
-        // Ensure PDFsharp can resolve system fonts (required for the base PDFsharp package)
-        if (GlobalFontSettings.FontResolver is not WindowsFontResolver)
-            GlobalFontSettings.FontResolver = new WindowsFontResolver();
-
         var document = new PdfDocument();
         document.Info.Title = "JSA Job Search Activity Report";
         document.Info.Author = "Job Tracker";
@@ -315,8 +334,9 @@ public class JsaReportService
         // ===== Job groups =====
         foreach (var group in groups)
         {
-            // Estimate height: job header + optional url + table header + 1 row + padding
-            double est = 20 + (string.IsNullOrEmpty(group.JobUrl) ? 0 : 11) + hdrRowH + rowH + 20;
+            // Estimate height: job header + optional url/app-link line + table header + 1 row + padding
+            bool hasUrlLine = !string.IsNullOrEmpty(group.JobUrl) || group.JobExists;
+            double est = 20 + (hasUrlLine ? 11 : 0) + hdrRowH + rowH + 20;
             if (NeedPage(est)) NextPage();
 
             // Job title + company
@@ -339,41 +359,88 @@ public class JsaReportService
             }
             y += 16;
 
-            // URL
-            if (!string.IsNullOrEmpty(group.JobUrl))
+            // URL (clickable)
+            if (!string.IsNullOrEmpty(group.JobUrl) && IsHttpUrl(group.JobUrl))
             {
-                gfx.DrawString(Truncate(group.JobUrl, 120), fontUrl, XBrushes.RoyalBlue, new XPoint(ml, y + 7));
+                var urlText = Truncate(group.JobUrl, 100);
+                gfx.DrawString(urlText, fontUrl, XBrushes.RoyalBlue, new XPoint(ml, y + 7));
+                var urlW = gfx.MeasureString(urlText, fontUrl).Width;
+                page.AddWebLink(new PdfRectangle(new XPoint(ml, pageHeight - y - 10), new XPoint(ml + urlW, pageHeight - y)), group.JobUrl);
+                // "Open in App" link next to URL
+                if (group.JobExists)
+                {
+                    var appLink = $"{appBaseUrl.TrimEnd('/')}/?jobId={group.JobId}";
+                    var openText = "  |  Open in App";
+                    gfx.DrawString(openText, fontUrl, XBrushes.SteelBlue, new XPoint(ml + urlW + 2, y + 7));
+                    var openW = gfx.MeasureString(openText, fontUrl).Width;
+                    page.AddWebLink(new PdfRectangle(new XPoint(ml + urlW + 2, pageHeight - y - 10), new XPoint(ml + urlW + 2 + openW, pageHeight - y)), appLink);
+                }
+                y += 11;
+            }
+            else if (!string.IsNullOrEmpty(group.JobUrl))
+            {
+                gfx.DrawString(Truncate(group.JobUrl, 100), fontUrl, XBrushes.RoyalBlue, new XPoint(ml, y + 7));
+                y += 11;
+            }
+            else if (group.JobExists)
+            {
+                // No job URL but job exists — show "Open in App" standalone
+                var appLink = $"{appBaseUrl.TrimEnd('/')}/?jobId={group.JobId}";
+                gfx.DrawString("Open in App", fontUrl, XBrushes.SteelBlue, new XPoint(ml, y + 7));
+                var linkW = gfx.MeasureString("Open in App", fontUrl).Width;
+                page.AddWebLink(new PdfRectangle(new XPoint(ml, pageHeight - y - 10), new XPoint(ml + linkW, pageHeight - y)), appLink);
                 y += 11;
             }
 
-            // Table header
-            if (NeedPage(hdrRowH + rowH)) NextPage();
-            double x = ml;
-            gfx.DrawRectangle(new XSolidBrush(XColor.FromArgb(210, 222, 240)), ml, y, contentWidth, hdrRowH);
-            for (int i = 0; i < colH.Length; i++)
+            // Draw table header (reused on continuation pages)
+            void DrawTableHeader()
             {
-                gfx.DrawString(colH[i], fontTableHeader, XBrushes.Black,
-                    new XRect(x + 4, y + 1, colW[i] - 8, hdrRowH), XStringFormats.CenterLeft);
-                x += colW[i];
+                if (NeedPage(hdrRowH + rowH)) NextPage();
+                double hx = ml;
+                gfx.DrawRectangle(new XSolidBrush(XColor.FromArgb(210, 222, 240)), ml, y, contentWidth, hdrRowH);
+                for (int i = 0; i < colH.Length; i++)
+                {
+                    gfx.DrawString(colH[i], fontTableHeader, XBrushes.Black,
+                        new XRect(hx + 4, y + 1, colW[i] - 8, hdrRowH), XStringFormats.CenterLeft);
+                    hx += colW[i];
+                }
+                y += hdrRowH;
             }
-            y += hdrRowH;
+
+            DrawTableHeader();
 
             // Table rows
             bool alt = false;
             foreach (var entry in group.Entries)
             {
-                if (NeedPage(rowH)) NextPage();
+                if (NeedPage(rowH))
+                {
+                    NextPage();
+                    // Re-draw job title and table header on continuation page
+                    gfx.DrawString($"{Truncate(group.JobTitle, 60)} (cont.)", fontJobHeader, XBrushes.DimGray, new XPoint(ml, y + 10));
+                    y += 16;
+                    DrawTableHeader();
+                    alt = false;
+                }
 
                 if (alt)
                     gfx.DrawRectangle(new XSolidBrush(XColor.FromArgb(245, 246, 252)), ml, y, contentWidth, rowH);
 
-                x = ml;
+                double x = ml;
+                var details = entry.Details ?? "";
+                if (!string.IsNullOrEmpty(entry.ContactName))
+                    details += $" | Contact: {entry.ContactName}";
+                if (!string.IsNullOrEmpty(entry.ContactReason))
+                    details += $" | Reason: {entry.ContactReason}";
+                if (!string.IsNullOrEmpty(entry.ContactResult))
+                    details += $" | Result: {entry.ContactResult}";
+
                 string[] cells =
                 {
                     entry.Timestamp.ToString("dd/MM/yyyy"),
                     entry.Timestamp.ToString("HH:mm"),
                     GetActionTypeDisplay(entry.ActionType),
-                    Truncate(entry.Details ?? "", 75),
+                    Truncate(details, 75),
                     !string.IsNullOrEmpty(entry.OldValue) && !string.IsNullOrEmpty(entry.NewValue)
                         ? $"{entry.OldValue} -> {entry.NewValue}" : ""
                 };
@@ -414,6 +481,12 @@ public class JsaReportService
     {
         if (string.IsNullOrEmpty(text) || text.Length <= max) return text;
         return text[..(max - 3)] + "...";
+    }
+
+    private static bool IsHttpUrl(string url)
+    {
+        return Uri.TryCreate(url, UriKind.Absolute, out var uri)
+            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
     }
 
     public byte[] ExportToWord(List<JsaReportGroup> groups, JsaReportSummary summary, string appBaseUrl)
@@ -477,7 +550,7 @@ public class JsaReportService
 
                 // Header row
                 var headerRow = new TableRow();
-                foreach (var h in new[] { "Date", "Time", "Activity", "Details", "Change" })
+                foreach (var h in new[] { "Date", "Time", "Activity", "Details", "Contact", "Change" })
                 {
                     headerRow.AppendChild(CreateTableCell(h, true, "D0D8E8"));
                 }
@@ -485,11 +558,14 @@ public class JsaReportService
 
                 foreach (var entry in group.Entries)
                 {
+                    var contactInfo = string.Join("; ", new[] { entry.ContactName, entry.ContactReason, entry.ContactResult }
+                        .Where(s => !string.IsNullOrEmpty(s)));
                     var dataRow = new TableRow();
                     dataRow.AppendChild(CreateTableCell(entry.Timestamp.ToString("dd/MM/yyyy")));
                     dataRow.AppendChild(CreateTableCell(entry.Timestamp.ToString("HH:mm")));
                     dataRow.AppendChild(CreateTableCell(GetActionTypeDisplay(entry.ActionType)));
                     dataRow.AppendChild(CreateTableCell(entry.Details ?? ""));
+                    dataRow.AppendChild(CreateTableCell(contactInfo));
                     dataRow.AppendChild(CreateTableCell(
                         !string.IsNullOrEmpty(entry.OldValue) && !string.IsNullOrEmpty(entry.NewValue)
                             ? $"{entry.OldValue} -> {entry.NewValue}" : ""));
@@ -564,6 +640,7 @@ public class JsaReportService
             HistoryActionType.ApplicationStageChanged => "Stage Change",
             HistoryActionType.InterestChanged => "Interest",
             HistoryActionType.SuitabilityChanged => "Suitability",
+            HistoryActionType.ContactDiscussion => "Contact/Discussion",
             _ => action.ToString()
         };
     }
@@ -605,6 +682,7 @@ public class JsaReportSummary
 public class WindowsFontResolver : IFontResolver
 {
     private static readonly string FontDir = Environment.GetFolderPath(Environment.SpecialFolder.Fonts);
+    private static readonly ConcurrentDictionary<string, byte[]?> FontCache = new();
 
     private static readonly Dictionary<string, string[]> FontFiles = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -618,22 +696,24 @@ public class WindowsFontResolver : IFontResolver
             familyName = "Arial";
 
         int index = (isBold ? 1 : 0) + (isItalic ? 2 : 0);
-        var files = FontFiles[familyName];
         string key = $"{familyName}#{index}";
         return new FontResolverInfo(key);
     }
 
     public byte[]? GetFont(string faceName)
     {
-        var parts = faceName.Split('#');
-        string family = parts[0];
-        int index = parts.Length > 1 ? int.Parse(parts[1]) : 0;
+        return FontCache.GetOrAdd(faceName, static key =>
+        {
+            var parts = key.Split('#');
+            string family = parts[0];
+            int index = parts.Length > 1 ? int.Parse(parts[1]) : 0;
 
-        if (!FontFiles.TryGetValue(family, out var files))
-            return null;
+            if (!FontFiles.TryGetValue(family, out var files))
+                return null;
 
-        string fileName = files[Math.Min(index, files.Length - 1)];
-        string path = Path.Combine(FontDir, fileName);
-        return File.Exists(path) ? File.ReadAllBytes(path) : null;
+            string fileName = files[Math.Min(index, files.Length - 1)];
+            string path = Path.Combine(FontDir, fileName);
+            return File.Exists(path) ? File.ReadAllBytes(path) : null;
+        });
     }
 }
