@@ -130,4 +130,50 @@ public class EmailService
             return false;
         }
     }
+
+    public async Task<bool> SendEmailWithAttachmentAsync(string toEmail, string subject, string htmlBody,
+        string smtpHost, int smtpPort, string smtpUsername, string smtpPassword,
+        string fromEmail, string fromName,
+        byte[] attachmentData, string attachmentFileName, string attachmentMimeType)
+    {
+        if (string.IsNullOrEmpty(smtpHost))
+        {
+            _logger.LogWarning("SMTP host not configured. Email not sent to {Email}", toEmail);
+            return false;
+        }
+
+        try
+        {
+            var message = new MimeMessage();
+            message.From.Add(new MailboxAddress(
+                string.IsNullOrEmpty(fromName) ? "Job Tracker" : fromName,
+                string.IsNullOrEmpty(fromEmail) ? smtpUsername : fromEmail));
+            message.To.Add(MailboxAddress.Parse(toEmail));
+            message.Subject = subject;
+
+            var bodyBuilder = new BodyBuilder { HtmlBody = htmlBody };
+            bodyBuilder.Attachments.Add(attachmentFileName, attachmentData, ContentType.Parse(attachmentMimeType));
+            message.Body = bodyBuilder.ToMessageBody();
+
+            using var client = new SmtpClient();
+            var secureSocketOptions = smtpPort == 465
+                ? SecureSocketOptions.SslOnConnect
+                : SecureSocketOptions.StartTls;
+
+            await client.ConnectAsync(smtpHost, smtpPort, secureSocketOptions);
+            if (!string.IsNullOrEmpty(smtpUsername) && !string.IsNullOrEmpty(smtpPassword))
+                await client.AuthenticateAsync(smtpUsername, smtpPassword);
+
+            await client.SendAsync(message);
+            await client.DisconnectAsync(true);
+
+            _logger.LogInformation("Email with attachment sent to {Email}: {Subject}", toEmail, subject);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send email with attachment to {Email}: {Subject}", toEmail, subject);
+            return false;
+        }
+    }
 }

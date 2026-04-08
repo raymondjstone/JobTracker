@@ -293,4 +293,100 @@ public class JobHistoryServiceTests
 
         Assert.True(fired);
     }
+
+    [Fact]
+    public void RecordStandaloneContactDiscussion_CreatesEntryWithEmptyJobId()
+    {
+        _service.RecordStandaloneContactDiscussion(
+            "Senior Developer",
+            "Tech Corp",
+            "John Smith",
+            "Phone screening",
+            "Scheduled interview for next week"
+        );
+
+        _storageMock.Verify(s => s.AddHistoryEntry(It.Is<JobHistoryEntry>(e =>
+            e.JobId == Guid.Empty &&
+            e.ActionType == HistoryActionType.ContactDiscussion &&
+            e.JobTitle == "Senior Developer" &&
+            e.Company == "Tech Corp" &&
+            e.ContactName == "John Smith" &&
+            e.ContactReason == "Phone screening" &&
+            e.ContactResult == "Scheduled interview for next week" &&
+            e.ChangeSource == HistoryChangeSource.Manual &&
+            e.UserId == _userId
+        ), It.IsAny<int>()), Times.Once);
+    }
+
+    [Fact]
+    public void RecordStandaloneContactDiscussion_WithCustomTimestamp_UsesProvidedTimestamp()
+    {
+        var customTimestamp = new DateTime(2025, 1, 15, 14, 30, 0);
+
+        _service.RecordStandaloneContactDiscussion(
+            "Developer",
+            "Acme Inc",
+            "Jane Doe",
+            "Follow-up call",
+            "No response",
+            customTimestamp
+        );
+
+        _storageMock.Verify(s => s.AddHistoryEntry(It.Is<JobHistoryEntry>(e =>
+            e.Timestamp == customTimestamp
+        ), It.IsAny<int>()), Times.Once);
+    }
+
+    [Fact]
+    public void RecordStandaloneContactDiscussion_WithoutTimestamp_UsesCurrentTime()
+    {
+        var beforeCall = DateTime.Now;
+
+        _service.RecordStandaloneContactDiscussion(
+            "Developer",
+            "Test Co",
+            "Bob Jones",
+            "Email inquiry",
+            "Waiting for response"
+        );
+
+        var afterCall = DateTime.Now;
+
+        _storageMock.Verify(s => s.AddHistoryEntry(It.Is<JobHistoryEntry>(e =>
+            e.Timestamp >= beforeCall && e.Timestamp <= afterCall
+        ), It.IsAny<int>()), Times.Once);
+    }
+
+    [Fact]
+    public void RecordStandaloneContactDiscussion_WithNoUser_DoesNotStore()
+    {
+        _currentUserMock.Setup(c => c.GetCurrentUserId()).Returns(Guid.Empty);
+
+        _service.RecordStandaloneContactDiscussion(
+            "Developer",
+            "Test Co",
+            "Contact",
+            "Reason",
+            "Result"
+        );
+
+        _storageMock.Verify(s => s.AddHistoryEntry(It.IsAny<JobHistoryEntry>(), It.IsAny<int>()), Times.Never);
+    }
+
+    [Fact]
+    public void RecordStandaloneContactDiscussion_IncludesContactInDetails()
+    {
+        _service.RecordStandaloneContactDiscussion(
+            "Developer",
+            "Test Co",
+            "Alice Smith",
+            "Initial discussion",
+            "Positive"
+        );
+
+        _storageMock.Verify(s => s.AddHistoryEntry(It.Is<JobHistoryEntry>(e =>
+            e.Details != null && e.Details.Contains("Alice Smith") && e.Details.Contains("Initial discussion")
+        ), It.IsAny<int>()), Times.Once);
+    }
 }
+

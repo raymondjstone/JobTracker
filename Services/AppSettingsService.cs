@@ -157,6 +157,7 @@ public class AppSettingsService
             SearchQueries = settings.SearchQueries,
             SkillExtraction = settings.SkillExtraction,
             LastViewState = settings.LastViewState,
+            Jsa = settings.Jsa,
         };
     }
 

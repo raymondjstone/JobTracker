@@ -49,6 +49,7 @@ public class AppSettings
     public List<JobSearchQuery> SearchQueries { get; set; } = new();
     public SkillExtractionSettings SkillExtraction { get; set; } = new();
     public JobViewState LastViewState { get; set; } = new();
+    public JsaSettings Jsa { get; set; } = new();
 }
 
 public class JobViewState
@@ -210,4 +211,13 @@ public class AIAssistantSettings
     public bool ShowSimilarJobs { get; set; } = true;
     public List<string> UserSkills { get; set; } = new(); // User's skill profile
     public string UserExperience { get; set; } = string.Empty; // Brief experience summary
+}
+
+public class JsaSettings
+{
+    public DateTime? SigningStartDate { get; set; }
+    public int PeriodLengthDays { get; set; } = 14;
+    public string WorkCoachName { get; set; } = "";
+    public string WorkCoachEmail { get; set; } = "";
+    public string WorkCoachPhone { get; set; } = "";
 }

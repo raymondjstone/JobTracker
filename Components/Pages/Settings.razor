@@ -70,6 +70,11 @@
                 <i class="bi bi-tools"></i> Skills
             </button>
         </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link @(activeTab == "jsa" ? "active" : "")" @onclick='() => activeTab = "jsa"' type="button">
+                <i class="bi bi-file-earmark-text"></i> JSA
+            </button>
+        </li>
         @if (StorageBackend is JsonStorageBackend)
         {
             <li class="nav-item" role="presentation">
@@ -1102,6 +1107,62 @@
             </div>
         }
 
+        @* ==================== JSA TAB ==================== *@
+        @if (activeTab == "jsa")
+        {
+            <div class="tab-pane fade show active">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-calendar-week"></i> Signing Period</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold">Signing Start Date</label>
+                                <input type="date" class="form-control" @bind="settings.Jsa.SigningStartDate" />
+                                <small class="text-muted">The date your signing period began (e.g. your first appointment)</small>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold">Period Length (days)</label>
+                                <input type="number" class="form-control" min="1" max="56" @bind="settings.Jsa.PeriodLengthDays" />
+                                <small class="text-muted">Typically 14 days (fortnightly signing)</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-person-badge"></i> Work Coach Contact Details</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold">Name</label>
+                                <input type="text" class="form-control" placeholder="Work coach name" @bind="settings.Jsa.WorkCoachName" />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold">Email</label>
+                                <input type="email" class="form-control" placeholder="work.coach@example.com" @bind="settings.Jsa.WorkCoachEmail" />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold">Phone</label>
+                                <input type="tel" class="form-control" placeholder="Phone number" @bind="settings.Jsa.WorkCoachPhone" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <button class="btn btn-primary" @onclick="SaveJsaSettings">
+                    <i class="bi bi-check-lg"></i> Save JSA Settings
+                </button>
+                @if (!string.IsNullOrEmpty(jsaSettingsMessage))
+                {
+                    <div class="alert alert-success mt-3">@jsaSettingsMessage</div>
+                }
+            </div>
+        }
+
         @* ==================== DATA TAB ==================== *@
         @if (StorageBackend is JsonStorageBackend && activeTab == "data")
         {
@@ -1293,6 +1354,8 @@
 
 @code {
     private string activeTab = "jobsites";
+    private AppSettings settings = new();
+    private string? jsaSettingsMessage;
     private JobTracker.Models.User? currentUser;
     private bool copied = false;
     private NameModel nameModel { get; set; } = new();
@@ -1456,7 +1519,7 @@
 
     private void LoadSettings()
     {
-        var settings = SettingsService.GetSettings();
+        settings = SettingsService.GetSettings();
         var jobSiteUrls = SettingsService.GetJobSiteUrls();
 
         editingUrls = new JobSiteUrls
@@ -2668,6 +2731,12 @@
             isReExtracting = false;
             StateHasChanged();
         }
+    }
+
+    private void SaveJsaSettings()
+    {
+        SettingsService.Save();
+        jsaSettingsMessage = "JSA settings saved successfully.";
     }
 
     private class NameModel
