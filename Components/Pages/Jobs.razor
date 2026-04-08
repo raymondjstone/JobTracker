@@ -3008,7 +3008,7 @@ else
     /// Opens a URL in a new tab that automatically closes after a delay.
     /// Used for fetch-details fallback where the browser extension captures data.
     /// </summary>
-    private async Task OpenTabAndAutoClose(string url, int delaySeconds = 10)
+    private async Task OpenTabAndAutoClose(string url, int delaySeconds = 30)
     {
         await JSRuntime.InvokeVoidAsync("crawlPagesRunner.openAndScheduleClose", url, delaySeconds, true);
     }
