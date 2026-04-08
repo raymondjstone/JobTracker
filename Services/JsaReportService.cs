@@ -3,6 +3,7 @@ using ClosedXML.Excel;
 using PdfSharp;
 using PdfSharp.Drawing;
 using PdfSharp.Drawing.Layout;
+using PdfSharp.Fonts;
 using PdfSharp.Pdf;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
@@ -218,6 +219,10 @@ public class JsaReportService
 
     public byte[] ExportToPdf(List<JsaReportGroup> groups, JsaReportSummary summary, string appBaseUrl)
     {
+        // Ensure PDFsharp can resolve system fonts (required for the base PDFsharp package)
+        if (GlobalFontSettings.FontResolver is not WindowsFontResolver)
+            GlobalFontSettings.FontResolver = new WindowsFontResolver();
+
         var document = new PdfDocument();
         document.Info.Title = "JSA Job Search Activity Report";
         document.Info.Author = "Job Tracker";
@@ -595,4 +600,40 @@ public class JsaReportSummary
     public int JobsAddedCount { get; set; }
     public double ActivitiesPerWeek { get; set; }
     public Dictionary<HistoryActionType, int> ActionTypeCounts { get; set; } = new();
+}
+
+public class WindowsFontResolver : IFontResolver
+{
+    private static readonly string FontDir = Environment.GetFolderPath(Environment.SpecialFolder.Fonts);
+
+    private static readonly Dictionary<string, string[]> FontFiles = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Segoe UI"] = ["segoeui.ttf", "segoeuib.ttf", "segoeuii.ttf", "segoeuiz.ttf"],
+        ["Arial"] = ["arial.ttf", "arialbd.ttf", "ariali.ttf", "arialbi.ttf"],
+    };
+
+    public FontResolverInfo? ResolveTypeface(string familyName, bool isBold, bool isItalic)
+    {
+        if (!FontFiles.ContainsKey(familyName))
+            familyName = "Arial";
+
+        int index = (isBold ? 1 : 0) + (isItalic ? 2 : 0);
+        var files = FontFiles[familyName];
+        string key = $"{familyName}#{index}";
+        return new FontResolverInfo(key);
+    }
+
+    public byte[]? GetFont(string faceName)
+    {
+        var parts = faceName.Split('#');
+        string family = parts[0];
+        int index = parts.Length > 1 ? int.Parse(parts[1]) : 0;
+
+        if (!FontFiles.TryGetValue(family, out var files))
+            return null;
+
+        string fileName = files[Math.Min(index, files.Length - 1)];
+        string path = Path.Combine(FontDir, fileName);
+        return File.Exists(path) ? File.ReadAllBytes(path) : null;
+    }
 }
