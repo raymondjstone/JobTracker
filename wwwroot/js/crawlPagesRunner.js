@@ -46,13 +46,6 @@ window.jobTracker = {
     document.body.removeChild(a);
   },
 
-  openPrintWindow: function (html) {
-    var w = window.open('', '_blank');
-    if (w) {
-      w.document.write(html);
-      w.document.close();
-    }
-  },
 
   getLocalStorage: function (key) {
     return localStorage.getItem(key);

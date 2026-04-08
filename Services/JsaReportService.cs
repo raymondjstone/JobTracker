@@ -1,7 +1,9 @@
-using System.Text;
-using System.Web;
 using JobTracker.Models;
 using ClosedXML.Excel;
+using PdfSharp;
+using PdfSharp.Drawing;
+using PdfSharp.Drawing.Layout;
+using PdfSharp.Pdf;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
@@ -214,89 +216,200 @@ public class JsaReportService
         return ms.ToArray();
     }
 
-    /// <summary>
-    /// Generates a self-contained HTML document styled for printing to PDF via the browser.
-    /// </summary>
-    public string GeneratePdfHtml(List<JsaReportGroup> groups, JsaReportSummary summary, string appBaseUrl)
+    public byte[] ExportToPdf(List<JsaReportGroup> groups, JsaReportSummary summary, string appBaseUrl)
     {
-        var sb = new StringBuilder();
-        sb.AppendLine("""
-            <!DOCTYPE html>
-            <html><head>
-            <meta charset="utf-8">
-            <title>JSA Job Search Activity Report</title>
-            <style>
-                @page { size: A4 landscape; margin: 1.5cm; }
-                * { box-sizing: border-box; }
-                body { font-family: Arial, Helvetica, sans-serif; font-size: 9pt; color: #222; margin: 0; padding: 20px; }
-                h1 { font-size: 16pt; margin: 0 0 4px 0; }
-                .subtitle { font-size: 9pt; color: #666; margin-bottom: 2px; }
-                .job-group { page-break-inside: avoid; border-bottom: 1px solid #ddd; padding: 10px 0; }
-                .job-header { font-size: 10pt; font-weight: bold; margin-bottom: 2px; }
-                .job-source { color: #4682B4; font-size: 8pt; float: right; }
-                .job-url { font-size: 7pt; color: #0066cc; word-break: break-all; }
-                .job-url a { color: #0066cc; }
-                table { width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 8pt; }
-                th { background: #dce4f0; text-align: left; padding: 3px 5px; font-weight: bold; }
-                td { padding: 3px 5px; border-bottom: 1px solid #eee; }
-                tr:nth-child(even) { background: #f8f8fc; }
-                .change-col { color: #666; }
-                .print-btn { background: #0d6efd; color: white; border: none; padding: 10px 24px; font-size: 12pt;
-                             cursor: pointer; border-radius: 4px; margin-bottom: 16px; }
-                .print-btn:hover { background: #0b5ed7; }
-                @media print { .no-print { display: none !important; } }
-            </style>
-            </head><body>
-            <div class="no-print" style="text-align:center; margin-bottom: 12px;">
-                <button class="print-btn" onclick="window.print()">Print / Save as PDF</button>
-            </div>
-            """);
+        var document = new PdfDocument();
+        document.Info.Title = "JSA Job Search Activity Report";
+        document.Info.Author = "Job Tracker";
 
-        sb.AppendLine("<h1>JSA Job Search Activity Report</h1>");
-        sb.AppendLine($"<div class=\"subtitle\">Report Period: {Esc(summary.DateFrom?.ToString("dd/MM/yyyy") ?? "-")} - {Esc(summary.DateTo?.ToString("dd/MM/yyyy") ?? "-")}</div>");
-        sb.AppendLine($"<div class=\"subtitle\">Total Jobs: {summary.TotalJobs} &nbsp;|&nbsp; Applied: {summary.JobsAppliedTo} &nbsp;|&nbsp; Activities: {summary.TotalActivities} &nbsp;|&nbsp; Avg/Week: {summary.ActivitiesPerWeek}</div>");
-
-        foreach (var group in groups)
+        // Fonts - use Segoe UI with Arial fallback (both standard on Windows)
+        XFont fontTitle, fontSubtitle, fontJobHeader, fontJobCompany, fontJobSource;
+        XFont fontUrl, fontTableHeader, fontTableCell, fontFooter;
+        try
         {
-            sb.AppendLine("<div class=\"job-group\">");
-
-            // Job header with source
-            sb.Append("<div class=\"job-header\">");
-            if (!string.IsNullOrEmpty(group.Source))
-                sb.Append($"<span class=\"job-source\">{Esc(group.Source)}</span>");
-            sb.Append(Esc(group.JobTitle));
-            if (!string.IsNullOrEmpty(group.Company))
-                sb.Append($" <span style=\"color:#666;font-weight:normal;font-size:9pt;\">- {Esc(group.Company)}</span>");
-            sb.AppendLine("</div>");
-
-            // URLs
-            if (!string.IsNullOrEmpty(group.JobUrl))
-                sb.AppendLine($"<div class=\"job-url\"><a href=\"{Esc(group.JobUrl)}\" target=\"_blank\">{Esc(group.JobUrl)}</a></div>");
-            if (group.JobExists)
-            {
-                var appLink = $"{appBaseUrl.TrimEnd('/')}/?jobId={group.JobId}";
-                sb.AppendLine($"<div class=\"job-url\"><a href=\"{Esc(appLink)}\" target=\"_blank\">Open in Job Tracker</a></div>");
-            }
-
-            // Activity table
-            sb.AppendLine("<table><thead><tr><th style=\"width:75px;\">Date</th><th style=\"width:45px;\">Time</th><th style=\"width:90px;\">Activity</th><th>Details</th><th style=\"width:120px;\">Change</th></tr></thead><tbody>");
-
-            foreach (var entry in group.Entries)
-            {
-                var change = !string.IsNullOrEmpty(entry.OldValue) && !string.IsNullOrEmpty(entry.NewValue)
-                    ? $"{Esc(entry.OldValue)} &rarr; {Esc(entry.NewValue)}" : "";
-                sb.AppendLine($"<tr><td>{entry.Timestamp:dd/MM/yyyy}</td><td>{entry.Timestamp:HH:mm}</td><td>{Esc(GetActionTypeDisplay(entry.ActionType))}</td><td>{Esc(entry.Details ?? "")}</td><td class=\"change-col\">{change}</td></tr>");
-            }
-
-            sb.AppendLine("</tbody></table></div>");
+            fontTitle = new XFont("Segoe UI", 16, XFontStyleEx.Bold);
+            fontSubtitle = new XFont("Segoe UI", 9, XFontStyleEx.Regular);
+            fontJobHeader = new XFont("Segoe UI", 10, XFontStyleEx.Bold);
+            fontJobCompany = new XFont("Segoe UI", 9, XFontStyleEx.Regular);
+            fontJobSource = new XFont("Segoe UI", 8, XFontStyleEx.Italic);
+            fontUrl = new XFont("Segoe UI", 7, XFontStyleEx.Regular);
+            fontTableHeader = new XFont("Segoe UI", 7.5, XFontStyleEx.Bold);
+            fontTableCell = new XFont("Segoe UI", 7.5, XFontStyleEx.Regular);
+            fontFooter = new XFont("Segoe UI", 7, XFontStyleEx.Regular);
+        }
+        catch
+        {
+            // Fallback if Segoe UI not available
+            fontTitle = new XFont("Arial", 16, XFontStyleEx.Bold);
+            fontSubtitle = new XFont("Arial", 9, XFontStyleEx.Regular);
+            fontJobHeader = new XFont("Arial", 10, XFontStyleEx.Bold);
+            fontJobCompany = new XFont("Arial", 9, XFontStyleEx.Regular);
+            fontJobSource = new XFont("Arial", 8, XFontStyleEx.Italic);
+            fontUrl = new XFont("Arial", 7, XFontStyleEx.Regular);
+            fontTableHeader = new XFont("Arial", 7.5, XFontStyleEx.Bold);
+            fontTableCell = new XFont("Arial", 7.5, XFontStyleEx.Regular);
+            fontFooter = new XFont("Arial", 7, XFontStyleEx.Regular);
         }
 
-        sb.AppendLine($"<div style=\"text-align:center;color:#999;font-size:7pt;margin-top:12px;\">Generated {DateTime.Now:dd/MM/yyyy HH:mm}</div>");
-        sb.AppendLine("</body></html>");
-        return sb.ToString();
+        // Layout constants - A4 landscape
+        const double pageWidth = 842;
+        const double pageHeight = 595;
+        const double ml = 40;     // margin left
+        const double mr = 40;     // margin right
+        const double mt = 40;     // margin top
+        const double mb = 50;     // margin bottom
+        double contentWidth = pageWidth - ml - mr;
+        double usableHeight = pageHeight - mt - mb;
+
+        // Column layout: Date | Time | Activity | Details | Change
+        double[] colW = { 68, 42, 82, contentWidth - 68 - 42 - 82 - 115, 115 };
+        string[] colH = { "Date", "Time", "Activity", "Details", "Change" };
+
+        const double rowH = 15;
+        const double hdrRowH = 17;
+
+        double y = mt;
+        PdfPage page = AddLandscapePage(document);
+        XGraphics gfx = XGraphics.FromPdfPage(page);
+        int pageNum = 1;
+
+        void Footer()
+        {
+            gfx.DrawString($"Page {pageNum}  |  Generated {DateTime.Now:dd/MM/yyyy HH:mm}",
+                fontFooter, XBrushes.Gray,
+                new XRect(0, pageHeight - 30, pageWidth, 20), XStringFormats.Center);
+        }
+
+        void NextPage()
+        {
+            Footer();
+            gfx.Dispose();
+            page = AddLandscapePage(document);
+            gfx = XGraphics.FromPdfPage(page);
+            y = mt;
+            pageNum++;
+        }
+
+        bool NeedPage(double need) { return y + need > mt + usableHeight; }
+
+        // ===== Title block =====
+        gfx.DrawString("JSA Job Search Activity Report", fontTitle, XBrushes.Black, new XPoint(ml, y + 14));
+        y += 24;
+        gfx.DrawString($"Report Period: {summary.DateFrom:dd/MM/yyyy} - {summary.DateTo:dd/MM/yyyy}",
+            fontSubtitle, XBrushes.DarkGray, new XPoint(ml, y + 9));
+        y += 14;
+        gfx.DrawString(
+            $"Total Jobs: {summary.TotalJobs}   |   Applied: {summary.JobsAppliedTo}   |   Activities: {summary.TotalActivities}   |   Avg/Week: {summary.ActivitiesPerWeek}",
+            fontSubtitle, XBrushes.DarkGray, new XPoint(ml, y + 9));
+        y += 20;
+
+        // Thin line under header
+        gfx.DrawLine(new XPen(XColors.SteelBlue, 1.5), ml, y, ml + contentWidth, y);
+        y += 10;
+
+        // ===== Job groups =====
+        foreach (var group in groups)
+        {
+            // Estimate height: job header + optional url + table header + 1 row + padding
+            double est = 20 + (string.IsNullOrEmpty(group.JobUrl) ? 0 : 11) + hdrRowH + rowH + 20;
+            if (NeedPage(est)) NextPage();
+
+            // Job title + company
+            gfx.DrawString(Truncate(group.JobTitle, 70), fontJobHeader, XBrushes.Black, new XPoint(ml, y + 10));
+            if (!string.IsNullOrEmpty(group.Company))
+            {
+                double titleW = gfx.MeasureString(Truncate(group.JobTitle, 70), fontJobHeader).Width;
+                gfx.DrawString($"  -  {Truncate(group.Company, 40)}", fontJobCompany, XBrushes.DimGray,
+                    new XPoint(ml + titleW + 4, y + 10));
+            }
+
+            // Source badge (right-aligned)
+            if (!string.IsNullOrEmpty(group.Source))
+            {
+                double srcW = gfx.MeasureString(group.Source, fontJobSource).Width;
+                double badgeX = ml + contentWidth - srcW - 10;
+                gfx.DrawRoundedRectangle(new XSolidBrush(XColor.FromArgb(230, 238, 250)),
+                    badgeX - 4, y + 1, srcW + 12, 13, 3, 3);
+                gfx.DrawString(group.Source, fontJobSource, XBrushes.SteelBlue, new XPoint(badgeX + 2, y + 10));
+            }
+            y += 16;
+
+            // URL
+            if (!string.IsNullOrEmpty(group.JobUrl))
+            {
+                gfx.DrawString(Truncate(group.JobUrl, 120), fontUrl, XBrushes.RoyalBlue, new XPoint(ml, y + 7));
+                y += 11;
+            }
+
+            // Table header
+            if (NeedPage(hdrRowH + rowH)) NextPage();
+            double x = ml;
+            gfx.DrawRectangle(new XSolidBrush(XColor.FromArgb(210, 222, 240)), ml, y, contentWidth, hdrRowH);
+            for (int i = 0; i < colH.Length; i++)
+            {
+                gfx.DrawString(colH[i], fontTableHeader, XBrushes.Black,
+                    new XRect(x + 4, y + 1, colW[i] - 8, hdrRowH), XStringFormats.CenterLeft);
+                x += colW[i];
+            }
+            y += hdrRowH;
+
+            // Table rows
+            bool alt = false;
+            foreach (var entry in group.Entries)
+            {
+                if (NeedPage(rowH)) NextPage();
+
+                if (alt)
+                    gfx.DrawRectangle(new XSolidBrush(XColor.FromArgb(245, 246, 252)), ml, y, contentWidth, rowH);
+
+                x = ml;
+                string[] cells =
+                {
+                    entry.Timestamp.ToString("dd/MM/yyyy"),
+                    entry.Timestamp.ToString("HH:mm"),
+                    GetActionTypeDisplay(entry.ActionType),
+                    Truncate(entry.Details ?? "", 75),
+                    !string.IsNullOrEmpty(entry.OldValue) && !string.IsNullOrEmpty(entry.NewValue)
+                        ? $"{entry.OldValue} -> {entry.NewValue}" : ""
+                };
+
+                for (int i = 0; i < cells.Length; i++)
+                {
+                    gfx.DrawString(cells[i], fontTableCell, XBrushes.Black,
+                        new XRect(x + 4, y + 1, colW[i] - 8, rowH), XStringFormats.CenterLeft);
+                    x += colW[i];
+                }
+                y += rowH;
+                alt = !alt;
+            }
+
+            // Separator
+            y += 5;
+            gfx.DrawLine(new XPen(XColors.LightGray, 0.5), ml, y, ml + contentWidth, y);
+            y += 8;
+        }
+
+        Footer();
+        gfx.Dispose();
+
+        using var ms = new MemoryStream();
+        document.Save(ms, false);
+        return ms.ToArray();
     }
 
-    private static string Esc(string? value) => HttpUtility.HtmlEncode(value ?? "");
+    private static PdfPage AddLandscapePage(PdfDocument doc)
+    {
+        var p = doc.AddPage();
+        p.Size = PdfSharp.PageSize.A4;
+        p.Orientation = PdfSharp.PageOrientation.Landscape;
+        return p;
+    }
+
+    private static string Truncate(string text, int max)
+    {
+        if (string.IsNullOrEmpty(text) || text.Length <= max) return text;
+        return text[..(max - 3)] + "...";
+    }
 
     public byte[] ExportToWord(List<JsaReportGroup> groups, JsaReportSummary summary, string appBaseUrl)
     {

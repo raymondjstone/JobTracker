@@ -266,6 +266,14 @@
             }
         }
     }
+
+    @if (!string.IsNullOrEmpty(exportError))
+    {
+        <div class="alert alert-danger alert-dismissible mt-3">
+            <i class="bi bi-exclamation-triangle"></i> @exportError
+            <button type="button" class="btn-close" @onclick="() => exportError = null"></button>
+        </div>
+    }
 </div>
 
 @if (isExporting)
@@ -283,6 +291,7 @@
     private JsaReportSummary? summary;
     private bool isLoading = true;
     private bool isExporting = false;
+    private string? exportError;
 
     // Filters
     private DateTime? filterFromDate;
@@ -398,8 +407,9 @@
     private async Task ExportExcel()
     {
         isExporting = true;
+        exportError = null;
         StateHasChanged();
-        await Task.Delay(50); // Let UI update
+        await Task.Delay(50);
 
         try
         {
@@ -408,6 +418,10 @@
             await JSRuntime.InvokeVoidAsync("jobTracker.downloadFile", base64,
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 $"JSA-Report-{DateTime.Now:yyyy-MM-dd}.xlsx");
+        }
+        catch (Exception ex)
+        {
+            exportError = $"Excel export failed: {ex.Message}";
         }
         finally
         {
@@ -419,6 +433,7 @@
     private async Task ExportWord()
     {
         isExporting = true;
+        exportError = null;
         StateHasChanged();
         await Task.Delay(50);
 
@@ -430,6 +445,10 @@
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 $"JSA-Report-{DateTime.Now:yyyy-MM-dd}.docx");
         }
+        catch (Exception ex)
+        {
+            exportError = $"Word export failed: {ex.Message}";
+        }
         finally
         {
             isExporting = false;
@@ -440,13 +459,21 @@
     private async Task ExportPdf()
     {
         isExporting = true;
+        exportError = null;
         StateHasChanged();
         await Task.Delay(50);
 
         try
         {
-            var html = ReportService.GeneratePdfHtml(reportGroups, summary!, GetAppBaseUrl());
-            await JSRuntime.InvokeVoidAsync("jobTracker.openPrintWindow", html);
+            var bytes = ReportService.ExportToPdf(reportGroups, summary!, GetAppBaseUrl());
+            var base64 = Convert.ToBase64String(bytes);
+            await JSRuntime.InvokeVoidAsync("jobTracker.downloadFile", base64,
+                "application/pdf",
+                $"JSA-Report-{DateTime.Now:yyyy-MM-dd}.pdf");
+        }
+        catch (Exception ex)
+        {
+            exportError = $"PDF export failed: {ex.Message}";
         }
         finally
         {
