@@ -30,9 +30,11 @@ window.crawlPagesRunner = {
 window.jobTracker = {
   shutdown: function () {
     document.title = 'JobTracker - Shut Down';
+    // Send shutdown request BEFORE destroying the DOM / Blazor circuit
+    fetch('/api/shutdown', { method: 'POST' }).catch(function () { /* server may drop connection */ });
+    // Show goodbye message after request is dispatched
     document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:system-ui;color:#666;"><div style="text-align:center;"><h2>JobTracker has shut down</h2><p>You can close this tab.</p></div></div>';
-    fetch('/api/shutdown', { method: 'POST' });
-    setTimeout(function () { window.close(); }, 200);
+    setTimeout(function () { window.close(); }, 500);
   },
 
   downloadFile: function (base64, mimeType, fileName) {
@@ -42,6 +44,14 @@ window.jobTracker = {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+  },
+
+  openPrintWindow: function (html) {
+    var w = window.open('', '_blank');
+    if (w) {
+      w.document.write(html);
+      w.document.close();
+    }
   },
 
   getLocalStorage: function (key) {

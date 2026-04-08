@@ -1,8 +1,7 @@
+using System.Text;
+using System.Web;
 using JobTracker.Models;
 using ClosedXML.Excel;
-using PdfSharpCore.Drawing;
-using PdfSharpCore.Drawing.Layout;
-using PdfSharpCore.Pdf;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
@@ -215,164 +214,89 @@ public class JsaReportService
         return ms.ToArray();
     }
 
-    public byte[] ExportToPdf(List<JsaReportGroup> groups, JsaReportSummary summary, string appBaseUrl)
+    /// <summary>
+    /// Generates a self-contained HTML document styled for printing to PDF via the browser.
+    /// </summary>
+    public string GeneratePdfHtml(List<JsaReportGroup> groups, JsaReportSummary summary, string appBaseUrl)
     {
-        var document = new PdfDocument();
-        document.Info.Title = "JSA Job Search Activity Report";
+        var sb = new StringBuilder();
+        sb.AppendLine("""
+            <!DOCTYPE html>
+            <html><head>
+            <meta charset="utf-8">
+            <title>JSA Job Search Activity Report</title>
+            <style>
+                @page { size: A4 landscape; margin: 1.5cm; }
+                * { box-sizing: border-box; }
+                body { font-family: Arial, Helvetica, sans-serif; font-size: 9pt; color: #222; margin: 0; padding: 20px; }
+                h1 { font-size: 16pt; margin: 0 0 4px 0; }
+                .subtitle { font-size: 9pt; color: #666; margin-bottom: 2px; }
+                .job-group { page-break-inside: avoid; border-bottom: 1px solid #ddd; padding: 10px 0; }
+                .job-header { font-size: 10pt; font-weight: bold; margin-bottom: 2px; }
+                .job-source { color: #4682B4; font-size: 8pt; float: right; }
+                .job-url { font-size: 7pt; color: #0066cc; word-break: break-all; }
+                .job-url a { color: #0066cc; }
+                table { width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 8pt; }
+                th { background: #dce4f0; text-align: left; padding: 3px 5px; font-weight: bold; }
+                td { padding: 3px 5px; border-bottom: 1px solid #eee; }
+                tr:nth-child(even) { background: #f8f8fc; }
+                .change-col { color: #666; }
+                .print-btn { background: #0d6efd; color: white; border: none; padding: 10px 24px; font-size: 12pt;
+                             cursor: pointer; border-radius: 4px; margin-bottom: 16px; }
+                .print-btn:hover { background: #0b5ed7; }
+                @media print { .no-print { display: none !important; } }
+            </style>
+            </head><body>
+            <div class="no-print" style="text-align:center; margin-bottom: 12px;">
+                <button class="print-btn" onclick="window.print()">Print / Save as PDF</button>
+            </div>
+            """);
 
-        var fontTitle = new XFont("Arial", 16, XFontStyle.Bold);
-        var fontSubtitle = new XFont("Arial", 9, XFontStyle.Regular);
-        var fontJobHeader = new XFont("Arial", 10, XFontStyle.Bold);
-        var fontJobSource = new XFont("Arial", 8, XFontStyle.Regular);
-        var fontUrl = new XFont("Arial", 7, XFontStyle.Regular);
-        var fontTableHeader = new XFont("Arial", 7.5, XFontStyle.Bold);
-        var fontTableCell = new XFont("Arial", 7.5, XFontStyle.Regular);
-        var fontFooter = new XFont("Arial", 7, XFontStyle.Regular);
-
-        // Column widths for the activity table (landscape A4 ~802 usable points at 40pt margins)
-        double[] colWidths = { 65, 40, 80, 380, 110 };
-        string[] colHeaders = { "Date", "Time", "Activity", "Details", "Change" };
-
-        const double marginLeft = 40;
-        const double marginTop = 40;
-        const double marginBottom = 50;
-        const double pageWidth = 842; // A4 landscape
-        const double pageHeight = 595;
-        const double usableHeight = pageHeight - marginTop - marginBottom;
-        const double rowHeight = 14;
-        const double headerRowHeight = 16;
-
-        double y = marginTop;
-        var page = document.AddPage();
-        page.Width = pageWidth;
-        page.Height = pageHeight;
-        var gfx = XGraphics.FromPdfPage(page);
-        int pageNum = 1;
-
-        void DrawFooter(XGraphics g, int pNum)
-        {
-            g.DrawString($"Page {pNum}  |  Generated {DateTime.Now:dd/MM/yyyy HH:mm}",
-                fontFooter, XBrushes.Gray,
-                new XRect(0, pageHeight - 30, pageWidth, 20), XStringFormats.Center);
-        }
-
-        void NewPage()
-        {
-            DrawFooter(gfx, pageNum);
-            page = document.AddPage();
-            page.Width = pageWidth;
-            page.Height = pageHeight;
-            gfx = XGraphics.FromPdfPage(page);
-            y = marginTop;
-            pageNum++;
-        }
-
-        void EnsureSpace(double needed)
-        {
-            if (y + needed > marginTop + usableHeight)
-                NewPage();
-        }
-
-        // Title
-        gfx.DrawString("JSA Job Search Activity Report", fontTitle, XBrushes.Black,
-            new XPoint(marginLeft, y + 16));
-        y += 26;
-
-        gfx.DrawString($"Report Period: {summary.DateFrom:dd/MM/yyyy} - {summary.DateTo:dd/MM/yyyy}", fontSubtitle, XBrushes.DarkGray,
-            new XPoint(marginLeft, y + 10));
-        y += 16;
-
-        gfx.DrawString($"Total Jobs: {summary.TotalJobs}  |  Applied: {summary.JobsAppliedTo}  |  Activities: {summary.TotalActivities}  |  Avg/Week: {summary.ActivitiesPerWeek}",
-            fontSubtitle, XBrushes.DarkGray, new XPoint(marginLeft, y + 10));
-        y += 24;
+        sb.AppendLine("<h1>JSA Job Search Activity Report</h1>");
+        sb.AppendLine($"<div class=\"subtitle\">Report Period: {Esc(summary.DateFrom?.ToString("dd/MM/yyyy") ?? "-")} - {Esc(summary.DateTo?.ToString("dd/MM/yyyy") ?? "-")}</div>");
+        sb.AppendLine($"<div class=\"subtitle\">Total Jobs: {summary.TotalJobs} &nbsp;|&nbsp; Applied: {summary.JobsAppliedTo} &nbsp;|&nbsp; Activities: {summary.TotalActivities} &nbsp;|&nbsp; Avg/Week: {summary.ActivitiesPerWeek}</div>");
 
         foreach (var group in groups)
         {
-            // Estimate space needed: header + URL + table header + at least 1 row
-            double estimatedSpace = 18 + (string.IsNullOrEmpty(group.JobUrl) ? 0 : 12) + headerRowHeight + rowHeight + 16;
-            EnsureSpace(estimatedSpace);
+            sb.AppendLine("<div class=\"job-group\">");
 
-            // Job header
-            var headerText = group.JobTitle;
-            if (!string.IsNullOrEmpty(group.Company))
-                headerText += $"  -  {group.Company}";
-
-            gfx.DrawString(headerText, fontJobHeader, XBrushes.Black, new XPoint(marginLeft, y + 10));
-
+            // Job header with source
+            sb.Append("<div class=\"job-header\">");
             if (!string.IsNullOrEmpty(group.Source))
-            {
-                gfx.DrawString(group.Source, fontJobSource, XBrushes.SteelBlue,
-                    new XPoint(pageWidth - marginLeft - 80, y + 10));
-            }
-            y += 16;
+                sb.Append($"<span class=\"job-source\">{Esc(group.Source)}</span>");
+            sb.Append(Esc(group.JobTitle));
+            if (!string.IsNullOrEmpty(group.Company))
+                sb.Append($" <span style=\"color:#666;font-weight:normal;font-size:9pt;\">- {Esc(group.Company)}</span>");
+            sb.AppendLine("</div>");
 
+            // URLs
             if (!string.IsNullOrEmpty(group.JobUrl))
+                sb.AppendLine($"<div class=\"job-url\"><a href=\"{Esc(group.JobUrl)}\" target=\"_blank\">{Esc(group.JobUrl)}</a></div>");
+            if (group.JobExists)
             {
-                gfx.DrawString(group.JobUrl, fontUrl, XBrushes.Blue, new XPoint(marginLeft, y + 8));
-                y += 12;
+                var appLink = $"{appBaseUrl.TrimEnd('/')}/?jobId={group.JobId}";
+                sb.AppendLine($"<div class=\"job-url\"><a href=\"{Esc(appLink)}\" target=\"_blank\">Open in Job Tracker</a></div>");
             }
 
-            // Table header
-            EnsureSpace(headerRowHeight + rowHeight);
-            double x = marginLeft;
-            gfx.DrawRectangle(new XSolidBrush(XColor.FromArgb(220, 228, 240)), x, y, colWidths.Sum(), headerRowHeight);
-            for (int i = 0; i < colHeaders.Length; i++)
-            {
-                gfx.DrawString(colHeaders[i], fontTableHeader, XBrushes.Black,
-                    new XRect(x + 3, y, colWidths[i] - 6, headerRowHeight), XStringFormats.CenterLeft);
-                x += colWidths[i];
-            }
-            y += headerRowHeight;
+            // Activity table
+            sb.AppendLine("<table><thead><tr><th style=\"width:75px;\">Date</th><th style=\"width:45px;\">Time</th><th style=\"width:90px;\">Activity</th><th>Details</th><th style=\"width:120px;\">Change</th></tr></thead><tbody>");
 
-            // Table rows
-            bool alternate = false;
             foreach (var entry in group.Entries)
             {
-                EnsureSpace(rowHeight);
-
-                if (alternate)
-                    gfx.DrawRectangle(new XSolidBrush(XColor.FromArgb(245, 245, 250)), marginLeft, y, colWidths.Sum(), rowHeight);
-
-                x = marginLeft;
-                var cells = new[]
-                {
-                    entry.Timestamp.ToString("dd/MM/yyyy"),
-                    entry.Timestamp.ToString("HH:mm"),
-                    GetActionTypeDisplay(entry.ActionType),
-                    TruncateText(entry.Details ?? "", 80),
-                    !string.IsNullOrEmpty(entry.OldValue) && !string.IsNullOrEmpty(entry.NewValue)
-                        ? $"{entry.OldValue} -> {entry.NewValue}" : ""
-                };
-
-                for (int i = 0; i < cells.Length; i++)
-                {
-                    gfx.DrawString(cells[i], fontTableCell, XBrushes.Black,
-                        new XRect(x + 3, y, colWidths[i] - 6, rowHeight), XStringFormats.CenterLeft);
-                    x += colWidths[i];
-                }
-
-                y += rowHeight;
-                alternate = !alternate;
+                var change = !string.IsNullOrEmpty(entry.OldValue) && !string.IsNullOrEmpty(entry.NewValue)
+                    ? $"{Esc(entry.OldValue)} &rarr; {Esc(entry.NewValue)}" : "";
+                sb.AppendLine($"<tr><td>{entry.Timestamp:dd/MM/yyyy}</td><td>{entry.Timestamp:HH:mm}</td><td>{Esc(GetActionTypeDisplay(entry.ActionType))}</td><td>{Esc(entry.Details ?? "")}</td><td class=\"change-col\">{change}</td></tr>");
             }
 
-            // Separator line
-            y += 6;
-            gfx.DrawLine(XPens.LightGray, marginLeft, y, pageWidth - marginLeft, y);
-            y += 8;
+            sb.AppendLine("</tbody></table></div>");
         }
 
-        DrawFooter(gfx, pageNum);
-
-        using var ms = new MemoryStream();
-        document.Save(ms, false);
-        return ms.ToArray();
+        sb.AppendLine($"<div style=\"text-align:center;color:#999;font-size:7pt;margin-top:12px;\">Generated {DateTime.Now:dd/MM/yyyy HH:mm}</div>");
+        sb.AppendLine("</body></html>");
+        return sb.ToString();
     }
 
-    private static string TruncateText(string text, int maxLength)
-    {
-        if (text.Length <= maxLength) return text;
-        return text[..(maxLength - 3)] + "...";
-    }
+    private static string Esc(string? value) => HttpUtility.HtmlEncode(value ?? "");
 
     public byte[] ExportToWord(List<JsaReportGroup> groups, JsaReportSummary summary, string appBaseUrl)
     {
