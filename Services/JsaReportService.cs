@@ -1,15 +1,11 @@
+using System.Text;
+using System.Web;
 using JobTracker.Models;
 using ClosedXML.Excel;
-using QuestPDF.Fluent;
-using QuestPDF.Helpers;
-using QuestPDF.Infrastructure;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
 
-// Resolve ambiguities between QuestPDF and OpenXml
-using QuestDocument = QuestPDF.Fluent.Document;
-using QuestPageSize = QuestPDF.Helpers.PageSize;
 using WordDocument = DocumentFormat.OpenXml.Wordprocessing.Document;
 using WordPageSize = DocumentFormat.OpenXml.Wordprocessing.PageSize;
 using WordColor = DocumentFormat.OpenXml.Wordprocessing.Color;
@@ -218,103 +214,89 @@ public class JsaReportService
         return ms.ToArray();
     }
 
-    public byte[] ExportToPdf(List<JsaReportGroup> groups, JsaReportSummary summary, string appBaseUrl)
+    /// <summary>
+    /// Generates a self-contained HTML document styled for printing to PDF via the browser.
+    /// </summary>
+    public string GeneratePdfHtml(List<JsaReportGroup> groups, JsaReportSummary summary, string appBaseUrl)
     {
-        QuestPDF.Settings.License = LicenseType.Community;
+        var sb = new StringBuilder();
+        sb.AppendLine("""
+            <!DOCTYPE html>
+            <html><head>
+            <meta charset="utf-8">
+            <title>JSA Job Search Activity Report</title>
+            <style>
+                @page { size: A4 landscape; margin: 1.5cm; }
+                * { box-sizing: border-box; }
+                body { font-family: Arial, Helvetica, sans-serif; font-size: 9pt; color: #222; margin: 0; padding: 20px; }
+                h1 { font-size: 16pt; margin: 0 0 4px 0; }
+                .subtitle { font-size: 9pt; color: #666; margin-bottom: 2px; }
+                .job-group { page-break-inside: avoid; border-bottom: 1px solid #ddd; padding: 10px 0; }
+                .job-header { font-size: 10pt; font-weight: bold; margin-bottom: 2px; }
+                .job-source { color: #4682B4; font-size: 8pt; float: right; }
+                .job-url { font-size: 7pt; color: #0066cc; word-break: break-all; }
+                .job-url a { color: #0066cc; }
+                table { width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 8pt; }
+                th { background: #dce4f0; text-align: left; padding: 3px 5px; font-weight: bold; }
+                td { padding: 3px 5px; border-bottom: 1px solid #eee; }
+                tr:nth-child(even) { background: #f8f8fc; }
+                .change-col { color: #666; }
+                .print-btn { background: #0d6efd; color: white; border: none; padding: 10px 24px; font-size: 12pt;
+                             cursor: pointer; border-radius: 4px; margin-bottom: 16px; }
+                .print-btn:hover { background: #0b5ed7; }
+                @media print { .no-print { display: none !important; } }
+            </style>
+            </head><body>
+            <div class="no-print" style="text-align:center; margin-bottom: 12px;">
+                <button class="print-btn" onclick="window.print()">Print / Save as PDF</button>
+            </div>
+            """);
 
-        var document = QuestDocument.Create(container =>
+        sb.AppendLine("<h1>JSA Job Search Activity Report</h1>");
+        sb.AppendLine($"<div class=\"subtitle\">Report Period: {Esc(summary.DateFrom?.ToString("dd/MM/yyyy") ?? "-")} - {Esc(summary.DateTo?.ToString("dd/MM/yyyy") ?? "-")}</div>");
+        sb.AppendLine($"<div class=\"subtitle\">Total Jobs: {summary.TotalJobs} &nbsp;|&nbsp; Applied: {summary.JobsAppliedTo} &nbsp;|&nbsp; Activities: {summary.TotalActivities} &nbsp;|&nbsp; Avg/Week: {summary.ActivitiesPerWeek}</div>");
+
+        foreach (var group in groups)
         {
-            container.Page(page =>
+            sb.AppendLine("<div class=\"job-group\">");
+
+            // Job header with source
+            sb.Append("<div class=\"job-header\">");
+            if (!string.IsNullOrEmpty(group.Source))
+                sb.Append($"<span class=\"job-source\">{Esc(group.Source)}</span>");
+            sb.Append(Esc(group.JobTitle));
+            if (!string.IsNullOrEmpty(group.Company))
+                sb.Append($" <span style=\"color:#666;font-weight:normal;font-size:9pt;\">- {Esc(group.Company)}</span>");
+            sb.AppendLine("</div>");
+
+            // URLs
+            if (!string.IsNullOrEmpty(group.JobUrl))
+                sb.AppendLine($"<div class=\"job-url\"><a href=\"{Esc(group.JobUrl)}\" target=\"_blank\">{Esc(group.JobUrl)}</a></div>");
+            if (group.JobExists)
             {
-                page.Size(PageSizes.A4.Landscape());
-                page.Margin(1.5f, Unit.Centimetre);
-                page.DefaultTextStyle(x => x.FontSize(9));
+                var appLink = $"{appBaseUrl.TrimEnd('/')}/?jobId={group.JobId}";
+                sb.AppendLine($"<div class=\"job-url\"><a href=\"{Esc(appLink)}\" target=\"_blank\">Open in Job Tracker</a></div>");
+            }
 
-                page.Header().Column(col =>
-                {
-                    col.Item().Text("JSA Job Search Activity Report").Bold().FontSize(18);
-                    col.Item().Text($"Report Period: {summary.DateFrom:dd/MM/yyyy} - {summary.DateTo:dd/MM/yyyy}").FontSize(10);
-                    col.Item().Text($"Total Jobs: {summary.TotalJobs} | Applied: {summary.JobsAppliedTo} | Activities: {summary.TotalActivities} | Avg/Week: {summary.ActivitiesPerWeek}").FontSize(10);
-                    col.Item().PaddingBottom(10);
-                });
+            // Activity table
+            sb.AppendLine("<table><thead><tr><th style=\"width:75px;\">Date</th><th style=\"width:45px;\">Time</th><th style=\"width:90px;\">Activity</th><th>Details</th><th style=\"width:120px;\">Change</th></tr></thead><tbody>");
 
-                page.Content().Column(col =>
-                {
-                    foreach (var group in groups)
-                    {
-                        col.Item().BorderBottom(1).BorderColor(Colors.Grey.Lighten2).PaddingBottom(8).PaddingTop(8).Column(jobCol =>
-                        {
-                            jobCol.Item().Row(r =>
-                            {
-                                r.RelativeItem(3).Text(text =>
-                                {
-                                    text.Span(group.JobTitle).Bold().FontSize(11);
-                                    if (!string.IsNullOrEmpty(group.Company))
-                                        text.Span($"  -  {group.Company}").FontSize(10).FontColor(Colors.Grey.Darken1);
-                                });
-                                if (!string.IsNullOrEmpty(group.Source))
-                                {
-                                    r.RelativeItem(1).AlignRight().Text(group.Source).FontSize(9).FontColor(Colors.Blue.Medium);
-                                }
-                            });
+            foreach (var entry in group.Entries)
+            {
+                var change = !string.IsNullOrEmpty(entry.OldValue) && !string.IsNullOrEmpty(entry.NewValue)
+                    ? $"{Esc(entry.OldValue)} &rarr; {Esc(entry.NewValue)}" : "";
+                sb.AppendLine($"<tr><td>{entry.Timestamp:dd/MM/yyyy}</td><td>{entry.Timestamp:HH:mm}</td><td>{Esc(GetActionTypeDisplay(entry.ActionType))}</td><td>{Esc(entry.Details ?? "")}</td><td class=\"change-col\">{change}</td></tr>");
+            }
 
-                            if (!string.IsNullOrEmpty(group.JobUrl))
-                            {
-                                jobCol.Item().Text(group.JobUrl).FontSize(7).FontColor(Colors.Blue.Darken1);
-                            }
+            sb.AppendLine("</tbody></table></div>");
+        }
 
-                            jobCol.Item().PaddingTop(4).Table(table =>
-                            {
-                                table.ColumnsDefinition(columns =>
-                                {
-                                    columns.ConstantColumn(75);  // Date
-                                    columns.ConstantColumn(45);  // Time
-                                    columns.ConstantColumn(100); // Activity
-                                    columns.RelativeColumn();    // Details
-                                    columns.ConstantColumn(90);  // Change
-                                });
-
-                                table.Header(header =>
-                                {
-                                    header.Cell().Background(Colors.Grey.Lighten3).Padding(3).Text("Date").Bold().FontSize(8);
-                                    header.Cell().Background(Colors.Grey.Lighten3).Padding(3).Text("Time").Bold().FontSize(8);
-                                    header.Cell().Background(Colors.Grey.Lighten3).Padding(3).Text("Activity").Bold().FontSize(8);
-                                    header.Cell().Background(Colors.Grey.Lighten3).Padding(3).Text("Details").Bold().FontSize(8);
-                                    header.Cell().Background(Colors.Grey.Lighten3).Padding(3).Text("Change").Bold().FontSize(8);
-                                });
-
-                                foreach (var entry in group.Entries)
-                                {
-                                    table.Cell().Padding(3).Text(entry.Timestamp.ToString("dd/MM/yyyy")).FontSize(8);
-                                    table.Cell().Padding(3).Text(entry.Timestamp.ToString("HH:mm")).FontSize(8);
-                                    table.Cell().Padding(3).Text(GetActionTypeDisplay(entry.ActionType)).FontSize(8);
-                                    table.Cell().Padding(3).Text(entry.Details ?? "").FontSize(8);
-                                    table.Cell().Padding(3).Text(
-                                        !string.IsNullOrEmpty(entry.OldValue) && !string.IsNullOrEmpty(entry.NewValue)
-                                            ? $"{entry.OldValue} -> {entry.NewValue}"
-                                            : ""
-                                    ).FontSize(8);
-                                }
-                            });
-                        });
-                    }
-                });
-
-                page.Footer().AlignCenter().Text(text =>
-                {
-                    text.Span("Page ");
-                    text.CurrentPageNumber();
-                    text.Span(" of ");
-                    text.TotalPages();
-                    text.Span($"  |  Generated {DateTime.Now:dd/MM/yyyy HH:mm}");
-                });
-            });
-        });
-
-        using var ms = new MemoryStream();
-        document.GeneratePdf(ms);
-        return ms.ToArray();
+        sb.AppendLine($"<div style=\"text-align:center;color:#999;font-size:7pt;margin-top:12px;\">Generated {DateTime.Now:dd/MM/yyyy HH:mm}</div>");
+        sb.AppendLine("</body></html>");
+        return sb.ToString();
     }
+
+    private static string Esc(string? value) => HttpUtility.HtmlEncode(value ?? "");
 
     public byte[] ExportToWord(List<JsaReportGroup> groups, JsaReportSummary summary, string appBaseUrl)
     {
