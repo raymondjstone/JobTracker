@@ -16,7 +16,7 @@ public class UpdateCheckService
     public string? LatestVersion => _latestVersion;
     public string? DownloadUrl => _downloadUrl;
     public bool UpdateAvailable => _checked && _latestVersion != null
-        && CompareVersions(_latestVersion, CurrentVersion) > 0;
+        && CompareVersions(_latestVersion, CurrentVersion) != 0;
 
     public UpdateCheckService(
         IHttpClientFactory httpClientFactory,
