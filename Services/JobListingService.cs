@@ -2280,6 +2280,15 @@ public class JobListingService
                 query = query.Where(j => j.Skills != null && j.Skills.Any(s => s.Contains(skillTerm, StringComparison.OrdinalIgnoreCase)));
             }
 
+            // Needs description filter
+            if (filter.NeedsDescription.HasValue)
+            {
+                if (filter.NeedsDescription.Value)
+                    query = query.Where(j => string.IsNullOrWhiteSpace(j.Description));
+                else
+                    query = query.Where(j => !string.IsNullOrWhiteSpace(j.Description));
+            }
+
             // Sort order:
             // 1. Prioritized job first (if specified)
             // 2. Applied jobs next
@@ -3100,6 +3109,7 @@ public class JobListingFilter
     public bool? IsAgency { get; set; }
     public bool ShowArchived { get; set; }
     public List<string>? SkillPriorities { get; set; }
+    public bool? NeedsDescription { get; set; }
 }
 
 public enum SortOption
