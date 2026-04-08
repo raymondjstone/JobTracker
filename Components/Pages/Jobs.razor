@@ -278,6 +278,14 @@
                         </select>
                     </div>
                     <div class="col-md-2">
+                        <label class="form-label" for="filter-description">Description</label>
+                        <select id="filter-description" class="form-select" @bind="selectedNeedsDescription" @bind:after="ApplyFilter" aria-label="Filter by description status">
+                            <option value="">All</option>
+                            <option value="true">Needs Description</option>
+                            <option value="false">Has Description</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
                         <label class="form-label" for="filter-title">Title Only</label>
                         <input type="text" id="filter-title" class="form-control" placeholder="Search job title only..."
                                @bind="filter.TitleOnlySearchTerm" @bind:event="oninput" @onkeyup="ApplyFilter" aria-label="Search job title only" />
@@ -2688,6 +2696,7 @@ else
     private string selectedInterest = "";
     private string selectedScoreBand = "";
     private string selectedHasSalary = "";
+    private string selectedNeedsDescription = "";
     private string selectedApplicationStage = "";
     private string selectedSource = "";
     private string selectedIsAgency = "";
@@ -2928,6 +2937,7 @@ else
         filter.Interest = string.IsNullOrEmpty(selectedInterest) ? null : Enum.Parse<InterestStatus>(selectedInterest);
         filter.HasSalary = selectedHasSalary == "true" ? true : selectedHasSalary == "false" ? false : null;
         filter.SalarySourceFilter = selectedHasSalary == "posted" || selectedHasSalary == "estimated" || selectedHasSalary == "not-estimated" ? selectedHasSalary : null;
+        filter.NeedsDescription = selectedNeedsDescription == "true" ? true : selectedNeedsDescription == "false" ? false : null;
         filter.ApplicationStage = string.IsNullOrEmpty(selectedApplicationStage) ? null : Enum.Parse<ApplicationStage>(selectedApplicationStage);
         filter.Source = string.IsNullOrEmpty(selectedSource) ? null : selectedSource;
         filter.IsAgency = string.IsNullOrEmpty(selectedIsAgency) ? null : bool.Parse(selectedIsAgency);
@@ -2978,6 +2988,7 @@ else
         selectedInterest = "";
         selectedScoreBand = "";
         selectedHasSalary = "";
+        selectedNeedsDescription = "";
         selectedApplicationStage = "";
         selectedSource = "";
         selectedIsAgency = "";
@@ -4318,6 +4329,7 @@ else
             Interest = selectedInterest,
             ScoreBand = selectedScoreBand,
             HasSalary = selectedHasSalary,
+            NeedsDescription = selectedNeedsDescription,
             SalarySearch = filter.SalarySearch,
             SalaryTarget = selectedSalaryTarget,
             SalaryType = selectedSalaryType,
@@ -4350,6 +4362,7 @@ else
             selectedInterest = vs.Interest ?? "";
             selectedScoreBand = vs.ScoreBand ?? "";
             selectedHasSalary = vs.HasSalary ?? "";
+            selectedNeedsDescription = vs.NeedsDescription ?? "";
             selectedSalaryTarget = vs.SalaryTarget ?? "";
             selectedSalaryType = vs.SalaryType ?? "";
             selectedSource = vs.Source ?? "";

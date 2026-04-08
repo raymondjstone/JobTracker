@@ -62,6 +62,7 @@ public class JobViewState
     public string? Interest { get; set; }
     public string? ScoreBand { get; set; }
     public string? HasSalary { get; set; }
+    public string? NeedsDescription { get; set; }
     public string? SalarySearch { get; set; }
     public string? SalaryTarget { get; set; }
     public string? SalaryType { get; set; }
