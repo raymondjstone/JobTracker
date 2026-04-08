@@ -1282,6 +1282,27 @@
                     </div>
                 </div>
 
+                <!-- Fetch Details Settings -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-globe"></i> Fetch Details Settings</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label">Auto-Close Tab Delay</label>
+                            <div class="input-group" style="max-width: 250px;">
+                                <input type="number" class="form-control" @bind="editFetchDetailsAutoCloseSeconds" min="5" max="300" step="5" />
+                                <span class="input-group-text">seconds</span>
+                            </div>
+                            <small class="text-muted">How long to keep browser tabs open when fetching job details before auto-closing. Default: 30 seconds. Range: 5-300 seconds.</small>
+                        </div>
+
+                        <button class="btn btn-primary" @onclick="SaveFetchDetailsSettings">
+                            <i class="bi bi-check-lg"></i> Save Fetch Details Settings
+                        </button>
+                    </div>
+                </div>
+
                 <!-- Download Backup -->
                 <div class="card mb-4">
                     <div class="card-header">
@@ -1478,6 +1499,7 @@
     // Backup directory
     private string editBackupDirectory = "";
     private int editHistoryMax = 50000;
+    private int editFetchDetailsAutoCloseSeconds = 30;
     private bool editBackupOnStartup;
     private int editBackupsToKeep = 10;
 
@@ -1561,6 +1583,7 @@
         editBackupOnStartup = settings.BackupOnStartup;
         editBackupsToKeep = settings.BackupsToKeep > 0 ? settings.BackupsToKeep : 10;
         editHistoryMax = settings.HistoryMaxEntries > 0 ? settings.HistoryMaxEntries : 50000;
+        editFetchDetailsAutoCloseSeconds = settings.FetchDetailsAutoCloseSeconds > 0 ? settings.FetchDetailsAutoCloseSeconds : 30;
         editSmtpHost = settings.SmtpHost;
         editSmtpPort = settings.SmtpPort;
         editSmtpUsername = settings.SmtpUsername;
@@ -2192,6 +2215,15 @@
     {
         var settings = SettingsService.GetSettings();
         settings.HistoryMaxEntries = editHistoryMax >= 1000 ? editHistoryMax : 50000;
+        SettingsService.Save();
+    }
+
+    private void SaveFetchDetailsSettings()
+    {
+        var settings = SettingsService.GetSettings();
+        settings.FetchDetailsAutoCloseSeconds = editFetchDetailsAutoCloseSeconds >= 5 && editFetchDetailsAutoCloseSeconds <= 300 
+            ? editFetchDetailsAutoCloseSeconds 
+            : 30;
         SettingsService.Save();
     }
 

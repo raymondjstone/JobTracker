@@ -45,6 +45,7 @@ public class AppSettings
     public bool BackupOnStartup { get; set; }
     public int BackupsToKeep { get; set; } = 10;
     public int HistoryMaxEntries { get; set; } = 50000;
+    public int FetchDetailsAutoCloseSeconds { get; set; } = 30;
     public List<CrawlPage> CrawlPages { get; set; } = new();
     public List<JobSearchQuery> SearchQueries { get; set; } = new();
     public SkillExtractionSettings SkillExtraction { get; set; } = new();
