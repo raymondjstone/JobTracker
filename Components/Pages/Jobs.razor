@@ -3019,9 +3019,10 @@ else
     /// Opens a URL in a new tab that automatically closes after a delay.
     /// Used for fetch-details fallback where the browser extension captures data.
     /// </summary>
-    private async Task OpenTabAndAutoClose(string url, int delaySeconds = 30)
+    private async Task OpenTabAndAutoClose(string url, int? delaySeconds = null)
     {
-        await JSRuntime.InvokeVoidAsync("crawlPagesRunner.openAndScheduleClose", url, delaySeconds, true);
+        var delay = delaySeconds ?? SettingsService.GetSettings().FetchDetailsAutoCloseSeconds;
+        await JSRuntime.InvokeVoidAsync("crawlPagesRunner.openAndScheduleClose", url, delay, true);
     }
 
     private async Task ShareToWhatsApp(JobListing job)
