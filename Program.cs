@@ -166,6 +166,7 @@ builder.Services.AddTransient<EmailProcessingService>();
 builder.Services.AddTransient<EmailReplyMatcher>();
 builder.Services.AddTransient<EmailJobAlertParser>();
 builder.Services.AddTransient<EmailCheckJob>();
+builder.Services.AddTransient<JsaActivityModeJob>();
 builder.Services.AddSingleton<AppShutdownService>();
 
 // Update check — lightweight singleton that queries GitHub releases once

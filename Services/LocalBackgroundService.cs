@@ -87,14 +87,17 @@ public class LocalBackgroundService : BackgroundService
         _ => ""
     };
 
-    public LocalBackgroundService(IServiceScopeFactory scopeFactory, ILogger<LocalBackgroundService> logger, IWebHostEnvironment env)
+    public LocalBackgroundService(IServiceScopeFactory scopeFactory, ILogger<LocalBackgroundService> logger, IWebHostEnvironment env, IStorageBackend storageBackend)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
         _configPath = Path.Combine(env.ContentRootPath, "Data", "background-jobs.json");
 
-        // JSA Activity Mode is only available when the data directory contains "passp"
-        _jsaActivityEnabled = _configPath.Contains("passp", StringComparison.OrdinalIgnoreCase);
+        // JSA Activity Mode is only available when the user data directory path contains "passp"
+        var dataDir = storageBackend is JsonStorageBackend jsonBackend
+            ? jsonBackend.GetDataDirectory()
+            : env.ContentRootPath;
+        _jsaActivityEnabled = dataDir.Contains("passp", StringComparison.OrdinalIgnoreCase);
 
         // Initialize defaults (disabled until user enables them)
         var hasConfig = File.Exists(_configPath);
