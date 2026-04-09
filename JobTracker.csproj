@@ -5,10 +5,14 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
-    <!-- Version: 1.YY.MMdd.BuildNumber — uses CI run number when available, HHmm locally -->
+    <!-- Version: 1.YY.BuildNumber.MMdd
+         MSI only compares the first 3 fields for upgrade detection (4th is ignored).
+         The build number (which changes every CI run) MUST be in the 3rd field,
+         otherwise same-day builds produce duplicate entries in Apps & Features.
+         CI uses github.run_number; local builds fall back to HHmm. -->
     <BuildRevision Condition="'$(BUILD_NUMBER)' != ''">$(BUILD_NUMBER)</BuildRevision>
     <BuildRevision Condition="'$(BUILD_NUMBER)' == ''">$([System.DateTime]::Now.ToString("HHmm"))</BuildRevision>
-    <Version>1.$([System.DateTime]::Now.ToString("yy")).$([System.DateTime]::Now.ToString("MMdd")).$(BuildRevision)</Version>
+    <Version>1.$([System.DateTime]::Now.ToString("yy")).$(BuildRevision).$([System.DateTime]::Now.ToString("MMdd"))</Version>
     <DefaultItemExcludes>$(DefaultItemExcludes);JobTracker.Tests\**</DefaultItemExcludes>
     <ApplicationIcon>wwwroot\favicon.ico</ApplicationIcon>
   </PropertyGroup>

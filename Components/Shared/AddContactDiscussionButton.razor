@@ -1,0 +1,120 @@
+@using JobTracker.Models
+@using JobTracker.Services
+@inject JobHistoryService HistoryService
+
+<button class="btn @ButtonClass" @onclick="() => showModal = true" title="@Title">
+    <i class="bi bi-person-plus"></i> @ButtonText
+</button>
+
+@if (showModal)
+{
+    <div class="modal fade show" style="display: block; background: rgba(0,0,0,0.5);" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-person-plus"></i> Add Contact/Discussion</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Job Title or Role</label>
+                        <input type="text" class="form-control" @bind="jobTitle" 
+                               placeholder="e.g., Senior Developer" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Company/Recruiter</label>
+                        <input type="text" class="form-control" @bind="company" 
+                               placeholder="e.g., Tech Corp Ltd" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Contact Name</label>
+                        <input type="text" class="form-control" @bind="contactName" 
+                               placeholder="e.g., John Smith" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Reason for Contact</label>
+                        <input type="text" class="form-control" @bind="contactReason" 
+                               placeholder="e.g., Phone screening, Follow-up email" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Result/Outcome</label>
+                        <textarea class="form-control" rows="3" @bind="contactResult" 
+                                  placeholder="e.g., Arranged interview for next week"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Date/Time (optional)</label>
+                        <input type="datetime-local" class="form-control" @bind="timestamp" />
+                        <small class="form-text text-muted">Leave blank to use current date/time</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseModal">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="SaveContact" disabled="@(!IsFormValid)">
+                        <i class="bi bi-save"></i> Save
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string ButtonText { get; set; } = "Add Contact/Discussion";
+    [Parameter] public string ButtonClass { get; set; } = "btn-outline-primary";
+    [Parameter] public string Title { get; set; } = "Add contact or discussion entry";
+    [Parameter] public string? PrefilledJobTitle { get; set; }
+    [Parameter] public string? PrefilledCompany { get; set; }
+    [Parameter] public EventCallback OnContactAdded { get; set; }
+
+    private bool showModal = false;
+    private string jobTitle = "";
+    private string company = "";
+    private string contactName = "";
+    private string contactReason = "";
+    private string contactResult = "";
+    private DateTime? timestamp;
+
+    private bool IsFormValid =>
+        !string.IsNullOrWhiteSpace(jobTitle) &&
+        !string.IsNullOrWhiteSpace(company) &&
+        !string.IsNullOrWhiteSpace(contactName);
+
+    protected override void OnParametersSet()
+    {
+        if (!string.IsNullOrEmpty(PrefilledJobTitle))
+            jobTitle = PrefilledJobTitle;
+        if (!string.IsNullOrEmpty(PrefilledCompany))
+            company = PrefilledCompany;
+    }
+
+    private void CloseModal()
+    {
+        showModal = false;
+        jobTitle = PrefilledJobTitle ?? "";
+        company = PrefilledCompany ?? "";
+        contactName = "";
+        contactReason = "";
+        contactResult = "";
+        timestamp = null;
+    }
+
+    private async Task SaveContact()
+    {
+        if (!IsFormValid)
+            return;
+
+        HistoryService.RecordStandaloneContactDiscussion(
+            jobTitle,
+            company,
+            contactName,
+            contactReason,
+            contactResult,
+            timestamp
+        );
+
+        CloseModal();
+        
+        if (OnContactAdded.HasDelegate)
+            await OnContactAdded.InvokeAsync();
+    }
+}

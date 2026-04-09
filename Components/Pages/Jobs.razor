@@ -62,6 +62,7 @@
                 <span> Crawl Jobs</span>
             }
         </button>
+        <AddContactDiscussionButton ButtonClass="btn-outline-primary" OnContactAdded="RefreshAfterContactAdded" />
         <a href="/jobs/add" class="btn btn-success">
             <i class="bi bi-plus-circle"></i> Add Job Manually
         </a>
@@ -3092,6 +3093,11 @@ else
         JobService.SetFollowUpDate(id, date);
         if (selectedJob != null)
             selectedJob = JobService.GetJobById(selectedJob.Id);
+        RefreshData();
+    }
+
+    private void RefreshAfterContactAdded()
+    {
         RefreshData();
     }
 
