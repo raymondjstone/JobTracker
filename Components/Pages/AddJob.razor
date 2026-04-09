@@ -11,7 +11,14 @@
 
 <PageTitle>Add Job Listing</PageTitle>
 
-<h1>Add Job Listing</h1>
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1>Add Job Listing</h1>
+    <AddContactDiscussionButton 
+        ButtonClass="btn-outline-primary" 
+        PrefilledJobTitle="@newJob.Title" 
+        PrefilledCompany="@newJob.Company" 
+        OnContactAdded="StateHasChanged" />
+</div>
 
 <div class="row">
     <div class="col-12 mb-4">
