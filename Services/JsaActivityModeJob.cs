@@ -18,6 +18,16 @@ public class JsaActivityModeJob
 
     public async Task RunAsync(CancellationToken ct = default)
     {
+        // Only run on weekdays between 08:00 and 18:00
+        var now = DateTime.Now;
+        if (now.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday
+            || now.Hour < 8 || now.Hour >= 18)
+        {
+            _logger.LogInformation("[JsaActivityMode] Outside active hours ({DayOfWeek} {Time:HH:mm}) — skipping",
+                now.DayOfWeek, now);
+            return;
+        }
+
         _logger.LogInformation("[JsaActivityMode] Starting — will run for up to {Hours} hours", MaxRunDuration.TotalHours);
 
         var deadline = DateTime.Now.Add(MaxRunDuration);

@@ -58,7 +58,7 @@ public class LocalBackgroundService : BackgroundService
         ["ScheduledBackup"] = ("Scheduled Backup", JobCategory.Maintenance, TimeSpan.FromHours(24)),
 
         // JSA Activity (only visible when data path contains "passp")
-        ["JsaActivityMode"] = ("JSA Activity Mode", JobCategory.JsaActivity, TimeSpan.FromHours(12)),
+        ["JsaActivityMode"] = ("JSA Activity Mode", JobCategory.JsaActivity, TimeSpan.FromHours(2)),
     };
 
     private readonly Dictionary<string, BackgroundJobStatus> _jobStatuses = new();
