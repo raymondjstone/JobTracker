@@ -18,6 +18,16 @@ public class JsaActivityModeJob
 
     public async Task RunAsync(CancellationToken ct = default)
     {
+        // Only run on weekdays between 08:00 and 18:00
+        var now = DateTime.Now;
+        if (now.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday
+            || now.Hour < 8 || now.Hour >= 18)
+        {
+            _logger.LogInformation("[JsaActivityMode] Outside active hours ({DayOfWeek} {Time:HH:mm}) — skipping",
+                now.DayOfWeek, now);
+            return;
+        }
+
         _logger.LogInformation("[JsaActivityMode] Starting — will run for up to {Hours} hours", MaxRunDuration.TotalHours);
 
         var deadline = DateTime.Now.Add(MaxRunDuration);
@@ -26,8 +36,8 @@ public class JsaActivityModeJob
 
         while (DateTime.Now < deadline && !ct.IsCancellationRequested)
         {
-            // Wait a random period between 1 and 3 minutes
-            var delayMinutes = 1 + (random.NextDouble() * 2);
+            // Wait a random period between 30 secs and 2.5 minutes
+            var delayMinutes = 0.5 + (random.NextDouble() * 2);
             var delay = TimeSpan.FromMinutes(delayMinutes);
             _logger.LogDebug("[JsaActivityMode] Waiting {Delay:F1} minutes before next action", delay.TotalMinutes);
 
