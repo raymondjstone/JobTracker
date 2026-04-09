@@ -115,11 +115,11 @@
                     <button class="btn btn-sm btn-outline-primary" @onclick="() => SetDateRange(14)">Last 2 weeks</button>
                     <button class="btn btn-sm btn-outline-primary" @onclick="() => SetDateRange(30)">Last 30 days</button>
                     <button class="btn btn-sm btn-outline-primary" @onclick="() => SetDateRange(90)">Last 3 months</button>
-                    <button class="btn btn-sm btn-outline-secondary" @onclick="SetCurrentSigningPeriod">Current Signing Period</button>
                     @if (jsaSettings.SigningStartDate.HasValue && jsaSettings.PeriodLengthDays > 0)
                     {
                         <button class="btn btn-sm btn-outline-secondary" @onclick="SetPreviousSigningPeriod">Previous Signing Period</button>
                     }
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="SetCurrentSigningPeriod">Current Signing Period</button>
                 </div>
             </div>
         </div>
