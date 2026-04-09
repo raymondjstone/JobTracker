@@ -26,8 +26,8 @@ public class JsaActivityModeJob
 
         while (DateTime.Now < deadline && !ct.IsCancellationRequested)
         {
-            // Wait a random period between 1 and 3 minutes
-            var delayMinutes = 1 + (random.NextDouble() * 2);
+            // Wait a random period between 30 secs and 2.5 minutes
+            var delayMinutes = 0.5 + (random.NextDouble() * 2);
             var delay = TimeSpan.FromMinutes(delayMinutes);
             _logger.LogDebug("[JsaActivityMode] Waiting {Delay:F1} minutes before next action", delay.TotalMinutes);
 
