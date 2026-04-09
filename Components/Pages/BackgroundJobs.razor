@@ -186,6 +186,7 @@ else
         JobCategory.PipelineAutomation => "bi-arrow-repeat",
         JobCategory.EmailIntegration => "bi-envelope",
         JobCategory.Maintenance => "bi-wrench",
+        JobCategory.JsaActivity => "bi-clipboard-check",
         _ => "bi-gear"
     };
 
@@ -201,6 +202,7 @@ else
         "JobCrawl" => "Searches LinkedIn for new job listings matching your saved search queries and adds them automatically.",
         "NoReplyCheck" => "Marks applied jobs as 'No reply' if no status change has occurred within the configured no-reply days threshold (Settings > Pipeline).",
         "ScheduledBackup" => "Creates a ZIP backup of all JSON data files in the Data/Backups/ folder. Old backups are pruned to keep the most recent 10.",
+        "JsaActivityMode" => "Runs for up to 4 hours per session, picking a random new/unchecked job every 1–3 minutes and marking it as unsuitable to simulate JSA job search activity.",
         _ => ""
     };
 

@@ -9,7 +9,8 @@ public enum JobCategory
     JobDiscovery,
     PipelineAutomation,
     EmailIntegration,
-    Maintenance
+    Maintenance,
+    JsaActivity
 }
 
 public class BackgroundJobStatus
@@ -55,9 +56,13 @@ public class LocalBackgroundService : BackgroundService
 
         // Maintenance
         ["ScheduledBackup"] = ("Scheduled Backup", JobCategory.Maintenance, TimeSpan.FromHours(24)),
+
+        // JSA Activity (only visible when data path contains "passp")
+        ["JsaActivityMode"] = ("JSA Activity Mode", JobCategory.JsaActivity, TimeSpan.FromHours(12)),
     };
 
     private readonly Dictionary<string, BackgroundJobStatus> _jobStatuses = new();
+    private readonly bool _jsaActivityEnabled;
     private DateTime? _startedAt;
 
     public static string GetCategoryDisplayName(JobCategory category) => category switch
@@ -67,6 +72,7 @@ public class LocalBackgroundService : BackgroundService
         JobCategory.PipelineAutomation => "Pipeline Automation",
         JobCategory.EmailIntegration => "Email Integration",
         JobCategory.Maintenance => "Maintenance",
+        JobCategory.JsaActivity => "JSA Activity",
         _ => category.ToString()
     };
 
@@ -77,6 +83,7 @@ public class LocalBackgroundService : BackgroundService
         JobCategory.PipelineAutomation => "Automatically update job statuses based on rules",
         JobCategory.EmailIntegration => "Process incoming emails and send notifications",
         JobCategory.Maintenance => "System maintenance and data backup tasks",
+        JobCategory.JsaActivity => "Automatically review new jobs to simulate JSA job search activity",
         _ => ""
     };
 
@@ -86,10 +93,16 @@ public class LocalBackgroundService : BackgroundService
         _logger = logger;
         _configPath = Path.Combine(env.ContentRootPath, "Data", "background-jobs.json");
 
+        // JSA Activity Mode is only available when the data directory contains "passp"
+        _jsaActivityEnabled = _configPath.Contains("passp", StringComparison.OrdinalIgnoreCase);
+
         // Initialize defaults (disabled until user enables them)
         var hasConfig = File.Exists(_configPath);
         foreach (var (key, (name, category, interval)) in JobDefaults)
         {
+            if (key == "JsaActivityMode" && !_jsaActivityEnabled)
+                continue;
+
             _jobStatuses[key] = new BackgroundJobStatus
             {
                 Name = name,
@@ -186,6 +199,9 @@ public class LocalBackgroundService : BackgroundService
             RunLoop("ScheduledBackup", RunScheduledBackup, stoppingToken),
             RunLoop("EmailCheck", RunEmailCheck, stoppingToken),
         };
+
+        if (_jsaActivityEnabled)
+            tasks = [.. tasks, RunLoop("JsaActivityMode", RunJsaActivityMode, stoppingToken)];
 
         await Task.WhenAll(tasks);
     }
@@ -402,6 +418,13 @@ public class LocalBackgroundService : BackgroundService
     {
         using var scope = _scopeFactory.CreateScope();
         var job = scope.ServiceProvider.GetRequiredService<EmailCheckJob>();
+        await job.RunAsync();
+    }
+
+    private async Task RunJsaActivityMode()
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var job = scope.ServiceProvider.GetRequiredService<JsaActivityModeJob>();
         await job.RunAsync();
     }
 }
